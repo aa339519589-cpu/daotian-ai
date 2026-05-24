@@ -1,30 +1,21 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+  <meta name="theme-color" content="#111314">
   <title>稻田 Ai</title>
-  <link rel="stylesheet" href="./style.css?v=363-restore-mobile" />
   <script>
     window.MathJax = {
-      tex: {
-        inlineMath: [['\\(', '\\)'], ['$', '$']],
-        displayMath: [['$$', '$$'], ['\\[', '\\]']]
-      },
-      options: {
-        skipHtmlTags: ['script','noscript','style','textarea','pre','code']
-      },
+      tex: { inlineMath: [['\\(','\\)'], ['$', '$']], displayMath: [['\\[','\\]'], ['$$','$$']] },
+      svg: { fontCache: 'global' },
       startup: { typeset: false }
     };
   </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onload="try{mermaid.initialize({startOnLoad:false,theme:'dark'});}catch(e){}"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
 </head>
 <body>
-  <div id="app">
-    <div style="padding:24px;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#ddd">稻田 Ai 正在加载...</div>
-  </div>
-  <script src="./app.js?v=363-restore-mobile"></script>
-  <script src="./mobile_restore_patch.js?v=363-restore-mobile"></script>
+  <div id="app"></div>
+  <script src="./app.js?v=366-core-restore"></script>
 </body>
 </html>
