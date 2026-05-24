@@ -25,6 +25,7 @@
   try{
     const $ = (sel, root=document) => root.querySelector(sel);
     const uid = () => 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
+    const mid = () => 'm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6);
     const nowTime = () => new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
 
     const KEYS = {
@@ -35,8 +36,15 @@
       v323Chats:'daotian.chats.v323', v323Active:'daotian.activeChat.v323', v323Settings:'daotian.settings.v323', v323Theme:'daotian.theme.v323'
     };
 
+    const DEFAULT_MODELS = [
+      {id:'deepseek-chat', label:'DeepSeek Chat', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions'},
+      {id:'deepseek-reasoner', label:'DeepSeek Reasoner', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-reasoner', path:'/v1/chat/completions'},
+      {id:'custom-model', label:'自定义模型', providerName:'自定义', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions'}
+    ];
+
     const defaultSettings = {
       providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions',
+      models:DEFAULT_MODELS, activeModelId:'deepseek-chat',
       temperature:0.7, top_p:0.9, max_tokens:0, contextMessages:24,
       memoryEnabled:true, systemPrompt:'', personalPrompt:'', useServerProxy:true
     };
@@ -76,8 +84,84 @@
       const id = uid();
       return [{id, title:'新对话', createdAt:Date.now(), updatedAt:Date.now(), messages:[]}];
     }
+
+    function normalizeModelProfile(raw, i){
+      if(!raw || typeof raw !== 'object') return null;
+      const model = String(raw.model || raw.modelName || '').trim();
+      const label = String(raw.label || raw.name || model || ('模型 ' + (i+1))).trim();
+      return {
+        id:String(raw.id || raw.key || model || mid()).trim(),
+        label,
+        providerName:String(raw.providerName || raw.provider || raw.name || '').trim(),
+        baseUrl:String(raw.baseUrl || raw.baseURL || raw.url || '').trim(),
+        apiKey:String(raw.apiKey || raw.keyValue || raw.token || '').trim(),
+        model,
+        path:String(raw.path || raw.apiPath || '/v1/chat/completions').trim() || '/v1/chat/completions'
+      };
+    }
+    function uniqueModels(list){
+      const used = new Set();
+      return list.map(function(m, i){
+        const x = normalizeModelProfile(m, i);
+        if(!x) return null;
+        let id = x.id || mid();
+        while(used.has(id)) id = id + '_' + Math.random().toString(36).slice(2,4);
+        used.add(id); x.id = id;
+        return x;
+      }).filter(Boolean);
+    }
+    function migrateModels(raw){
+      let models = [];
+      if(raw && Array.isArray(raw.models)) models = uniqueModels(raw.models);
+      else if(raw && Array.isArray(raw.modelList)) models = uniqueModels(raw.modelList);
+      else if(raw && Array.isArray(raw.providers)) models = uniqueModels(raw.providers);
+      if(!models.length) models = uniqueModels(DEFAULT_MODELS);
+
+      const legacy = raw || {};
+      const hasLegacy = legacy.model || legacy.baseUrl || legacy.apiKey || legacy.path || legacy.providerName;
+      if(hasLegacy){
+        const first = models[0] || normalizeModelProfile(DEFAULT_MODELS[0],0);
+        first.label = first.label || legacy.model || '当前模型';
+        first.providerName = legacy.providerName || first.providerName || 'DeepSeek';
+        first.baseUrl = legacy.baseUrl || first.baseUrl || 'https://api.deepseek.com';
+        first.apiKey = legacy.apiKey || first.apiKey || '';
+        first.model = legacy.model || first.model || 'deepseek-chat';
+        first.path = legacy.path || first.path || '/v1/chat/completions';
+        models[0] = first;
+      }
+      return models;
+    }
     function loadSettings(){
-      return Object.assign({}, defaultSettings, readJSON(KEYS.settings,null) || readJSON(KEYS.v323Settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
+      const raw = readJSON(KEYS.settings,null) || readJSON(KEYS.v323Settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {};
+      const settings = Object.assign({}, defaultSettings, raw);
+      settings.models = migrateModels(raw);
+      if(!settings.models.some(m=>m.id===settings.activeModelId)) settings.activeModelId = settings.models[0].id;
+      syncLegacyFields(settings);
+      return settings;
+    }
+    function activeModel(){
+      return settings.models.find(m=>m.id===settings.activeModelId) || settings.models[0] || normalizeModelProfile(DEFAULT_MODELS[0],0);
+    }
+    function syncLegacyFields(target){
+      const m = (target.models || []).find(x=>x.id===target.activeModelId) || (target.models || [])[0] || DEFAULT_MODELS[0];
+      target.providerName = m.providerName || '';
+      target.baseUrl = m.baseUrl || '';
+      target.apiKey = m.apiKey || '';
+      target.model = m.model || '';
+      target.path = m.path || '/v1/chat/completions';
+    }
+    function saveCurrentModelFromModal(){
+      const id = $('#settingsModelSelect') ? $('#settingsModelSelect').value : settings.activeModelId;
+      const m = settings.models.find(x=>x.id===id);
+      if(!m) return;
+      m.label = ($('#modelLabel').value || '').trim() || ($('#modelName').value || '').trim() || '未命名模型';
+      m.providerName = ($('#providerName').value || '').trim();
+      m.baseUrl = ($('#baseUrl').value || '').trim();
+      m.apiKey = ($('#apiKey').value || '').trim();
+      m.model = ($('#modelName').value || '').trim();
+      m.path = ($('#path').value || '').trim() || '/v1/chat/completions';
+      settings.activeModelId = id;
+      syncLegacyFields(settings);
     }
     function getMemory(){ return safeGet(KEYS.memory) || ''; }
     function setMemory(v){ setItem(KEYS.memory, String(v || '').trim()); }
@@ -100,7 +184,7 @@
     if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
 
     function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
-    function persist(){ saveJSON(KEYS.chats,chats); setItem(KEYS.active,activeId); saveJSON(KEYS.settings,settings); setItem(KEYS.theme,theme); }
+    function persist(){ syncLegacyFields(settings); saveJSON(KEYS.chats,chats); setItem(KEYS.active,activeId); saveJSON(KEYS.settings,settings); setItem(KEYS.theme,theme); }
 
     const app = $('#app');
     if(!app) throw new Error('#app not found');
@@ -114,11 +198,11 @@
         </aside>
         <main class="main">
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
-          <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☾</button><button class="icon-btn" id="quickMemory" title="记忆">记</button></div>
+          <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☾</button><button class="icon-btn" id="quickMemory" title="设置 / 记忆">记</button></div>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
             <div class="file-tray" id="fileTray"></div>
-            <div class="toolbar"><div class="toolbar-left"><button class="pill" id="searchBtn">○ 联网搜索</button><button class="pill" id="memoryBtn">● 跨聊天记忆</button></div><div class="toolbar-right"><button class="pill" id="clearFiles">清空附件</button></div></div>
+            <div class="toolbar"><div class="toolbar-left"><button class="pill" id="searchBtn">○ 联网搜索</button><select class="model-select" id="modelSelect" title="切换模型"></select></div><div class="toolbar-right"><button class="pill" id="clearFiles">清空附件</button></div></div>
             <div class="composer"><button class="upload-btn" id="uploadBtn" title="上传文件或图片">+</button><textarea id="input" placeholder="输入消息...（Enter 发送，Shift + Enter 换行）"></textarea><button class="send" id="sendBtn">›</button></div>
             <input id="fileInput" type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.js,.css,.html,.xml,.csv,.log,.py,.java,.c,.cpp,.h,.ts,.tsx,.jsx,.vue,.yml,.yaml,.pdf,.doc,.docx" hidden />
           </div>
@@ -127,58 +211,72 @@
       <div class="modal-backdrop" id="providerModal"><div class="modal">
         <div class="modal-head"><span>设置 / 模型 / 记忆</span><button class="icon-btn" id="closeProvider">×</button></div>
         <div class="modal-body">
-          <div class="row"><div class="field"><label>提供方类型</label><select id="providerType"><option value="openai">OpenAI 兼容</option><option value="custom">自定义兼容接口</option></select></div><div class="field"><label>名称</label><input id="providerName" placeholder="DeepSeek / OpenAI / 小米 / 中转"></div></div>
+          <div class="row"><div class="field"><label>当前模型</label><select id="settingsModelSelect"></select></div><div class="field compact-buttons"><label>模型管理</label><div class="button-row"><button class="btn" id="addModel" type="button">新增模型</button><button class="btn" id="deleteModel" type="button">删除当前</button></div></div></div>
+          <div class="row"><div class="field"><label>显示名称</label><input id="modelLabel" placeholder="DeepSeek Chat / GPT / 小米"></div><div class="field"><label>模型名</label><input id="modelName" placeholder="deepseek-chat / gpt-4o-mini"></div></div>
+          <div class="row"><div class="field"><label>服务商名称</label><input id="providerName" placeholder="DeepSeek / OpenAI / 小米 / 中转"></div><div class="field"><label>请求路径</label><input id="path" placeholder="/v1/chat/completions"></div></div>
           <div class="field"><label>Base URL</label><input id="baseUrl" placeholder="https://api.deepseek.com"></div>
           <div class="field"><label>API Key</label><input id="apiKey" type="password" placeholder="sk-..."></div>
-          <div class="row"><div class="field"><label>模型名</label><input id="model" placeholder="deepseek-chat / gpt-4o-mini"></div><div class="field"><label>请求路径</label><input id="path" placeholder="/v1/chat/completions"></div></div>
           <div class="row"><div class="field"><label>Temperature</label><input id="temperature" type="number" min="0" max="2" step="0.05" placeholder="0.7"></div><div class="field"><label>Top P</label><input id="topP" type="number" min="0" max="1" step="0.05" placeholder="0.9"></div></div>
           <div class="row"><div class="field"><label>最大输出 token，0=默认</label><input id="maxTokens" type="number" min="0" step="128" placeholder="0"></div><div class="field"><label>上下文消息数</label><input id="contextMessages" type="number" min="2" max="80" step="2" placeholder="24"></div></div>
           <label class="switch-line"><input id="memoryEnabled" type="checkbox"> 启用跨聊天记忆</label>
           <label class="switch-line"><input id="useServerProxy" type="checkbox"> 走本站后端代理 /api/chat</label>
           <div class="field"><label>个性化 Prompt / 人格设定</label><textarea id="personalPrompt" placeholder="比如：回复短一点，更像微信聊天，不要废话。"></textarea></div>
-          <div class="field"><label>系统 Prompt</label><textarea id="systemPrompt" placeholder="给模型的底层规则。"></textarea></div>
+          <div class="field"><label>系统 Prompt</label><textarea id="systemPrompt" placeholder="更底层的固定规则。"></textarea></div>
           <div class="field"><label>跨聊天记忆</label><textarea id="memoryText" placeholder="这里写长期记忆。每个新对话都会带上它。"></textarea></div>
-          <div class="hint">文件上传：文本类文件会直接塞进上下文；图片会用 vision 格式发送。DeepSeek deepseek-chat 通常不能看图，想读图片请切到支持视觉的模型。PDF/DOCX 目前只显示附件信息，不做正文解析。</div>
+          <div class="hint">模型切换是真功能：聊天界面的模型选择器会切换当前模型配置，请求会按选中的 Base URL / API Key / 模型名 / 路径发出。一个服务商可以保存多个模型。</div>
         </div>
         <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
       </div></div>
       <div class="status" id="status"></div>`;
 
-    function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
-    function pickEmptyPrompt(){ const seed = chats.length + (activeId ? activeId.length : 0) + new Date().getDate(); return emptyPrompts[seed % emptyPrompts.length]; }
-    function formatBytes(n){ n=Number(n)||0; if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+    function pickEmptyPrompt(){ return emptyPrompts[Math.floor(Math.random()*emptyPrompts.length)]; }
+    function toast(text){ const el=$('#status'); if(!el)return; el.textContent=text; el.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('show'),1600); }
+    function formatBytes(n){ n=Number(n)||0; if(n<1024) return n+'B'; if(n<1024*1024) return (n/1024).toFixed(1)+'KB'; return (n/1024/1024).toFixed(1)+'MB'; }
     function slimAttachment(a){
       if(!a || typeof a !== 'object') return null;
-      return {name:String(a.name||'附件'), type:String(a.type||''), size:Number(a.size)||0, kind:String(a.kind||'file'), text:a.text?String(a.text).slice(0,60000):'', dataUrl:a.dataUrl?String(a.dataUrl):''};
+      const base = {kind:a.kind||'file', name:String(a.name||'附件'), type:String(a.type||''), size:Number(a.size)||0};
+      if(base.kind==='image' && a.dataUrl) base.dataUrl=String(a.dataUrl);
+      if(base.kind==='text' && a.text) base.text=String(a.text).slice(0,60000);
+      return base;
     }
-
-    function renderRich(s){
-      const raw = String(s || '');
-      if(!raw) return '';
-      const parts = raw.split(/```/g);
-      return parts.map(function(part, i){
-        if(i % 2 === 1){
-          const cut = part.replace(/^\w+\n/, '');
-          return '<pre><code>' + escapeHTML(cut) + '</code></pre>';
-        }
-        return '<p>' + escapeHTML(part).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>') + '</p>';
-      }).join('');
+    function renderRich(text){
+      const safe = escapeHTML(text || '');
+      return safe
+        .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\n{2,}/g, '</p><p>')
+        .replace(/\n/g, '<br>')
+        .replace(/^/, '<p>')
+        .replace(/$/, '</p>');
     }
     function renderAttachmentList(list){
-      if(!Array.isArray(list) || !list.length) return '';
-      return '<div class="attachments">' + list.map(function(a){
-        const img = a.kind === 'image' && a.dataUrl ? '<img src="'+escapeHTML(a.dataUrl)+'" alt="">' : '<span>📎</span>';
-        return '<div class="attachment-card">'+img+'<div><div class="name">'+escapeHTML(a.name)+'</div><div>'+escapeHTML(formatBytes(a.size))+'</div></div></div>';
-      }).join('') + '</div>';
+      const arr = Array.isArray(list) ? list : [];
+      if(!arr.length) return '';
+      return '<div class="attachments">'+arr.map(a=>{
+        const img = a.kind==='image' && a.dataUrl ? '<img src="'+escapeHTML(a.dataUrl)+'" alt="">' : '<span>📎</span>';
+        return '<div class="attachment-card">'+img+'<div class="name">'+escapeHTML(a.name || '附件')+'</div><div>'+escapeHTML(formatBytes(a.size))+'</div></div>';
+      }).join('')+'</div>';
     }
     function renderPendingFiles(){
-      const tray = $('#fileTray'); if(!tray) return;
-      tray.innerHTML = pendingFiles.map(function(f, i){
-        const img = f.kind === 'image' && f.dataUrl ? '<img src="'+escapeHTML(f.dataUrl)+'" alt="">' : '<span>📎</span>';
-        return '<div class="file-chip">'+img+'<span>'+escapeHTML(f.name)+'</span><button data-file-remove="'+i+'">×</button></div>';
+      const tray=$('#fileTray'); if(!tray) return;
+      tray.innerHTML = pendingFiles.map((f,i)=>{
+        const thumb = f.kind==='image' ? '<img src="'+escapeHTML(f.dataUrl)+'" alt="">' : '<span>📎</span>';
+        return '<div class="file-chip">'+thumb+'<span>'+escapeHTML(f.name)+'</span><button data-file-remove="'+i+'">×</button></div>';
       }).join('');
     }
-
+    function renderModelOptions(){
+      const selected = settings.activeModelId;
+      const html = settings.models.map(m=>'<option value="'+escapeHTML(m.id)+'">'+escapeHTML(m.label || m.model || '未命名模型')+'</option>').join('');
+      const bar = $('#modelSelect');
+      if(bar){ bar.innerHTML = html; bar.value = selected; }
+      const modal = $('#settingsModelSelect');
+      if(modal){ modal.innerHTML = html; modal.value = selected; }
+    }
+    function renderToolbar(){
+      renderModelOptions();
+      const searchBtn = $('#searchBtn');
+      if(searchBtn){ searchBtn.classList.toggle('active',searchOn); searchBtn.textContent=searchOn?'● 联网搜索':'○ 联网搜索'; }
+    }
     function renderSidebar(){
       const side = $('#sidebar'); if(!side) return;
       side.classList.toggle('closed', !sidebarOpen);
@@ -204,8 +302,7 @@
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
-      const memoryBtn = $('#memoryBtn'); if(memoryBtn){ memoryBtn.classList.toggle('active', !!settings.memoryEnabled); memoryBtn.textContent = settings.memoryEnabled ? '● 跨聊天记忆' : '○ 跨聊天记忆'; }
-      renderSidebar(); renderMessages(); renderPendingFiles(); persist();
+      renderToolbar(); renderSidebar(); renderMessages(); renderPendingFiles(); persist();
     }
 
     function createChat(){ const id=uid(); chats.unshift({id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; sidebarOpen=true; renderAll(); }
@@ -281,15 +378,23 @@
       return {role:'user', content:text};
     }
     function clientSettings(){
+      syncLegacyFields(settings);
+      const active = activeModel();
       const num = v => { const n = Number(v); return Number.isFinite(n) ? n : undefined; };
-      const out = Object.assign({}, settings);
-      out.temperature = num(settings.temperature);
-      out.top_p = num(settings.top_p);
-      out.max_tokens = num(settings.max_tokens);
-      return out;
+      return {
+        providerName: active.providerName || settings.providerName || '',
+        baseUrl: active.baseUrl || settings.baseUrl || '',
+        apiKey: active.apiKey || settings.apiKey || '',
+        model: active.model || settings.model || 'deepseek-chat',
+        path: active.path || settings.path || '/v1/chat/completions',
+        temperature:num(settings.temperature),
+        top_p:num(settings.top_p),
+        max_tokens:num(settings.max_tokens)
+      };
     }
     function buildDirectURL(){
-      const base=(settings.baseUrl||'').replace(/\/$/,''); const p=settings.path||'/v1/chat/completions';
+      const s = clientSettings();
+      const base=(s.baseUrl||'').replace(/\/+$/,''); const p=s.path||'/v1/chat/completions';
       if(!base) return '/v1/chat/completions';
       if(base.endsWith('/v1') && p.startsWith('/v1/')) return base + p.slice(3);
       return base + (p.startsWith('/') ? p : '/' + p);
@@ -303,23 +408,26 @@
       return '';
     }
     function extractFullContent(data){
-      return data?.choices?.[0]?.message?.content || data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || data?.content?.[0]?.text || '';
+      return (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ||
+        (data && data.candidates && data.candidates[0] && data.candidates[0].content && (data.candidates[0].content.parts || []).map(p=>p.text).join('')) ||
+        (data && data.content && data.content[0] && data.content[0].text) || '';
     }
 
     async function callModel(messages, onDelta){
-      const body = {messages, settings:clientSettings(), stream:true, web_search:searchOn};
+      const activeSettings = clientSettings();
+      const body = {messages, settings:activeSettings, stream:true, web_search:searchOn};
       const headers = {'Content-Type':'application/json'};
       let url = '/api/chat';
       if(!settings.useServerProxy){
         url = buildDirectURL();
-        body.model = settings.model || 'deepseek-chat';
+        body.model = activeSettings.model || 'deepseek-chat';
         body.messages = messages;
         body.stream = true;
         body.temperature = Number(settings.temperature);
         body.top_p = Number(settings.top_p);
         if(Number(settings.max_tokens) > 0) body.max_tokens = Number(settings.max_tokens);
         delete body.settings;
-        if(settings.apiKey) headers.Authorization = 'Bearer ' + settings.apiKey;
+        if(activeSettings.apiKey) headers.Authorization = 'Bearer ' + activeSettings.apiKey;
       }
       const res = await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
       if(!res.ok){ const txt=await res.text(); throw new Error(txt.slice(0,600)||('HTTP '+res.status)); }
@@ -372,8 +480,18 @@
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
     }
 
+    function fillModelFields(){
+      renderModelOptions();
+      const m = activeModel();
+      $('#modelLabel').value=m.label||'';
+      $('#modelName').value=m.model||'';
+      $('#providerName').value=m.providerName||'';
+      $('#baseUrl').value=m.baseUrl||'';
+      $('#apiKey').value=m.apiKey||'';
+      $('#path').value=m.path||'/v1/chat/completions';
+    }
     function openSettings(){
-      $('#providerType').value=settings.providerType||'openai'; $('#providerName').value=settings.providerName||''; $('#baseUrl').value=settings.baseUrl||''; $('#apiKey').value=settings.apiKey||''; $('#model').value=settings.model||''; $('#path').value=settings.path||'/v1/chat/completions';
+      fillModelFields();
       $('#temperature').value=settings.temperature ?? 0.7; $('#topP').value=settings.top_p ?? 0.9; $('#maxTokens').value=settings.max_tokens ?? 0; $('#contextMessages').value=settings.contextMessages ?? 24;
       $('#memoryEnabled').checked=!!settings.memoryEnabled; $('#useServerProxy').checked=settings.useServerProxy !== false;
       $('#personalPrompt').value=settings.personalPrompt||''; $('#systemPrompt').value=settings.systemPrompt||''; $('#memoryText').value=getMemory();
@@ -381,13 +499,29 @@
     }
     function closeSettings(){ $('#providerModal').classList.remove('show'); }
     function saveSettings(){
-      settings={
-        providerType:$('#providerType').value, providerName:$('#providerName').value.trim(), baseUrl:$('#baseUrl').value.trim(), apiKey:$('#apiKey').value.trim(), model:$('#model').value.trim(), path:$('#path').value.trim()||'/v1/chat/completions',
-        temperature:Number($('#temperature').value || 0.7), top_p:Number($('#topP').value || 0.9), max_tokens:Number($('#maxTokens').value || 0), contextMessages:Number($('#contextMessages').value || 24),
-        memoryEnabled:$('#memoryEnabled').checked, useServerProxy:$('#useServerProxy').checked,
-        personalPrompt:$('#personalPrompt').value.trim(), systemPrompt:$('#systemPrompt').value.trim()
-      };
+      saveCurrentModelFromModal();
+      settings.temperature=Number($('#temperature').value || 0.7);
+      settings.top_p=Number($('#topP').value || 0.9);
+      settings.max_tokens=Number($('#maxTokens').value || 0);
+      settings.contextMessages=Number($('#contextMessages').value || 24);
+      settings.memoryEnabled=$('#memoryEnabled').checked;
+      settings.useServerProxy=$('#useServerProxy').checked;
+      settings.personalPrompt=$('#personalPrompt').value.trim();
+      settings.systemPrompt=$('#systemPrompt').value.trim();
       setMemory($('#memoryText').value); persist(); closeSettings(); renderAll(); toast('已保存');
+    }
+    function addModel(){
+      saveCurrentModelFromModal();
+      const base = activeModel();
+      const m = Object.assign({}, base, {id:mid(), label:'新模型', model:''});
+      settings.models.push(m); settings.activeModelId=m.id; fillModelFields(); renderToolbar(); toast('已新增');
+    }
+    function deleteModel(){
+      if(settings.models.length <= 1){ toast('至少保留一个模型'); return; }
+      const idx = settings.models.findIndex(m=>m.id===settings.activeModelId);
+      if(idx >= 0) settings.models.splice(idx,1);
+      settings.activeModelId = (settings.models[Math.max(0, idx-1)] || settings.models[0]).id;
+      fillModelFields(); renderToolbar(); toast('已删除当前模型');
     }
 
     document.addEventListener('click', e=>{
@@ -401,28 +535,46 @@
     $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
     $('#quickMemory').onclick=openSettings;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
-    $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';};
-    $('#memoryBtn').onclick=()=>{settings.memoryEnabled=!settings.memoryEnabled; persist(); renderAll();};
+    $('#addModel').onclick=addModel; $('#deleteModel').onclick=deleteModel;
+    $('#settingsModelSelect').onchange=function(){ saveCurrentModelFromModal(); settings.activeModelId=this.value; fillModelFields(); persist(); };
+    $('#modelSelect').onchange=function(){ settings.activeModelId=this.value; syncLegacyFields(settings); persist(); renderToolbar(); toast('已切换：'+(activeModel().label||activeModel().model||'模型')); };
+    $('#searchBtn').onclick=()=>{searchOn=!searchOn; renderToolbar();};
     $('#sendBtn').onclick=sendMessage;
     $('#uploadBtn').onclick=()=>$('#fileInput').click();
     $('#fileInput').onchange=e=>{ addFiles(e.target.files); e.target.value=''; };
     $('#clearFiles').onclick=()=>{pendingFiles=[];renderPendingFiles();};
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
-    $('#providerType').addEventListener('change', e=>{ const v=e.target.value; if(v==='openai'){ $('#path').value='/v1/chat/completions'; if(!$('#baseUrl').value) $('#baseUrl').value='https://api.deepseek.com'; } });
 
     function setupMobileViewport(){
       try{
-        const root = document.documentElement; const input = $('#input'); const messagesBox = $('#messages'); if(!root || !input || !messagesBox) return;
+        const root = document.documentElement;
+        const input = $('#input');
+        const messagesBox = $('#messages');
+        if(!root || !input || !messagesBox) return;
         let timer = null;
         function isMobile(){ return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900; }
-        function scrollLatest(){ requestAnimationFrame(()=>{try{messagesBox.scrollTop = messagesBox.scrollHeight;}catch(_e){}}); setTimeout(()=>{try{messagesBox.scrollTop = messagesBox.scrollHeight;}catch(_e){}},120); }
+        function viewportHeight(){
+          const vv = window.visualViewport;
+          return vv && vv.height ? vv.height : (window.innerHeight || document.documentElement.clientHeight || 700);
+        }
+        function scrollLatest(){
+          requestAnimationFrame(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} });
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} },120);
+        }
         function applyViewport(){
-          if(!isMobile()){ document.body.classList.remove('keyboard-open'); root.style.removeProperty('--app-height'); return; }
-          const vv = window.visualViewport; const h = vv && vv.height ? vv.height : window.innerHeight;
-          root.style.setProperty('--app-height', Math.max(320, Math.round(h)) + 'px');
+          if(!isMobile()){
+            document.body.classList.remove('keyboard-open');
+            root.style.removeProperty('--app-height');
+            return;
+          }
+          const h = Math.max(320, Math.round(viewportHeight()));
+          root.style.setProperty('--app-height', h + 'px');
           const focused = document.activeElement === input;
           document.body.classList.toggle('keyboard-open', focused);
-          if(focused){ if(sidebarOpen){ sidebarOpen=false; renderSidebar(); } scrollLatest(); }
+          if(focused){
+            if(sidebarOpen){ sidebarOpen = false; renderSidebar(); }
+            scrollLatest();
+          }
         }
         function schedule(delay){ clearTimeout(timer); timer = setTimeout(applyViewport, delay || 30); }
         input.addEventListener('focus', function(){ schedule(0); setTimeout(applyViewport,120); setTimeout(applyViewport,320); });
@@ -430,7 +582,10 @@
         input.addEventListener('input', function(){ schedule(20); scrollLatest(); });
         window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
         window.addEventListener('orientationchange', function(){ setTimeout(applyViewport,260); }, {passive:true});
-        if(window.visualViewport){ window.visualViewport.addEventListener('resize', function(){ schedule(20); }, {passive:true}); window.visualViewport.addEventListener('scroll', function(){ schedule(20); }, {passive:true}); }
+        if(window.visualViewport){
+          window.visualViewport.addEventListener('resize', function(){ schedule(20); }, {passive:true});
+          window.visualViewport.addEventListener('scroll', function(){ schedule(20); }, {passive:true});
+        }
         applyViewport();
       }catch(_err){}
     }
