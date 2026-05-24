@@ -5,7 +5,7 @@ import { createReadStream } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const DATA_DIR = join(ROOT, "data");
 const CONFIG_FILE = join(DATA_DIR, "config.json");
 const PUBLIC_DIR = ROOT;
