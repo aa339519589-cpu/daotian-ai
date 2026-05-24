@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: daotian-ai
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.1
+      - key: HOST
+        value: 0.0.0.0
+      - key: PUBLIC_CHAT_ENABLED
+        value: true
+      - key: PUBLIC_CHAT_DAILY_LIMIT
+        value: 100
+      - key: ADMIN_TOKEN
+        sync: false
