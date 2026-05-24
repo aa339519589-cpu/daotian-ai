@@ -8,8 +8,48 @@ const state = {
   activeConversationId: "",
   sidebarOpen: window.matchMedia("(min-width: 769px)").matches,
   apiKeyVisible: new Set(),
-  isSending: false
+  isSending: false,
+  webSearchEnabled: false,
+  webSearchConfigured: false,
+  theme: localStorage.getItem("daotianTheme") || "light"
 };
+
+let activeAbortController = null;
+let pendingStreamBuffer = "";
+let typewriterTimer = null;
+let activeAssistantMessageId = "";
+let streamFinished = false;
+let drainResolve = null;
+let lastAutoScrollAt = 0;
+
+const EMPTY_HINTS = [
+  "开始一段新的对话。",
+  "写下问题，慢慢开始。",
+  "想到什么，就写下来。",
+  "先把问题放在这里。",
+  "继续刚才的话题。",
+  "随便说点什么也可以。",
+  "把想问的交给模型。"
+];
+
+function pickEmptyHint() {
+  return EMPTY_HINTS[Math.floor(Math.random() * EMPTY_HINTS.length)];
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = state.theme;
+  document.body.classList.toggle("theme-dark", state.theme === "dark");
+  const themeButton = $("themeToggle");
+  if (themeButton) {
+    themeButton.textContent = state.theme === "dark" ? "☾" : "☼";
+    themeButton.setAttribute("aria-label", state.theme === "dark" ? "切换到白天模式" : "切换到夜晚模式");
+    themeButton.title = state.theme === "dark" ? "夜晚模式" : "白天模式";
+  }
+}
+
+function makeId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -43,7 +83,9 @@ function saveLocalState() {
       chatModel: state.chatModel,
       conversations: state.conversations,
       activeConversationId: state.activeConversationId,
-      sidebarOpen: state.sidebarOpen
+      sidebarOpen: state.sidebarOpen,
+      webSearchEnabled: state.webSearchEnabled,
+      theme: state.theme
     })
   );
 }
@@ -57,6 +99,8 @@ function loadLocalState() {
     if (typeof saved.sidebarOpen === "boolean" && window.matchMedia("(min-width: 769px)").matches) {
       state.sidebarOpen = saved.sidebarOpen;
     }
+    if (typeof saved.webSearchEnabled === "boolean") state.webSearchEnabled = saved.webSearchEnabled;
+    if (saved.theme === "dark" || saved.theme === "light") state.theme = saved.theme;
   } catch {
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -74,7 +118,8 @@ function createConversation(shouldRender = true) {
     title: "新对话",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    messages: []
+    messages: [],
+    emptyHint: pickEmptyHint()
   };
   state.conversations.unshift(conversation);
   state.activeConversationId = conversation.id;
@@ -94,6 +139,8 @@ async function loadPublicConfig() {
       state.config.chatModel = data.chatModel;
       $("chatModel").value = data.chatModel;
     }
+    state.webSearchConfigured = Boolean(data.webSearchConfigured);
+    updateWebSearchButton();
   } catch {
     $("chatModel").value = state.chatModel;
   }
@@ -117,6 +164,7 @@ function render() {
 }
 
 function renderShell() {
+  applyTheme();
   $("appShell").classList.toggle("sidebar-open", state.sidebarOpen);
   $("appShell").classList.toggle("sidebar-closed", !state.sidebarOpen);
   $("sidebar").classList.toggle("open", state.sidebarOpen);
@@ -144,9 +192,16 @@ function renderHistory() {
     .join("");
 }
 
+function ensureMessageIds(messages) {
+  for (const message of messages) {
+    if (!message.id) message.id = makeId();
+  }
+}
+
 function renderChat() {
   const conversation = activeConversation();
   const messages = conversation?.messages || [];
+  ensureMessageIds(messages);
   const box = $("chatMessages");
 
   if (messages.length === 0) {
@@ -154,30 +209,39 @@ function renderChat() {
       <div class="welcome">
         <div class="welcome-mark" aria-hidden="true"><span></span><span></span><span></span></div>
         <h2>稻田 Ai</h2>
-        <p>把模型和接口藏在身后，只留下安静的对话。</p>
+        <p>${escapeHtml(conversation.emptyHint || pickEmptyHint())}</p>
       </div>
     `;
   } else {
     box.innerHTML = messages
       .map((message) => {
-        const roleLabel = message.role === "user" ? "你" : message.role === "assistant" ? "稻田 Ai" : "系统";
-        const body = message.role === "assistant" ? renderMarkdown(message.content) : escapeHtml(message.content).replace(/\n/g, "<br>");
         const pending = message.pending ? " pending" : "";
+        const streaming = message.streaming ? " streaming" : "";
+        let body = "";
+        if (message.role === "assistant") {
+          if (!message.content && message.pending) body = `<span class="typing-dots"><i></i><i></i><i></i></span>`;
+          else if (message.streaming) body = escapeHtml(message.content || "").replace(/\n/g, "<br>");
+          else body = renderMarkdown(message.content || "");
+        } else {
+          body = escapeHtml(message.content || "").replace(/\n/g, "<br>");
+        }
+        const sources = message.role === "assistant" ? renderSources(message.sources || []) : "";
+        const meta = message.role === "system" ? `<div class="message-meta">系统</div>` : "";
         return `
-          <article class="message ${message.role}${pending}">
-            <div class="message-meta">${roleLabel}</div>
-            <div class="message-content assistant-message">${body}</div>
+          <article class="message ${message.role}${pending}${streaming}" data-message-id="${escapeAttr(message.id)}">
+            ${meta}
+            <div class="message-content ${message.role === "assistant" ? "assistant-message" : ""}">${body}</div>
+            ${sources}
           </article>
         `;
       })
       .join("");
   }
 
-  $("sendChat").disabled = state.isSending || !$("chatInput").value.trim();
-  requestAnimationFrame(() => {
-    box.scrollTop = box.scrollHeight;
-  });
+  updateSendButton();
+  queueAutoScroll(true);
 }
+
 
 function renderAdminPanel() {
   $("chatModel").value = state.chatModel || "";
@@ -292,55 +356,289 @@ function closeProviderModal() {
   $("providerModal").classList.add("hidden");
 }
 
-async function sendChat() {
-  const input = $("chatInput");
-  const text = input.value.trim();
-  if (!text || state.isSending) return;
+function updateStreamingMessageDom(message, final = false) {
+  if (!message?.id) return;
+  const article = document.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
+  if (!article) {
+    renderChat();
+    return;
+  }
+  const content = article.querySelector(".message-content");
+  if (!content) return;
+
+  // Streaming 时只更新文本节点，不反复重建整段 HTML，避免 Safari 抽搐/发白。
+  if (final) {
+    content.innerHTML = renderMarkdown(message.content || "");
+  } else if (message.pending && !message.content) {
+    content.innerHTML = `<span class="typing-dots"><i></i><i></i><i></i></span>`;
+  } else {
+    content.textContent = message.content || "";
+  }
+
+  article.classList.toggle("pending", Boolean(message.pending));
+  article.classList.toggle("streaming", Boolean(message.streaming));
+}
+
+function queueAutoScroll(force = false) {
+  const now = Date.now();
+  if (!force && now - lastAutoScrollAt < 140) return;
+  lastAutoScrollAt = now;
+  requestAnimationFrame(() => {
+    const box = $("chatMessages");
+    if (!box) return;
+    const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
+    if (force || distanceFromBottom < 260) box.scrollTop = box.scrollHeight;
+  });
+}
+
+function takeTypewriterSlice(text) {
+  if (!text) return "";
+  const first = text[0];
+  const isAscii = /^[\x00-\x7F]$/.test(first);
+  const size = isAscii ? 4 : 2;
+  return text.slice(0, Math.min(size, text.length));
+}
+
+function startTypewriter(messageId) {
+  if (typewriterTimer) return;
+  typewriterTimer = setInterval(() => {
+    const conversation = activeConversation();
+    const message = conversation?.messages.find((item) => item.id === messageId);
+    if (!message) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+      return;
+    }
+
+    if (!pendingStreamBuffer) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+      if (streamFinished && drainResolve) {
+        const resolve = drainResolve;
+        drainResolve = null;
+        resolve();
+      }
+      return;
+    }
+
+    const next = takeTypewriterSlice(pendingStreamBuffer);
+    pendingStreamBuffer = pendingStreamBuffer.slice(next.length);
+    message.content = `${message.content || ""}${next}`;
+    message.pending = false;
+    updateStreamingMessageDom(message, false);
+    queueAutoScroll(false);
+  }, 28);
+}
+
+function waitForTypewriterDrain() {
+  if (!pendingStreamBuffer && !typewriterTimer) return Promise.resolve();
+  return new Promise((resolve) => {
+    drainResolve = resolve;
+  });
+}
+
+function stopGeneration() {
+  if (!state.isSending) return;
+  try {
+    activeAbortController?.abort();
+  } catch {}
+  activeAbortController = null;
+  pendingStreamBuffer = "";
+  streamFinished = true;
+  if (typewriterTimer) {
+    clearInterval(typewriterTimer);
+    typewriterTimer = null;
+  }
+  if (drainResolve) {
+    const resolve = drainResolve;
+    drainResolve = null;
+    resolve();
+  }
 
   const conversation = activeConversation();
-  conversation.messages.push({ role: "user", content: text });
-  conversation.updatedAt = new Date().toISOString();
-  if (conversation.title === "新对话") {
-    conversation.title = text.slice(0, 18);
+  const message = conversation?.messages.find((item) => item.id === activeAssistantMessageId);
+  if (message) {
+    message.pending = false;
+    message.streaming = false;
+    if (message.content) message.content = `${message.content}\n\n已停止生成`;
+    else message.content = "已停止生成";
   }
+  state.isSending = false;
+  activeAssistantMessageId = "";
+  saveLocalState();
+  renderChat();
+}
+
+function parseSseBlock(block) {
+  let event = "message";
+  const dataLines = [];
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  }
+  if (!dataLines.length) return null;
+  let data = dataLines.join("\n");
+  try { data = JSON.parse(data); } catch {}
+  return { event, data };
+}
+
+async function sendChat() {
+  if (state.isSending) {
+    stopGeneration();
+    return;
+  }
+
+  const input = $("chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+
+  const conversation = activeConversation();
+  const userMessage = { id: makeId(), role: "user", content: text };
+  const assistantMessage = { id: makeId(), role: "assistant", content: "", pending: true, streaming: true, sources: [] };
+  conversation.messages.push(userMessage, assistantMessage);
+  conversation.updatedAt = new Date().toISOString();
+  if (conversation.title === "新对话") conversation.title = text.slice(0, 18);
 
   input.value = "";
   autoResizeTextarea(input);
   state.isSending = true;
-  conversation.messages.push({ role: "assistant", content: "正在整理回答…", pending: true });
+  activeAssistantMessageId = assistantMessage.id;
+  pendingStreamBuffer = "";
+  streamFinished = false;
   saveLocalState();
   render();
 
+  const messages = conversation.messages
+    .filter((message) => !message.pending && !message.streaming && ["user", "assistant"].includes(message.role))
+    .map(({ role, content }) => ({ role, content }));
+  messages.push({ role: "user", content: text });
+
+  activeAbortController = new AbortController();
+
   try {
-    const messages = conversation.messages
-      .filter((message) => !message.pending && ["user", "assistant"].includes(message.role))
-      .map(({ role, content }) => ({ role, content }));
-    const result = await requestJson("/chat", {
+    const response = await fetch("/chat", {
       method: "POST",
-      body: JSON.stringify({ model: state.chatModel, messages })
+      headers: { "content-type": "application/json" },
+      signal: activeAbortController.signal,
+      body: JSON.stringify({ model: state.chatModel, messages, webSearch: state.webSearchEnabled, stream: true })
     });
-    conversation.messages[conversation.messages.length - 1] = {
-      role: "assistant",
-      content: result.content || "模型返回了空内容"
-    };
+
+    if (!response.ok || !response.body) {
+      let errorMessage = "请求失败";
+      try {
+        const data = await response.json();
+        errorMessage = data.message || data.error || errorMessage;
+      } catch {}
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+      const blocks = sseBuffer.split(/\n\n/);
+      sseBuffer = blocks.pop() || "";
+
+      for (const block of blocks) {
+        const parsed = parseSseBlock(block);
+        if (!parsed) continue;
+        if (parsed.event === "sources") {
+          assistantMessage.sources = Array.isArray(parsed.data.sources) ? parsed.data.sources : [];
+        } else if (parsed.event === "content") {
+          const chunk = parsed.data?.content || "";
+          if (chunk) {
+            assistantMessage.content = `${assistantMessage.content || ""}${chunk}`;
+            assistantMessage.pending = false;
+            updateStreamingMessageDom(assistantMessage, false);
+            queueAutoScroll(false);
+          }
+        } else if (parsed.event === "error") {
+          throw new Error(parsed.data?.message || "发送失败");
+        }
+      }
+    }
+
+    streamFinished = true;
+    assistantMessage.pending = false;
+    assistantMessage.streaming = false;
+    if (!assistantMessage.content) assistantMessage.content = "模型返回了空内容";
     conversation.updatedAt = new Date().toISOString();
+    updateStreamingMessageDom(assistantMessage, true);
     if (state.token) refreshAdminConfig().catch(() => {});
   } catch (error) {
-    conversation.messages[conversation.messages.length - 1] = {
-      role: "system",
-      content: `发送失败：${error.message}`
-    };
+    if (error?.name !== "AbortError") {
+      assistantMessage.role = "system";
+      assistantMessage.content = `发送失败：${error.message}`;
+      assistantMessage.pending = false;
+      assistantMessage.streaming = false;
+      updateStreamingMessageDom(assistantMessage, false);
+    }
   } finally {
+    activeAbortController = null;
+    pendingStreamBuffer = "";
+    streamFinished = true;
+    if (typewriterTimer) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+    }
     state.isSending = false;
+    activeAssistantMessageId = "";
     saveLocalState();
-    render();
+    updateSendButton();
+    renderHistory();
+  }
+}
+
+
+function updateSendButton() {
+  const button = $("sendChat");
+  const input = $("chatInput");
+  if (!button || !input) return;
+  if (state.isSending) {
+    button.disabled = false;
+    button.innerHTML = '<span class="stop-square" aria-hidden="true"></span>';
+    button.classList.add("stop-mode");
+    button.setAttribute("aria-label", "停止生成");
+  } else {
+    button.disabled = !input.value.trim();
+    button.textContent = "➤";
+    button.classList.remove("stop-mode");
+    button.setAttribute("aria-label", "发送消息");
   }
 }
 
 function autoResizeTextarea(textarea) {
   textarea.style.height = "auto";
   textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
-  $("sendChat").disabled = state.isSending || !textarea.value.trim();
+  updateSendButton();
+}
+
+
+
+function updateWebSearchButton() {
+  const button = $("webSearchToggle");
+  if (!button) return;
+  button.classList.toggle("active", state.webSearchEnabled);
+  button.setAttribute("aria-pressed", String(state.webSearchEnabled));
+  const dot = state.webSearchEnabled ? "●" : "○";
+  button.innerHTML = `<span>${dot}</span> 联网搜索`;
+  button.title = state.webSearchConfigured
+    ? "本轮消息可使用联网搜索"
+    : "需要在 Render 环境变量里添加 TAVILY_API_KEY";
+}
+
+function renderSources(sources = []) {
+  const items = sources
+    .filter((source) => source && source.url)
+    .slice(0, 5)
+    .map((source) => `<a href="${escapeAttr(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title || source.url)}</a>`)
+    .join("");
+  if (!items) return "";
+  return `<div class="message-sources"><strong>来源</strong>${items}</div>`;
 }
 
 function showToast(message) {
@@ -451,7 +749,21 @@ $("providerModal").addEventListener("click", (event) => {
   if (event.target.id === "providerModal") closeProviderModal();
 });
 
-$("themeToggle").addEventListener("click", () => showToast("主题已保持为稻田暖色"));
+$("themeToggle").addEventListener("click", () => {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("daotianTheme", state.theme);
+  saveLocalState();
+  applyTheme();
+});
+
+$("webSearchToggle").addEventListener("click", () => {
+  state.webSearchEnabled = !state.webSearchEnabled;
+  saveLocalState();
+  updateWebSearchButton();
+  if (state.webSearchEnabled && !state.webSearchConfigured) {
+    showToast("联网搜索未配置，请先在 Render 添加 TAVILY_API_KEY");
+  }
+});
 
 $("composerForm").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -462,7 +774,7 @@ $("chatInput").addEventListener("input", (event) => autoResizeTextarea(event.tar
 $("chatInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
-    sendChat();
+    if (!state.isSending) sendChat();
   }
 });
 
@@ -602,5 +914,6 @@ window.addEventListener("resize", () => renderShell());
 loadLocalState();
 loadPublicConfig().then(() => {
   $("chatModel").value = state.chatModel;
+  updateWebSearchButton();
   render();
 });

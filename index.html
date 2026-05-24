@@ -53,7 +53,6 @@
             <button id="sidebarToggle" class="icon-button" type="button" aria-label="展开或收起侧边栏">☰</button>
             <div>
               <div id="conversationTitle" class="conversation-title">新对话</div>
-              <div class="conversation-subtitle">安静地使用各种模型</div>
             </div>
           </div>
           <div class="header-actions">
@@ -69,6 +68,9 @@
         <section id="chatMessages" class="messages-container" aria-live="polite"></section>
 
         <form id="composerForm" class="composer-wrapper">
+          <div class="composer-tools">
+            <button id="webSearchToggle" class="web-search-toggle" type="button" aria-pressed="false"><span>○</span> 联网搜索</button>
+          </div>
           <div class="composer">
             <textarea id="chatInput" rows="1" placeholder="输入消息…（Enter 发送，Shift + Enter 换行）"></textarea>
             <button id="sendChat" class="send-button" type="submit" aria-label="发送消息">➤</button>

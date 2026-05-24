@@ -15,6 +15,7 @@ const HOST = process.env.HOST || (process.env.RENDER || process.env.RAILWAY_ENVI
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "change-me-admin-token";
 const PUBLIC_CHAT_ENABLED = process.env.PUBLIC_CHAT_ENABLED !== "false";
 const PUBLIC_CHAT_DAILY_LIMIT = Number(process.env.PUBLIC_CHAT_DAILY_LIMIT || 100);
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const HOP_BY_HOP = new Set([
@@ -37,6 +38,84 @@ function sha256(value) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+
+function sendSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function openSse(res) {
+  res.writeHead(200, {
+    ...corsHeaders(),
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+    "x-accel-buffering": "no"
+  });
+}
+
+async function streamOpenAiResponse({ req, res, upstream, model, messages, body, sources }) {
+  const controller = new AbortController();
+  req.on("close", () => controller.abort());
+
+  const requestPath = upstream.requestPath || "/v1/chat/completions";
+  const response = await fetch(buildUpstreamUrl(upstream, requestPath), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${upstream.apiKey}`
+    },
+    signal: controller.signal,
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: typeof body.temperature === "number" ? body.temperature : 0.7,
+      stream: true
+    })
+  });
+
+  if (!response.ok) {
+    const detailText = await response.text();
+    let detail = detailText;
+    try { detail = JSON.parse(detailText); } catch {}
+    sendSse(res, "error", { message: "模型请求失败", status: response.status, detail });
+    sendSse(res, "done", { ok: false });
+    res.end();
+    return { status: response.status, usage: null };
+  }
+
+  sendSse(res, "sources", { sources });
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+
+      let data = null;
+      try { data = JSON.parse(payload); } catch { continue; }
+      const content =
+        data?.choices?.[0]?.delta?.content ||
+        data?.choices?.[0]?.message?.content ||
+        data?.choices?.[0]?.text ||
+        "";
+      if (content) sendSse(res, "content", { content });
+    }
+  }
+
+  sendSse(res, "done", { ok: true });
+  res.end();
+  return { status: response.status, usage: null };
 }
 
 function sendJson(res, status, data) {
@@ -147,6 +226,94 @@ function selectUpstream(bodyJson) {
   );
 }
 
+
+function shouldUseWebSearch(message, manualEnabled = false) {
+  if (manualEnabled) return true;
+  const text = String(message || "");
+  const keywords = [
+    "联网",
+    "搜索",
+    "查一下",
+    "帮我查",
+    "最新",
+    "今天",
+    "现在",
+    "实时",
+    "价格",
+    "官网",
+    "新闻",
+    "天气",
+    "汇率",
+    "发布时间",
+    "版本",
+    "政策",
+    "公告"
+  ];
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function formatSearchContext(query, sources) {
+  if (!sources.length) {
+    return `你现在可以参考联网搜索结果回答用户。\n\n用户问题：${query}\n\n搜索结果为空。请明确说明没有搜到可靠结果，不要编造来源。`;
+  }
+
+  const sourceText = sources
+    .map((item, index) => {
+      return `${index + 1}. 标题：${item.title || "无标题"}\n链接：${item.url || ""}\n摘要：${item.content || ""}`;
+    })
+    .join("\n\n");
+
+  return `你现在可以参考以下联网搜索结果回答用户。请优先基于搜索结果回答；如果搜索结果不足，请明确说明“不确定”。回答中尽量标注来源链接，不要编造来源。\n\n搜索结果：\n${sourceText}\n\n用户问题：\n${query}`;
+}
+
+async function searchWeb(query) {
+  if (!TAVILY_API_KEY) {
+    const error = new Error("联网搜索未配置，请先在 Render 环境变量中添加 TAVILY_API_KEY");
+    error.code = "web_search_not_configured";
+    throw error;
+  }
+
+  const response = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${TAVILY_API_KEY}`
+    },
+    body: JSON.stringify({
+      query,
+      search_depth: "basic",
+      max_results: 5,
+      include_answer: false,
+      include_raw_content: false
+    })
+  });
+
+  const text = await response.text();
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { text };
+  }
+
+  if (!response.ok) {
+    console.error("Tavily search failed", response.status, data);
+    const error = new Error("搜索失败，请稍后再试");
+    error.code = "web_search_failed";
+    error.status = response.status;
+    throw error;
+  }
+
+  return (Array.isArray(data.results) ? data.results : [])
+    .slice(0, 5)
+    .map((item) => ({
+      title: String(item.title || "无标题"),
+      url: String(item.url || ""),
+      content: String(item.content || item.snippet || "").slice(0, 800)
+    }))
+    .filter((item) => item.title || item.url || item.content);
+}
+
 function buildUpstreamUrl(upstream, requestUrl) {
   const base = upstream.baseUrl.replace(/\/+$/, "");
   return `${base}${requestUrl}`;
@@ -189,28 +356,70 @@ async function handleChat(req, res, sourceName) {
   const started = Date.now();
   const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
   const model = String(body.model || config.chatModel || "").trim();
-  const messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
+  const stream = Boolean(body.stream);
+  let messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
+  let sources = [];
+  let upstream = null;
+  let status = 502;
+  let usage = null;
+
+  function fail(statusCode, payload) {
+    if (stream) {
+      openSse(res);
+      sendSse(res, "error", payload);
+      sendSse(res, "done", { ok: false });
+      res.end();
+    } else {
+      sendJson(res, statusCode, payload);
+    }
+  }
 
   if (!model) {
-    sendJson(res, 400, { error: "model_required", message: "请先填写模型名称" });
+    fail(400, { error: "model_required", message: "请先填写模型名称" });
     return;
   }
 
   if (messages.length === 0) {
-    sendJson(res, 400, { error: "message_required", message: "请先输入要发送的话" });
+    fail(400, { error: "message_required", message: "请先输入要发送的话" });
     return;
   }
 
-  const upstream = selectUpstream({ model });
+  const lastUserMessage = [...messages].reverse().find((message) => message?.role === "user")?.content || "";
+  const wantsWebSearch = shouldUseWebSearch(lastUserMessage, Boolean(body.webSearch));
+
+  if (wantsWebSearch) {
+    try {
+      sources = await searchWeb(lastUserMessage);
+      messages = [{ role: "system", content: formatSearchContext(lastUserMessage, sources) }, ...messages];
+    } catch (error) {
+      // 搜索失败不要让聊天整体崩掉，降级为普通模型回答。
+      messages = [
+        {
+          role: "system",
+          content: `本轮尝试联网搜索失败：${error.message}。请不要声称已经完成实时搜索；可以基于已有知识回答，并明确说明实时信息未能获取。`
+        },
+        ...messages
+      ];
+      sources = [];
+      console.error("Web search degraded", error.code || "web_search_failed", error.message);
+    }
+  }
+
+  upstream = selectUpstream({ model });
   if (!upstream) {
-    sendJson(res, 503, { error: "no_enabled_upstream", message: "请先启用一个上游通道" });
+    fail(503, { error: "no_enabled_upstream", message: "请先启用一个上游通道" });
     return;
   }
-
-  let status = 502;
-  let usage = null;
 
   try {
+    if (stream) {
+      openSse(res);
+      const result = await streamOpenAiResponse({ req, res, upstream, model, messages, body, sources });
+      status = result.status;
+      usage = result.usage;
+      return;
+    }
+
     const requestPath = upstream.requestPath || "/v1/chat/completions";
     const response = await fetch(buildUpstreamUrl(upstream, requestPath), {
       method: "POST",
@@ -246,33 +455,49 @@ async function handleChat(req, res, sourceName) {
       return;
     }
 
-    const content =
-      data?.choices?.[0]?.message?.content ||
-      data?.choices?.[0]?.text ||
-      data?.output_text ||
-      "";
+    const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.output_text || "";
 
     sendJson(res, 200, {
       upstream: upstream.name,
       model,
       content,
+      sources,
       raw: data
     });
   } catch (error) {
+    status = 499;
+    if (error?.name === "AbortError") {
+      try {
+        if (!res.writableEnded) {
+          sendSse(res, "done", { ok: false, aborted: true });
+          res.end();
+        }
+      } catch {}
+      return;
+    }
     status = 502;
-    sendJson(res, 502, { error: "upstream_error", message: error.message });
+    if (stream) {
+      if (!res.headersSent) openSse(res);
+      sendSse(res, "error", { error: "upstream_error", message: error.message });
+      sendSse(res, "done", { ok: false });
+      res.end();
+    } else {
+      sendJson(res, 502, { error: "upstream_error", message: error.message });
+    }
   } finally {
-    recordLog({
-      apiKeyId: sourceName,
-      apiKeyName: sourceName === "public-chat" ? "公开对话" : "后台测试对话",
-      upstreamId: upstream.id,
-      model,
-      method: "POST",
-      path: upstream.requestPath || "/v1/chat/completions",
-      status,
-      latencyMs: Date.now() - started,
-      usage
-    });
+    if (upstream) {
+      recordLog({
+        apiKeyId: sourceName,
+        apiKeyName: sourceName === "public-chat" ? "公开对话" : "后台测试对话",
+        upstreamId: upstream.id,
+        model,
+        method: "POST",
+        path: upstream.requestPath || "/v1/chat/completions",
+        status,
+        latencyMs: Date.now() - started,
+        usage
+      });
+    }
   }
 }
 
@@ -482,6 +707,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/public/config") {
       return sendJson(res, 200, {
         chatModel: config.chatModel || "deepseek-chat",
+        webSearchConfigured: Boolean(TAVILY_API_KEY),
         providers: config.upstreams
           .filter((item) => item.enabled)
           .map((item) => ({ name: item.name, modelPrefixes: item.modelPrefixes || [] }))

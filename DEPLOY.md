@@ -35,3 +35,13 @@ Authorization: Bearer relay_xxxxxxxxxxxxxxxxx
 ## 注意
 
 公开对话会消耗你的上游 API 余额。建议上线后先把 `PUBLIC_CHAT_DAILY_LIMIT` 设置小一点，比如 `30` 或 `100`。
+
+## 联网搜索
+
+联网搜索使用 Tavily Search API。部署到 Render 后，在服务的 Environment 里添加：
+
+```txt
+TAVILY_API_KEY=你的 Tavily API Key
+```
+
+保存时选择 `Save, rebuild, and deploy`。如果没有配置这个变量，前端的“联网搜索”开关会提示未配置，普通聊天不受影响。
