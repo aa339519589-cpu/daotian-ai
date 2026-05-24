@@ -36,6 +36,15 @@
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
 
+    const emptyPrompts = [
+      '今天想聊什么',
+      '从哪一句开始',
+      '现在想说点什么',
+      '今天先聊哪件事',
+      '随便开个头也行',
+      '想到什么就发什么'
+    ];
+
     function safeGet(key){ try{return localStorage.getItem(key);}catch(e){return null;} }
     function readJSON(key, fallback){ try{ const v = safeGet(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } }
     function saveJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
@@ -123,10 +132,18 @@
       const list = $('#chatList');
       list.innerHTML = chats.map(c=>`<div class="chat-item ${c.id===activeId?'active':''}" data-id="${escapeHTML(c.id)}"><span class="chat-dot"></span><span class="chat-title">${escapeHTML(c.title)}</span><span class="chat-time">${nowTime()}</span><button class="delete-chat" data-del="${escapeHTML(c.id)}" title="删除">×</button></div>`).join('');
     }
+    function pickEmptyPrompt(){
+      const seed = chats.length + (activeId ? activeId.length : 0) + new Date().getDate();
+      return emptyPrompts[seed % emptyPrompts.length];
+    }
+
     function renderMessages(){
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
       const msgs = Array.isArray(c.messages) ? c.messages : [];
-      if(msgs.length===0){ box.innerHTML = `<div class="empty"><svg class="empty-logo" viewBox="0 0 120 120" aria-hidden="true"><path d="M38 82 C52 72 54 54 66 38 C62 52 78 55 83 42 C79 59 64 64 61 82" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`; return; }
+      if(msgs.length===0){
+        box.innerHTML = `<div class="empty"><div class="empty-center"><svg class="empty-logo empty-logo-gamma" viewBox="0 0 120 120" aria-hidden="true"><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
+        return;
+      }
       box.innerHTML = msgs.map(m=>`<div class="message ${m.role==='user'?'user':'assistant'}"><div class="bubble">${escapeHTML(m.content)}</div></div>`).join('');
       box.scrollTop = box.scrollHeight;
     }
