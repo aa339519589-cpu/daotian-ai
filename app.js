@@ -164,17 +164,99 @@
     }
 
     function buildOpenAIURL(){ const base=(settings.baseUrl||'').replace(/\/$/,''); const path=settings.path||'/v1/chat/completions'; if(!base) return '/v1/chat/completions'; if(base.endsWith('/v1') && path.startsWith('/v1/')) return base + path.slice(3); return base + (path.startsWith('/') ? path : '/' + path); }
-    async function callModel(messages){
+    function extractDelta(data){
+      const choice = data && data.choices && data.choices[0];
+      if(choice && choice.delta && typeof choice.delta.content === 'string') return choice.delta.content;
+      if(choice && choice.message && typeof choice.message.content === 'string') return choice.message.content;
+      if(data && Array.isArray(data.content)){
+        return data.content.map(function(part){ return part && part.text ? part.text : ''; }).join('');
+      }
+      return '';
+    }
+
+    function extractFullContent(data){
+      return data.choices?.[0]?.message?.content ||
+        data.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') ||
+        data.content?.[0]?.text ||
+        '';
+    }
+
+    async function callModel(messages, onDelta){
       if((settings.providerType||'openai') !== 'openai') throw new Error('Gemini / Anthropic 已保存，但还需要后端转发适配。当前先用 OpenAI 兼容接口。');
       const headers={'Content-Type':'application/json'}; if(settings.apiKey) headers.Authorization='Bearer '+settings.apiKey;
-      const body={model:settings.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:false}; if(searchOn) body.web_search=true;
-      const res=await fetch(buildOpenAIURL(),{method:'POST',headers,body:JSON.stringify(body)}); const txt=await res.text(); if(!res.ok) throw new Error(txt.slice(0,400)||('HTTP '+res.status));
-      try{ const data=JSON.parse(txt); return data.choices?.[0]?.message?.content || data.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || data.content?.[0]?.text || JSON.stringify(data).slice(0,1000); }catch(e){ return txt; }
+      const body={model:settings.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true}; if(searchOn) body.web_search=true;
+      const res=await fetch(buildOpenAIURL(),{method:'POST',headers,body:JSON.stringify(body)});
+      if(!res.ok){ const txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
+
+      if(!res.body){
+        const txt=await res.text();
+        try{ const data=JSON.parse(txt); return extractFullContent(data) || JSON.stringify(data).slice(0,1000); }catch(e){ return txt; }
+      }
+
+      const reader=res.body.getReader();
+      const decoder=new TextDecoder();
+      let buffer='';
+      let raw='';
+      let full='';
+
+      function consumeLine(line){
+        const trimmed=line.trim();
+        if(!trimmed) return false;
+        if(!trimmed.startsWith('data:')) return false;
+        const payload=trimmed.replace(/^data:\s*/, '');
+        if(!payload || payload==='[DONE]') return payload==='[DONE]';
+        try{
+          const data=JSON.parse(payload);
+          const delta=extractDelta(data);
+          if(delta){
+            full += delta;
+            if(onDelta) onDelta(delta, full);
+          }
+        }catch(_e){}
+        return false;
+      }
+
+      while(true){
+        const read=await reader.read();
+        if(read.done) break;
+        const chunk=decoder.decode(read.value,{stream:true});
+        raw += chunk;
+        buffer += chunk;
+        let index;
+        while((index=buffer.indexOf('\n'))>=0){
+          const line=buffer.slice(0,index);
+          buffer=buffer.slice(index+1);
+          if(consumeLine(line)) return full;
+        }
+      }
+      buffer += decoder.decode();
+      if(buffer.trim()) consumeLine(buffer);
+      if(full) return full;
+
+      try{
+        const data=JSON.parse(raw);
+        return extractFullContent(data) || JSON.stringify(data).slice(0,1000);
+      }catch(_e){
+        return raw.replace(/^data:\s*/gm,'').replace(/\[DONE\]/g,'').trim();
+      }
     }
     async function sendMessage(){
       if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
-      c.messages.push({role:'user',content:text}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true; renderAll();
-      try{ c.messages.push({role:'assistant',content:await callModel(c.messages) || '没有返回内容'}); }catch(err){ c.messages.push({role:'assistant',content:'请求失败：'+(err&&err.message?err.message:String(err))}); }
+      c.messages.push({role:'user',content:text}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
+      const requestMessages=c.messages.map(m=>({role:m.role,content:m.content}));
+      const assistant={role:'assistant',content:''};
+      c.messages.push(assistant);
+      renderAll();
+      try{
+        const finalText=await callModel(requestMessages, function(delta){
+          assistant.content += delta;
+          c.updatedAt=Date.now();
+          renderMessages();
+        });
+        if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
+      }catch(err){
+        assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
+      }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
     }
 
