@@ -1,9 +1,12 @@
 {
-  "name": "daotian-ai",
-  "version": "0.1.0",
+  "name": "daotian-ai-final-upload-memory-settings",
+  "version": "3.6.0",
   "private": true,
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
