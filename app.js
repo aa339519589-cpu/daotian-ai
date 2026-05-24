@@ -192,7 +192,7 @@ html[data-theme="light"] .sidebar{background:rgba(250,247,240,.82)}
 .thinking{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:15px}
 .thinking-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:daotianPulse 1.15s ease-in-out infinite}
 @keyframes daotianPulse{0%,100%{transform:scale(.8);opacity:.35}50%{transform:scale(1.2);opacity:1}}
-.rendered p{margin:.4em 0 1em}.rendered pre{overflow:auto;background:rgba(255,255,255,.06);border:1px solid var(--line);padding:12px;border-radius:14px}.rendered code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.rendered p{margin:.4em 0 1em}.rendered pre{overflow:auto;background:rgba(255,255,255,.06);border:1px solid var(--line);padding:12px;border-radius:14px}.rendered code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.rendered hr.daotian-hr{border:0;border-top:1px solid var(--line);margin:22px 0;height:0}.rendered .math-display{overflow-x:auto;overflow-y:hidden}
 .composer-wrap{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);width:min(900px,calc(100% - 48px));z-index:30}
 .composer-tools{display:flex;gap:10px;margin-bottom:10px;position:relative}
 .pill{height:38px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);padding:0 16px;color:var(--muted)}
@@ -273,21 +273,40 @@ textarea{flex:1;min-height:42px;max-height:160px;background:transparent;border:0
   window.addEventListener('unhandledrejection', e => emergency((e.reason && e.reason.message) || e.reason || 'promise error'));
 
   function markdownLite(text){
-    let s = escapeHTML(text);
+    let s = escapeHTML(text || '');
     const blocks = [];
-    s = s.replace(/```(\w+)?\n([\s\S]*?)```/g, (_,lang,code)=>{
-      const i=blocks.length;
-      blocks.push(`<pre><code>${code}</code></pre>`);
+    const stash = html => {
+      const i = blocks.length;
+      blocks.push(html);
       return `\n@@BLOCK${i}@@\n`;
-    });
+    };
+
+    // 代码块先保护，避免里面的 --- / $ 被当成 Markdown 或数学处理
+    s = s.replace(/```(\w+)?\n([\s\S]*?)```/g, (_,lang,code)=>stash(`<pre><code>${code}</code></pre>`));
+
+    // 独立一行的 3 个及以上 - / * / _ 渲染成真正等宽横线；两个短杠不处理
+    s = s.replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, () => stash('<hr class="daotian-hr">'));
+
+    // 数学块保护，交给 MathJax 渲染
+    s = s.replace(/\$\$([\s\S]*?)\$\$/g, (_,math)=>stash(`<div class="math-display">$$${math}$$</div>`));
+    s = s.replace(/\\\[([\s\S]*?)\\\]/g, (_,math)=>stash(`<div class="math-display">\\[${math}\\]</div>`));
+    s = s.replace(/\\\((.*?)\\\)/g, (_,math)=>stash(`\\(${math}\\)`));
+
     s = s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
     s = s.replace(/`([^`]+)`/g,'<code>$1</code>');
-    s = s.split(/\n{2,}/).map(p=>`<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
+
+    s = s.split(/\n{2,}/).map(p=>{
+      const t = p.trim();
+      if(!t) return '';
+      if(/^@@BLOCK\d+@@$/.test(t)) return t;
+      return `<p>${p.replace(/\n/g,'<br>')}</p>`;
+    }).join('');
     s = s.replace(/@@BLOCK(\d+)@@/g, (_,i)=>blocks[Number(i)] || '');
     return `<div class="rendered">${s}</div>`;
   }
   function runMath(){
     if(window.MathJax && window.MathJax.typesetPromise){
+      window.MathJax.typesetClear && window.MathJax.typesetClear();
       window.MathJax.typesetPromise().catch(()=>{});
     }
   }
