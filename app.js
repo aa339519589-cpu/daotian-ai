@@ -172,7 +172,55 @@
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
     $('#providerType').addEventListener('change', e=>{ const v=e.target.value; if(v==='openai'){ $('#path').value='/v1/chat/completions'; if(!$('#baseUrl').value) $('#baseUrl').value='https://api.deepseek.com'; } if(v==='gemini'){ $('#providerName').value=$('#providerName').value||'Gemini'; $('#baseUrl').value=$('#baseUrl').value||'https://generativelanguage.googleapis.com'; $('#model').value=$('#model').value||'gemini-1.5-flash'; } if(v==='anthropic'){ $('#providerName').value=$('#providerName').value||'Anthropic'; $('#baseUrl').value=$('#baseUrl').value||'https://api.anthropic.com'; $('#model').value=$('#model').value||'claude-3-5-sonnet-latest'; } });
 
+
+
+    function setupMobileViewport(){
+      try{
+        const root = document.documentElement;
+        const input = $('#input');
+        if(!root || !input) return;
+        let t = null;
+        function isMobile(){ return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 760; }
+        function update(){
+          try{
+            if(!isMobile()){
+              document.body.classList.remove('keyboard-open');
+              root.style.removeProperty('--vvh');
+              root.style.removeProperty('--vvo');
+              return;
+            }
+            const vv = window.visualViewport;
+            const h = vv && vv.height ? vv.height : window.innerHeight;
+            const top = vv && typeof vv.offsetTop === 'number' ? vv.offsetTop : 0;
+            root.style.setProperty('--vvh', Math.max(320, Math.round(h)) + 'px');
+            root.style.setProperty('--vvo', Math.round(top) + 'px');
+            const focused = document.activeElement === input;
+            document.body.classList.toggle('keyboard-open', !!focused);
+            if(focused){
+              sidebarOpen = false;
+              renderSidebar();
+              setTimeout(function(){
+                const box = $('#messages');
+                if(box) box.scrollTop = box.scrollHeight;
+              }, 60);
+            }
+          }catch(_e){}
+        }
+        function schedule(){ clearTimeout(t); t = setTimeout(update, 40); }
+        input.addEventListener('focus', function(){ setTimeout(update, 60); setTimeout(update, 220); });
+        input.addEventListener('blur', function(){ setTimeout(update, 120); });
+        window.addEventListener('resize', schedule, {passive:true});
+        window.addEventListener('orientationchange', function(){ setTimeout(update, 260); }, {passive:true});
+        if(window.visualViewport){
+          window.visualViewport.addEventListener('resize', schedule, {passive:true});
+          window.visualViewport.addEventListener('scroll', schedule, {passive:true});
+        }
+        update();
+      }catch(_err){}
+    }
+
     renderAll();
+    setupMobileViewport();
   }catch(err){
     emergency(err && err.stack ? err.stack : err);
   }
