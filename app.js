@@ -1,5 +1,6 @@
 (function(){
   'use strict';
+  window.__DAOTIAN_THINKING_VERSION__ = 'thinking-v3-checked';
 
   function emergency(message){
     var app = document.getElementById('app');
@@ -125,6 +126,21 @@
     function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
     function escapeHTML(s){ return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 
+    function ensureThinkingStyle(){
+      if(document.getElementById('daotianThinkingStyle')) return;
+      const style=document.createElement('style');
+      style.id='daotianThinkingStyle';
+      style.textContent = `
+        .daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:15px;color:var(--muted,currentColor);opacity:.72;background:transparent;border:0;box-shadow:none}
+        .daotian-thinking-mark{width:18px;height:18px;display:inline-grid;place-items:center;font-size:17px;line-height:1;transform-origin:50% 50%;animation:daotianThinkingSpin 1.25s cubic-bezier(.42,0,.18,1) infinite, daotianThinkingPulse 1.25s ease-in-out infinite}
+        .daotian-thinking-text{font-size:14px;letter-spacing:.02em;animation:daotianThinkingText 1.45s ease-in-out infinite}
+        @keyframes daotianThinkingSpin{0%{transform:rotate(0deg) scale(.94)}55%{transform:rotate(260deg) scale(1.04)}100%{transform:rotate(360deg) scale(.94)}}
+        @keyframes daotianThinkingPulse{0%,100%{opacity:.38}50%{opacity:.95}}
+        @keyframes daotianThinkingText{0%,100%{opacity:.52}50%{opacity:.86}}
+      `;
+      document.head.appendChild(style);
+    }
+
     function renderSidebar(){
       const side = $('#sidebar'); if(!side) return;
       side.classList.toggle('closed', !sidebarOpen);
@@ -151,6 +167,10 @@
         }
         if(m.role === 'error'){
           return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:12px 14px;border-radius:14px;line-height:1.65;white-space:pre-wrap;font-size:14px;color:#c96f66;background:rgba(196,80,70,.10);border:1px solid rgba(196,80,70,.22)">${content}</div></div>`;
+        }
+        if(m.thinking && !m.content){
+          ensureThinkingStyle();
+          return `<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>`;
         }
         return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:2px 2px;line-height:1.75;white-space:pre-wrap;font-size:15px;color:var(--text);background:transparent;border:0;box-shadow:none">${content}</div></div>`;
       }).join('');
@@ -253,17 +273,20 @@
       if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
       c.messages.push({role:'user',content:text}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
       const requestMessages=c.messages.map(m=>({role:m.role,content:m.content}));
-      const assistant={role:'assistant',content:''};
+      const assistant={role:'assistant',content:'',thinking:true};
       c.messages.push(assistant);
       renderAll();
       try{
         const finalText=await callModel(requestMessages, function(delta){
+          if(assistant.thinking) assistant.thinking=false;
           assistant.content += delta;
           c.updatedAt=Date.now();
           renderMessages();
         });
+        assistant.thinking=false;
         if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
       }catch(err){
+        assistant.thinking=false;
         assistant.role='error';
         assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
       }
