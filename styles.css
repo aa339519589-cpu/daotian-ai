@@ -65,52 +65,45 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
 .send{width:46px;height:46px;border-radius:50%;background:var(--accent);color:white;font-size:20px;display:grid;place-items:center}.send:disabled{opacity:.45;cursor:not-allowed}
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.22);display:none;align-items:center;justify-content:center;z-index:20;padding:22px}.modal-backdrop.show{display:flex}.modal{width:min(760px,100%);max-height:86vh;overflow:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}.modal-head{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);font-weight:650}.modal-body{padding:22px;display:grid;gap:14px}.field{display:grid;gap:7px}.field label{font-size:13px;color:var(--muted)}.field input,.field select{height:46px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:0 14px;outline:0}[data-theme="dark"] .field input,[data-theme="dark"] .field select{background:rgba(0,0,0,.16)}.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.hint{font-size:12px;color:var(--muted);line-height:1.6}.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}.btn{height:42px;border-radius:14px;padding:0 18px;background:var(--panel);border:1px solid var(--line)}.btn.primary{background:var(--accent);border-color:var(--accent);color:white}.danger{color:#b84a42}.status{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(30,28,24,.86);color:white;padding:10px 14px;border-radius:999px;font-size:13px;display:none;z-index:30}.status.show{display:block}
 
-@media(max-width:760px){
+@media(max-width:900px){
   :root{
     --sidebar:min(82vw,340px);
-    --vvh:100dvh;
+    --app-height:100dvh;
   }
 
   html,body,#app{
     width:100%;
-    height:var(--vvh,100dvh) !important;
-    min-height:var(--vvh,100dvh) !important;
+    height:var(--app-height,100dvh);
+    min-height:var(--app-height,100dvh);
     margin:0;
-    overflow:hidden !important;
+    overflow:hidden;
     overscroll-behavior:none;
-    touch-action:manipulation;
   }
 
   body{
     position:fixed;
     inset:0;
     width:100vw;
-    height:var(--vvh,100dvh) !important;
     background:var(--bg);
+    touch-action:manipulation;
   }
 
   .app-shell{
-    position:fixed;
-    left:0;
-    top:var(--vvo,0px);
     width:100vw;
-    height:var(--vvh,100dvh) !important;
-    min-height:var(--vvh,100dvh) !important;
+    height:var(--app-height,100dvh);
+    min-height:var(--app-height,100dvh);
     display:block;
     overflow:hidden;
   }
 
   .main{
-    position:fixed;
-    left:0;
-    right:0;
-    top:var(--vvo,0px);
     width:100vw;
-    height:var(--vvh,100dvh) !important;
-    min-height:var(--vvh,100dvh) !important;
-    overflow:hidden;
+    height:var(--app-height,100dvh);
+    min-height:0;
     display:flex;
     flex-direction:column;
+    overflow:hidden;
+    position:relative;
   }
 
   .floating-menu{
@@ -137,19 +130,19 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
   [data-theme="dark"] .top-actions .icon-btn{background:rgba(40,42,45,.88)}
 
   .messages{
-    flex:1;
+    flex:1 1 auto;
     width:100%;
-    height:var(--vvh,100dvh) !important;
     min-height:0;
-    overflow:auto;
+    overflow-y:auto;
     -webkit-overflow-scrolling:touch;
-    padding:calc(78px + env(safe-area-inset-top)) 18px calc(140px + env(safe-area-inset-bottom));
-    scroll-padding-bottom:calc(140px + env(safe-area-inset-bottom));
+    padding:calc(78px + env(safe-area-inset-top)) 18px 14px;
+    scroll-padding-bottom:24px;
   }
 
   .empty{
-    min-height:calc(var(--vvh,100dvh) - 220px);
-    padding-bottom:88px;
+    height:100%;
+    min-height:0;
+    padding:0 0 72px;
     align-items:center;
   }
   .empty h1{font-size:24px}
@@ -157,15 +150,17 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
   .bubble{max-width:92%;font-size:15px;border-radius:18px}
 
   .composer-wrap{
-    position:fixed !important;
-    left:0;
-    right:0;
-    bottom:0;
+    position:relative;
+    flex:0 0 auto;
+    left:auto;
+    right:auto;
+    bottom:auto;
     z-index:16;
+    width:100%;
     padding:10px 14px calc(10px + env(safe-area-inset-bottom));
     background:linear-gradient(to top,var(--bg) 78%,rgba(0,0,0,0));
-    transform:translateZ(0);
-    will-change:transform;
+    transform:none;
+    will-change:auto;
   }
 
   .search-toggle{max-width:none;margin:0 0 8px}
@@ -200,8 +195,8 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
   }
 
   body.keyboard-open .messages{
-    padding:12px 18px 102px;
-    scroll-padding-bottom:102px;
+    padding:10px 18px 8px;
+    scroll-padding-bottom:16px;
   }
 
   body.keyboard-open .search-toggle{
@@ -233,12 +228,12 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
     position:fixed;
     z-index:26;
     left:0;
-    top:var(--vvo,0px);
+    top:0;
     bottom:auto;
     width:var(--sidebar);
     min-width:0;
     max-width:340px;
-    height:var(--vvh,100dvh) !important;
+    height:var(--app-height,100dvh);
     opacity:1;
     transform:translateX(0);
     border-right:1px solid var(--line);
@@ -330,112 +325,4 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
   .empty-center{gap:12px;transform:translateY(-4px)}
   .empty-logo-gamma{width:58px;height:58px;color:rgba(196,142,92,.68);opacity:.88}
   .empty-prompt{font-size:14px}
-}
-
-
-/* V3.2.11 mobile natural flex keyboard: no fixed bottom tricks, input sits on keyboard */
-@media (max-width:900px){
-  :root{
-    --app-h:100dvh;
-  }
-
-  html,body,#app{
-    width:100%;
-    height:var(--app-h)!important;
-    min-height:var(--app-h)!important;
-    margin:0;
-    overflow:hidden!important;
-    overscroll-behavior:none;
-  }
-
-  body{
-    position:static!important;
-    width:100vw;
-    min-height:var(--app-h)!important;
-    touch-action:manipulation;
-  }
-
-  .app-shell{
-    position:fixed!important;
-    left:0!important;
-    right:0!important;
-    top:0!important;
-    bottom:auto!important;
-    width:100vw!important;
-    height:var(--app-h)!important;
-    min-height:var(--app-h)!important;
-    display:flex!important;
-    overflow:hidden!important;
-  }
-
-  .main{
-    position:relative!important;
-    width:100vw!important;
-    height:var(--app-h)!important;
-    min-height:0!important;
-    display:flex!important;
-    flex-direction:column!important;
-    overflow:hidden!important;
-  }
-
-  .messages{
-    position:relative!important;
-    left:auto!important;
-    right:auto!important;
-    top:auto!important;
-    bottom:auto!important;
-    flex:1 1 auto!important;
-    width:100%!important;
-    height:auto!important;
-    min-height:0!important;
-    overflow-y:auto!important;
-    -webkit-overflow-scrolling:touch;
-    padding:calc(78px + env(safe-area-inset-top)) 18px 12px!important;
-    scroll-padding-bottom:20px!important;
-  }
-
-  .composer-wrap{
-    position:relative!important;
-    left:auto!important;
-    right:auto!important;
-    top:auto!important;
-    bottom:auto!important;
-    flex:0 0 auto!important;
-    width:100%!important;
-    z-index:30!important;
-    transform:none!important;
-    will-change:auto!important;
-    padding:10px 14px calc(10px + env(safe-area-inset-bottom))!important;
-    background:linear-gradient(to top,var(--bg) 78%,rgba(0,0,0,0));
-  }
-
-  body.keyboard-open .messages{
-    padding-top:10px!important;
-    padding-bottom:8px!important;
-  }
-
-  body.keyboard-open .composer-wrap{
-    padding:8px 14px calc(8px + env(safe-area-inset-bottom))!important;
-    background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0));
-  }
-
-  body.keyboard-open .empty{
-    display:none!important;
-  }
-
-  body.keyboard-open .floating-menu,
-  body.keyboard-open .top-actions{
-    opacity:0;
-    pointer-events:none;
-  }
-
-  body.keyboard-open .sidebar:not(.closed){
-    transform:translateX(-105%)!important;
-    opacity:0!important;
-    pointer-events:none!important;
-  }
-
-  body.keyboard-open .search-toggle{
-    display:none!important;
-  }
 }
