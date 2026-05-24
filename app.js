@@ -1,545 +1,179 @@
-const STORAGE_KEY = "daotian_ai_v3_1_state";
+(function(){
+  'use strict';
 
-const $ = (selector) => document.querySelector(selector);
-const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
-const PROVIDER_PRESETS = {
-  openai: {
-    name: "OpenAI",
-    type: "openai",
-    baseUrl: "https://api.openai.com",
-    model: "gpt-5.5",
-  },
-  deepseek: {
-    name: "DeepSeek",
-    type: "openai",
-    baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat",
-  },
-  gemini: {
-    name: "Gemini",
-    type: "gemini",
-    baseUrl: "https://generativelanguage.googleapis.com",
-    model: "gemini-2.5-flash",
-  },
-  anthropic: {
-    name: "Anthropic",
-    type: "anthropic",
-    baseUrl: "https://api.anthropic.com",
-    model: "claude-sonnet-4-5",
-  },
-};
-
-const DEFAULT_PROVIDERS = [
-  makeProvider("deepseek"),
-  makeProvider("openai"),
-  makeProvider("gemini"),
-  makeProvider("anthropic"),
-];
-
-let state = loadState();
-let sending = false;
-
-function makeProvider(presetKey = "deepseek") {
-  const preset = PROVIDER_PRESETS[presetKey] || PROVIDER_PRESETS.deepseek;
-  return {
-    id: uid(),
-    name: preset.name,
-    type: preset.type,
-    baseUrl: preset.baseUrl,
-    apiKey: "",
-    model: preset.model,
-    enabled: true,
-  };
-}
-
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return normalizeState(JSON.parse(raw));
-  } catch {}
-  const chat = createChat();
-  return normalizeState({
-    theme: "light",
-    sidebarCollapsed: false,
-    currentChatId: chat.id,
-    chats: [chat],
-    searchEnabled: false,
-    providers: DEFAULT_PROVIDERS,
-    activeProviderId: DEFAULT_PROVIDERS[0].id,
-  });
-}
-
-function normalizeProvider(p, fallbackIndex = 0) {
-  const oldDefault = p?.id === "default" || p?.name === "默认提供方";
-  const type = ["openai", "gemini", "anthropic"].includes(p?.type) ? p.type : "openai";
-  return {
-    id: p?.id && p.id !== "default" ? p.id : `provider-${fallbackIndex}-${uid()}`,
-    name: oldDefault ? "DeepSeek" : (p?.name || "自定义提供方"),
-    type,
-    baseUrl: p?.baseUrl || (oldDefault ? "https://api.deepseek.com" : ""),
-    apiKey: p?.apiKey || "",
-    model: p?.model || (oldDefault ? "deepseek-chat" : ""),
-    enabled: p?.enabled !== false,
-  };
-}
-
-function normalizeState(input = {}) {
-  const chats = Array.isArray(input.chats) && input.chats.length ? input.chats : [createChat()];
-  let providers = Array.isArray(input.providers) && input.providers.length
-    ? input.providers.map(normalizeProvider)
-    : DEFAULT_PROVIDERS.map(p => ({ ...p, id: uid() }));
-
-  const hasOpenAI = providers.some(p => p.type === "openai" && /openai/i.test(p.name));
-  const hasGemini = providers.some(p => p.type === "gemini");
-  const hasAnthropic = providers.some(p => p.type === "anthropic");
-  if (!hasOpenAI) providers.push(makeProvider("openai"));
-  if (!hasGemini) providers.push(makeProvider("gemini"));
-  if (!hasAnthropic) providers.push(makeProvider("anthropic"));
-
-  const currentChatId = chats.some(c => c.id === input.currentChatId) ? input.currentChatId : chats[0].id;
-  const activeProviderId = providers.some(p => p.id === input.activeProviderId) ? input.activeProviderId : providers[0].id;
-  return {
-    theme: input.theme === "dark" ? "dark" : "light",
-    sidebarCollapsed: Boolean(input.sidebarCollapsed),
-    currentChatId,
-    chats,
-    searchEnabled: Boolean(input.searchEnabled),
-    providers,
-    activeProviderId,
-  };
-}
-
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function createChat(title = "新对话") {
-  return { id: uid(), title, createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
-}
-
-function currentChat() {
-  return state.chats.find(c => c.id === state.currentChatId) || state.chats[0];
-}
-
-function activeProvider() {
-  return state.providers.find(p => p.id === state.activeProviderId) || state.providers[0] || makeProvider("deepseek");
-}
-
-function formatTime(ts) {
-  return new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-}
-
-function escapeHtml(text = "") {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function inferTitle(text) {
-  const compact = text.replace(/\s+/g, " ").trim();
-  return compact.length > 18 ? compact.slice(0, 18) + "…" : compact || "新对话";
-}
-
-function providerTypeLabel(type) {
-  if (type === "gemini") return "Gemini";
-  if (type === "anthropic") return "Anthropic";
-  return "OpenAI 兼容";
-}
-
-function providerEndpointHint(provider) {
-  if (provider.type === "gemini") return "/v1beta/models/{model}:generateContent";
-  if (provider.type === "anthropic") return "/v1/messages";
-  return "/v1/chat/completions";
-}
-
-function render() {
-  document.documentElement.dataset.theme = state.theme;
-  const chat = currentChat();
-  const shellClass = `app-shell${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`;
-  document.querySelector("#app").innerHTML = `
-    <div class="${shellClass}">
-      <aside class="sidebar">
-        <div class="sidebar-inner">
-          <div class="sidebar-top">
-            <button class="icon-btn" data-action="toggle-sidebar" title="收起侧边栏">☰</button>
-            <div class="app-title">稻田 Ai</div>
-          </div>
-          <button class="new-chat-btn" data-action="new-chat" title="新建对话">＋</button>
-          <div class="chat-list">
-            ${state.chats.map(c => `
-              <div class="chat-item ${c.id === state.currentChatId ? "active" : ""}" data-chat-id="${c.id}" title="${escapeHtml(c.title)}">
-                <span class="chat-dot"></span>
-                <span class="chat-title">${escapeHtml(c.title || "新对话")}</span>
-                <span class="chat-time">${formatTime(c.updatedAt || c.createdAt)}</span>
-                <button class="delete-chat" data-delete-chat="${c.id}" title="删除对话">×</button>
-              </div>
-            `).join("")}
-          </div>
-          <div class="sidebar-bottom">
-            <button class="bottom-btn" data-action="open-settings">⚙ 设置 / 模型提供方</button>
-            <div class="user-pill">稻田用户</div>
-          </div>
-        </div>
-      </aside>
-
-      <main class="main">
-        <div class="main-top">
-          <button class="icon-btn collapsed-menu-btn" data-action="toggle-sidebar" title="展开侧边栏">☰</button>
-          <div class="top-actions">
-            <button class="icon-btn" data-action="toggle-theme" title="切换主题">${state.theme === "dark" ? "☾" : "☀"}</button>
-          </div>
-        </div>
-
-        <div class="messages" id="messages">
-          ${renderMessages(chat)}
-        </div>
-
-        <div class="composer-wrap">
-          <div class="composer">
-            <div class="search-row">
-              <button class="search-toggle ${state.searchEnabled ? "active" : ""}" data-action="toggle-search">○ 联网搜索</button>
-            </div>
-            <div class="input-box">
-              <textarea id="messageInput" rows="1" placeholder="输入消息…（Enter 发送，Shift + Enter 换行）"></textarea>
-              <button class="send-btn" data-action="send" ${sending ? "disabled" : ""}>›</button>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-
-    ${renderSettingsModal()}
-  `;
-  bindEvents();
-  scrollToBottom(false);
-}
-
-function renderMessages(chat) {
-  if (!chat || !chat.messages || chat.messages.length === 0) {
-    return `
-      <div class="empty-state">
-        <div class="empty-logo">≋</div>
-        <div class="empty-title">稻田 Ai</div>
-        <div class="empty-subtitle">开始一段新的对话。</div>
-      </div>
-    `;
+  function emergency(message){
+    var app = document.getElementById('app');
+    if(!app) return;
+    app.innerHTML = '<div style="min-height:100vh;display:grid;place-items:center;background:#f5f2ea;color:#2a2824;font-family:-apple-system,BlinkMacSystemFont,\'PingFang SC\',sans-serif;padding:24px">' +
+      '<div style="max-width:520px;width:100%;background:#fff;border:1px solid rgba(90,78,62,.18);border-radius:22px;padding:22px;box-shadow:0 20px 60px rgba(70,55,35,.12)">' +
+      '<h2 style="margin:0 0 10px;font-size:22px">稻田 Ai 已进入救援模式</h2>' +
+      '<p style="line-height:1.7;color:#827a70;margin:0 0 16px">页面没有丢。只是旧缓存数据可能损坏，已拦截白屏。</p>' +
+      '<pre style="white-space:pre-wrap;background:#f7f3ec;border-radius:14px;padding:12px;font-size:12px;color:#655b52;max-height:160px;overflow:auto">' + String(message||'unknown').replace(/[&<>]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}) + '</pre>' +
+      '<button id="resetDaotian" style="height:42px;border:0;border-radius:14px;background:#a77a57;color:white;padding:0 16px;font:inherit;cursor:pointer">清理本地聊天缓存并恢复</button>' +
+      '</div></div>';
+    var btn = document.getElementById('resetDaotian');
+    if(btn) btn.onclick = function(){
+      try{
+        Object.keys(localStorage).forEach(function(k){ if(k.indexOf('daotian')===0) localStorage.removeItem(k); });
+      }catch(e){}
+      location.reload();
+    };
   }
-  return chat.messages.map(m => `
-    <div class="message ${m.role === "user" ? "user" : "assistant"}">
-      <div class="bubble">${escapeHtml(m.content || "")}</div>
-    </div>
-  `).join("");
-}
 
-function renderSettingsModal() {
-  const provider = activeProvider();
-  return `
-    <div class="modal-backdrop" id="settingsModal">
-      <div class="modal">
-        <div class="modal-header">
-          <div class="modal-title">设置 / 模型提供方</div>
-          <button class="icon-btn" data-action="close-settings">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-grid">
-            <div class="field">
-              <label>当前默认提供方</label>
-              <select id="activeProviderSelect">
-                ${state.providers.map(p => `<option value="${p.id}" ${p.id === state.activeProviderId ? "selected" : ""}>${escapeHtml(p.name || "未命名")} · ${providerTypeLabel(p.type)}</option>`).join("")}
-              </select>
-            </div>
-            <div class="provider-actions">
-              <button class="ghost-btn small" data-action="add-openai-provider">＋ OpenAI兼容</button>
-              <button class="ghost-btn small" data-action="add-gemini-provider">＋ Gemini</button>
-              <button class="ghost-btn small" data-action="add-anthropic-provider">＋ Anthropic</button>
-              <button class="ghost-btn small danger" data-action="delete-provider">删除当前</button>
-            </div>
-            <div class="field">
-              <label>接口类型</label>
-              <select id="providerType">
-                <option value="openai" ${provider.type === "openai" ? "selected" : ""}>OpenAI 兼容接口</option>
-                <option value="gemini" ${provider.type === "gemini" ? "selected" : ""}>Gemini 接口</option>
-                <option value="anthropic" ${provider.type === "anthropic" ? "selected" : ""}>Anthropic 接口</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>模型提供方名称</label>
-              <input id="providerName" value="${escapeHtml(provider.name || "")}" placeholder="例如 OpenAI / Gemini / Anthropic / DeepSeek" />
-            </div>
-            <div class="field">
-              <label>Base URL</label>
-              <input id="providerBaseUrl" value="${escapeHtml(provider.baseUrl || "")}" placeholder="https://api.openai.com" />
-            </div>
-            <div class="endpoint-hint">当前类型默认请求路径：${escapeHtml(providerEndpointHint(provider))}</div>
-            <div class="field">
-              <label>API Key</label>
-              <input id="providerApiKey" value="${escapeHtml(provider.apiKey || "")}" placeholder="sk-... / AIza... / anthro..." autocomplete="off" />
-            </div>
-            <div class="field">
-              <label>默认聊天模型</label>
-              <input id="providerModel" value="${escapeHtml(provider.model || "")}" placeholder="例如 deepseek-chat / gpt-5.5 / gemini-2.5-flash / claude-sonnet-4-5" />
-            </div>
-          </div>
-          <div class="provider-list">
-            ${state.providers.map(p => `
-              <button class="provider-card ${p.id === state.activeProviderId ? "active" : ""}" data-provider-id="${p.id}">
-                <strong>${escapeHtml(p.name || "未命名")}</strong>
-                <span>${providerTypeLabel(p.type)}</span>
-                <span>${escapeHtml(p.baseUrl || "使用当前站点")}</span>
-                <span>${escapeHtml(p.model || "未设置模型")}</span>
-              </button>
-            `).join("")}
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="ghost-btn" data-action="close-settings">取消</button>
-          <button class="primary-btn" data-action="save-settings">保存</button>
-        </div>
-      </div>
-    </div>
-  `;
-}
+  window.addEventListener('error', function(e){ emergency(e.message || e.error || 'script error'); });
+  window.addEventListener('unhandledrejection', function(e){ emergency((e.reason && e.reason.message) || e.reason || 'promise error'); });
 
-function bindEvents() {
-  document.querySelectorAll("[data-action]").forEach(el => {
-    el.addEventListener("click", (event) => handleAction(event, el.dataset.action));
-  });
-  document.querySelectorAll("[data-chat-id]").forEach(el => {
-    el.addEventListener("click", (event) => {
-      if (event.target.closest("[data-delete-chat]")) return;
-      state.currentChatId = el.dataset.chatId;
-      saveState();
-      render();
-    });
-  });
-  document.querySelectorAll("[data-delete-chat]").forEach(el => {
-    el.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      deleteChat(el.dataset.deleteChat);
-    });
-  });
-  document.querySelectorAll("[data-provider-id]").forEach(el => {
-    el.addEventListener("click", () => {
-      state.activeProviderId = el.dataset.providerId;
-      saveState();
-      render();
-      $("#settingsModal")?.classList.add("show");
-    });
-  });
-  const activeProviderSelect = $("#activeProviderSelect");
-  if (activeProviderSelect) {
-    activeProviderSelect.addEventListener("change", () => {
-      state.activeProviderId = activeProviderSelect.value;
-      saveState();
-      render();
-      $("#settingsModal")?.classList.add("show");
-    });
-  }
-  const input = $("#messageInput");
-  if (input) {
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        sendMessage();
+  try{
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const uid = () => 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
+    const nowTime = () => new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+
+    const KEYS = {
+      chats:'daotian.chats.v323', active:'daotian.activeChat.v323', settings:'daotian.settings.v323', theme:'daotian.theme.v323',
+      oldChats:'daotian.chats', oldActive:'daotian.activeChat', oldSettings:'daotian.settings',
+      v322Chats:'daotian.chats.v322', v322Active:'daotian.activeChat.v322', v322Settings:'daotian.settings.v322'
+    };
+
+    const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
+
+    function safeGet(key){ try{return localStorage.getItem(key);}catch(e){return null;} }
+    function readJSON(key, fallback){ try{ const v = safeGet(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } }
+    function saveJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
+    function setItem(key, value){ try{ localStorage.setItem(key, value); }catch(e){} }
+
+    function normalizeMessage(m){
+      if(!m || typeof m !== 'object') return null;
+      const role = m.role === 'assistant' || m.role === 'system' ? m.role : 'user';
+      const content = typeof m.content === 'string' ? m.content : (m.content == null ? '' : String(m.content));
+      return {role, content};
+    }
+    function normalizeChat(c, i){
+      if(!c || typeof c !== 'object') return null;
+      const id = typeof c.id === 'string' && c.id ? c.id : uid() + '_' + i;
+      const messages = Array.isArray(c.messages) ? c.messages.map(normalizeMessage).filter(Boolean) : [];
+      let title = typeof c.title === 'string' && c.title.trim() ? c.title.trim() : '';
+      if(!title && messages[0]) title = messages[0].content.slice(0,28);
+      if(!title) title = '新对话';
+      return {id, title, createdAt:Number(c.createdAt)||Date.now(), updatedAt:Number(c.updatedAt)||Date.now(), messages};
+    }
+    function loadChats(){
+      const candidates = [readJSON(KEYS.chats,null), readJSON(KEYS.v322Chats,null), readJSON(KEYS.oldChats,null)];
+      for(const raw of candidates){
+        if(Array.isArray(raw)){
+          const clean = raw.map(normalizeChat).filter(Boolean);
+          if(clean.length) return clean;
+        }
       }
-    });
-    input.addEventListener("input", () => {
-      input.style.height = "auto";
-      input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
-    });
-    input.focus();
+      const id = uid();
+      return [{id, title:'新对话', createdAt:Date.now(), updatedAt:Date.now(), messages:[]}];
+    }
+
+    let theme = safeGet(KEYS.theme) || 'dark';
+    let settings = Object.assign({}, defaultSettings, readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
+    let chats = loadChats();
+    let activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
+    let sidebarOpen = true;
+    let searchOn = false;
+    let sending = false;
+    if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
+
+    function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
+    function persist(){ saveJSON(KEYS.chats,chats); setItem(KEYS.active,activeId); saveJSON(KEYS.settings,settings); setItem(KEYS.theme,theme); }
+
+    const app = $('#app');
+    if(!app) throw new Error('#app not found');
+    app.innerHTML = `
+      <div class="app-shell" data-theme="${theme}">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><div class="brand">稻田 Ai</div></div>
+          <button class="new-chat-btn" id="newChat">＋ 新对话</button>
+          <div class="chat-list" id="chatList"></div>
+          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button></div>
+        </aside>
+        <main class="main">
+          <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
+          <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☀</button></div>
+          <div class="messages" id="messages"></div>
+          <div class="composer-wrap">
+            <div class="search-toggle"><button class="pill" id="searchBtn">○ 联网搜索</button></div>
+            <div class="composer"><textarea id="input" placeholder="输入消息...（Enter 发送，Shift + Enter 换行）"></textarea><button class="send" id="sendBtn">›</button></div>
+          </div>
+        </main>
+      </div>
+      <div class="modal-backdrop" id="providerModal"><div class="modal">
+        <div class="modal-head"><span>设置 / 模型提供方</span><button class="icon-btn" id="closeProvider">×</button></div>
+        <div class="modal-body">
+          <div class="row"><div class="field"><label>提供方类型</label><select id="providerType"><option value="openai">OpenAI 兼容</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select></div><div class="field"><label>名称</label><input id="providerName" placeholder="DeepSeek / OpenAI / Gemini / Anthropic"></div></div>
+          <div class="field"><label>Base URL</label><input id="baseUrl" placeholder="https://api.deepseek.com"></div>
+          <div class="field"><label>API Key</label><input id="apiKey" type="password" placeholder="sk-... / AIza... / anthropic key"></div>
+          <div class="row"><div class="field"><label>模型名</label><input id="model" placeholder="deepseek-chat"></div><div class="field"><label>请求路径</label><input id="path" placeholder="/v1/chat/completions"></div></div>
+          <div class="hint">OpenAI 兼容接口可直接浏览器请求。Gemini / Anthropic 配置先保存，后续需要后端适配转发。</div>
+        </div>
+        <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
+      </div></div>
+      <div class="status" id="status"></div>`;
+
+    function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
+    function escapeHTML(s){ return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+
+    function renderSidebar(){
+      const side = $('#sidebar'); if(!side) return;
+      side.classList.toggle('closed', !sidebarOpen);
+      $('#openSide').style.display = sidebarOpen ? 'none' : 'grid';
+      const list = $('#chatList');
+      list.innerHTML = chats.map(c=>`<div class="chat-item ${c.id===activeId?'active':''}" data-id="${escapeHTML(c.id)}"><span class="chat-dot"></span><span class="chat-title">${escapeHTML(c.title)}</span><span class="chat-time">${nowTime()}</span><button class="delete-chat" data-del="${escapeHTML(c.id)}" title="删除">×</button></div>`).join('');
+    }
+    function renderMessages(){
+      const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
+      const msgs = Array.isArray(c.messages) ? c.messages : [];
+      if(msgs.length===0){ box.innerHTML = `<div class="empty"><div><div class="logo">稻</div><h1>稻田 Ai</h1><p>安静一点，直接开始。</p></div></div>`; return; }
+      box.innerHTML = msgs.map(m=>`<div class="message ${m.role==='user'?'user':'assistant'}"><div class="bubble">${escapeHTML(m.content)}</div></div>`).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+    function renderAll(){
+      document.documentElement.setAttribute('data-theme', theme);
+      const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
+      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
+      renderSidebar(); renderMessages(); persist();
+    }
+
+    function createChat(){ const id=uid(); chats.unshift({id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; sidebarOpen=true; renderAll(); }
+    function deleteChat(id){
+      const idx = chats.findIndex(c=>c.id===id); if(idx<0) return;
+      chats.splice(idx,1);
+      if(chats.length===0){ const nid=uid(); chats=[{id:nid,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}]; activeId=nid; }
+      else if(activeId===id){ activeId = chats[Math.max(0,Math.min(idx,chats.length-1))].id; }
+      renderAll(); toast('已删除');
+    }
+
+    function buildOpenAIURL(){ const base=(settings.baseUrl||'').replace(/\/$/,''); const path=settings.path||'/v1/chat/completions'; if(!base) return '/v1/chat/completions'; if(base.endsWith('/v1') && path.startsWith('/v1/')) return base + path.slice(3); return base + (path.startsWith('/') ? path : '/' + path); }
+    async function callModel(messages){
+      if((settings.providerType||'openai') !== 'openai') throw new Error('Gemini / Anthropic 已保存，但还需要后端转发适配。当前先用 OpenAI 兼容接口。');
+      const headers={'Content-Type':'application/json'}; if(settings.apiKey) headers.Authorization='Bearer '+settings.apiKey;
+      const body={model:settings.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:false}; if(searchOn) body.web_search=true;
+      const res=await fetch(buildOpenAIURL(),{method:'POST',headers,body:JSON.stringify(body)}); const txt=await res.text(); if(!res.ok) throw new Error(txt.slice(0,400)||('HTTP '+res.status));
+      try{ const data=JSON.parse(txt); return data.choices?.[0]?.message?.content || data.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || data.content?.[0]?.text || JSON.stringify(data).slice(0,1000); }catch(e){ return txt; }
+    }
+    async function sendMessage(){
+      if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
+      c.messages.push({role:'user',content:text}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true; renderAll();
+      try{ c.messages.push({role:'assistant',content:await callModel(c.messages) || '没有返回内容'}); }catch(err){ c.messages.push({role:'assistant',content:'请求失败：'+(err&&err.message?err.message:String(err))}); }
+      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
+    }
+
+    function openSettings(){ $('#providerType').value=settings.providerType||'openai'; $('#providerName').value=settings.providerName||''; $('#baseUrl').value=settings.baseUrl||''; $('#apiKey').value=settings.apiKey||''; $('#model').value=settings.model||''; $('#path').value=settings.path||'/v1/chat/completions'; $('#providerModal').classList.add('show'); }
+    function closeSettings(){ $('#providerModal').classList.remove('show'); }
+    function saveSettings(){ settings={providerType:$('#providerType').value,providerName:$('#providerName').value.trim(),baseUrl:$('#baseUrl').value.trim(),apiKey:$('#apiKey').value.trim(),model:$('#model').value.trim(),path:$('#path').value.trim()||'/v1/chat/completions'}; persist(); closeSettings(); toast('已保存'); }
+
+    document.addEventListener('click', e=>{ const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; } const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); if(window.innerWidth<760) sidebarOpen=false; renderAll(); } });
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
+    $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
+    $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#sendBtn').onclick=sendMessage;
+    $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
+    $('#providerType').addEventListener('change', e=>{ const v=e.target.value; if(v==='openai'){ $('#path').value='/v1/chat/completions'; if(!$('#baseUrl').value) $('#baseUrl').value='https://api.deepseek.com'; } if(v==='gemini'){ $('#providerName').value=$('#providerName').value||'Gemini'; $('#baseUrl').value=$('#baseUrl').value||'https://generativelanguage.googleapis.com'; $('#model').value=$('#model').value||'gemini-1.5-flash'; } if(v==='anthropic'){ $('#providerName').value=$('#providerName').value||'Anthropic'; $('#baseUrl').value=$('#baseUrl').value||'https://api.anthropic.com'; $('#model').value=$('#model').value||'claude-3-5-sonnet-latest'; } });
+
+    renderAll();
+  }catch(err){
+    emergency(err && err.stack ? err.stack : err);
   }
-}
-
-function handleAction(event, action) {
-  if (action === "toggle-sidebar") {
-    state.sidebarCollapsed = !state.sidebarCollapsed;
-    saveState(); render(); return;
-  }
-  if (action === "new-chat") {
-    const chat = createChat();
-    state.chats.unshift(chat);
-    state.currentChatId = chat.id;
-    saveState(); render(); return;
-  }
-  if (action === "toggle-theme") {
-    state.theme = state.theme === "dark" ? "light" : "dark";
-    saveState(); render(); return;
-  }
-  if (action === "toggle-search") {
-    state.searchEnabled = !state.searchEnabled;
-    saveState(); render(); return;
-  }
-  if (action === "send") sendMessage();
-  if (action === "open-settings") $("#settingsModal")?.classList.add("show");
-  if (action === "close-settings") $("#settingsModal")?.classList.remove("show");
-  if (action === "save-settings") saveSettings();
-  if (action === "add-openai-provider") addProvider("openai");
-  if (action === "add-gemini-provider") addProvider("gemini");
-  if (action === "add-anthropic-provider") addProvider("anthropic");
-  if (action === "delete-provider") deleteActiveProvider();
-}
-
-function deleteChat(chatId) {
-  const index = state.chats.findIndex(c => c.id === chatId);
-  if (index < 0) return;
-  state.chats = state.chats.filter(c => c.id !== chatId);
-  if (state.chats.length === 0) state.chats.push(createChat());
-  if (state.currentChatId === chatId) {
-    state.currentChatId = state.chats[Math.min(index, state.chats.length - 1)].id;
-  }
-  saveState();
-  render();
-}
-
-function addProvider(kind) {
-  const map = { openai: "openai", gemini: "gemini", anthropic: "anthropic" };
-  const p = makeProvider(map[kind] || "openai");
-  if (kind === "openai") p.name = "自定义 OpenAI 兼容";
-  state.providers.push(p);
-  state.activeProviderId = p.id;
-  saveState();
-  render();
-  $("#settingsModal")?.classList.add("show");
-}
-
-function deleteActiveProvider() {
-  if (state.providers.length <= 1) return;
-  state.providers = state.providers.filter(p => p.id !== state.activeProviderId);
-  state.activeProviderId = state.providers[0].id;
-  saveState();
-  render();
-  $("#settingsModal")?.classList.add("show");
-}
-
-function saveSettings() {
-  const provider = activeProvider();
-  provider.type = $("#providerType")?.value || "openai";
-  provider.name = $("#providerName")?.value.trim() || providerTypeLabel(provider.type);
-  provider.baseUrl = $("#providerBaseUrl")?.value.trim() || "";
-  provider.apiKey = $("#providerApiKey")?.value.trim() || "";
-  provider.model = $("#providerModel")?.value.trim() || "";
-  saveState();
-  $("#settingsModal")?.classList.remove("show");
-  render();
-}
-
-async function sendMessage() {
-  if (sending) return;
-  const input = $("#messageInput");
-  const text = input?.value.trim();
-  if (!text) return;
-  const chat = currentChat();
-  chat.messages.push({ role: "user", content: text });
-  if (!chat.title || chat.title === "新对话") chat.title = inferTitle(text);
-  chat.updatedAt = Date.now();
-  input.value = "";
-  sending = true;
-  saveState();
-  render();
-
-  try {
-    const reply = await callChatApi(chat.messages);
-    chat.messages.push({ role: "assistant", content: reply || "没有返回内容。" });
-  } catch (err) {
-    chat.messages.push({ role: "assistant", content: `请求失败：${err.message || err}` });
-  } finally {
-    chat.updatedAt = Date.now();
-    sending = false;
-    saveState();
-    render();
-  }
-}
-
-function endpointFromBase(baseUrl, defaultPath) {
-  const base = (baseUrl || "").trim().replace(/\/$/, "");
-  if (!base) return defaultPath;
-  if (/\/chat\/completions$|\/messages$|:generateContent$/i.test(base)) return base;
-  return `${base}${defaultPath}`;
-}
-
-function systemPrompt() {
-  return state.searchEnabled ? "用户打开了联网搜索。需要时结合可用搜索能力回答。" : "你是稻田 Ai。";
-}
-
-async function callChatApi(messages) {
-  const provider = activeProvider();
-  if (provider.type === "gemini") return callGemini(provider, messages);
-  if (provider.type === "anthropic") return callAnthropic(provider, messages);
-  return callOpenAICompatible(provider, messages);
-}
-
-async function callOpenAICompatible(provider, messages) {
-  const url = endpointFromBase(provider.baseUrl, "/v1/chat/completions");
-  const headers = { "Content-Type": "application/json" };
-  if (provider.apiKey) headers.Authorization = `Bearer ${provider.apiKey}`;
-  const body = {
-    model: provider.model || "deepseek-chat",
-    messages: [
-      { role: "system", content: systemPrompt() },
-      ...messages.map(m => ({ role: m.role, content: m.content }))
-    ],
-    stream: false,
-  };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`.slice(0, 260));
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || "";
-}
-
-async function callGemini(provider, messages) {
-  const base = (provider.baseUrl || "https://generativelanguage.googleapis.com").replace(/\/$/, "");
-  const model = provider.model || "gemini-2.5-flash";
-  const url = /:generateContent$/i.test(base)
-    ? base
-    : `${base}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const headers = { "Content-Type": "application/json" };
-  if (provider.apiKey) headers["x-goog-api-key"] = provider.apiKey;
-  const body = {
-    systemInstruction: { parts: [{ text: systemPrompt() }] },
-    contents: messages.map(m => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content || "" }]
-    }))
-  };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`.slice(0, 260));
-  const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
-}
-
-async function callAnthropic(provider, messages) {
-  const url = endpointFromBase(provider.baseUrl || "https://api.anthropic.com", "/v1/messages");
-  const headers = {
-    "Content-Type": "application/json",
-    "anthropic-version": "2023-06-01",
-    "anthropic-dangerous-direct-browser-access": "true",
-  };
-  if (provider.apiKey) headers["x-api-key"] = provider.apiKey;
-  const body = {
-    model: provider.model || "claude-sonnet-4-5",
-    max_tokens: 2048,
-    system: systemPrompt(),
-    messages: messages.map(m => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: m.content || ""
-    }))
-  };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`.slice(0, 260));
-  const data = await res.json();
-  return Array.isArray(data?.content) ? data.content.map(p => p.text || "").join("") : "";
-}
-
-function scrollToBottom(smooth = true) {
-  const box = $("#messages");
-  if (!box) return;
-  requestAnimationFrame(() => box.scrollTo({ top: box.scrollHeight, behavior: smooth ? "smooth" : "auto" }));
-}
-
-render();
+})();
