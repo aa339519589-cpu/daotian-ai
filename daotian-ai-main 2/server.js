@@ -40,6 +40,84 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+
+function sendSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function openSse(res) {
+  res.writeHead(200, {
+    ...corsHeaders(),
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+    "x-accel-buffering": "no"
+  });
+}
+
+async function streamOpenAiResponse({ req, res, upstream, model, messages, body, sources }) {
+  const controller = new AbortController();
+  req.on("close", () => controller.abort());
+
+  const requestPath = upstream.requestPath || "/v1/chat/completions";
+  const response = await fetch(buildUpstreamUrl(upstream, requestPath), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${upstream.apiKey}`
+    },
+    signal: controller.signal,
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: typeof body.temperature === "number" ? body.temperature : 0.7,
+      stream: true
+    })
+  });
+
+  if (!response.ok) {
+    const detailText = await response.text();
+    let detail = detailText;
+    try { detail = JSON.parse(detailText); } catch {}
+    sendSse(res, "error", { message: "模型请求失败", status: response.status, detail });
+    sendSse(res, "done", { ok: false });
+    res.end();
+    return { status: response.status, usage: null };
+  }
+
+  sendSse(res, "sources", { sources });
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+
+      let data = null;
+      try { data = JSON.parse(payload); } catch { continue; }
+      const content =
+        data?.choices?.[0]?.delta?.content ||
+        data?.choices?.[0]?.message?.content ||
+        data?.choices?.[0]?.text ||
+        "";
+      if (content) sendSse(res, "content", { content });
+    }
+  }
+
+  sendSse(res, "done", { ok: true });
+  res.end();
+  return { status: response.status, usage: null };
+}
+
 function sendJson(res, status, data) {
   res.writeHead(status, { ...JSON_HEADERS, ...corsHeaders() });
   res.end(JSON.stringify(data, null, 2));
@@ -274,118 +352,74 @@ function checkPublicChatLimit(req) {
   return true;
 }
 
-
-function sendSse(res, event, data) {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
-
-function sendSseDone(res) {
-  res.write("event: done\n");
-  res.write("data: [DONE]\n\n");
-}
-
-function extractStreamDelta(data) {
-  return (
-    data?.choices?.[0]?.delta?.content ??
-    data?.choices?.[0]?.text ??
-    data?.delta ??
-    ""
-  );
-}
-
-async function streamUpstreamToClient(response, res) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let fullContent = "";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() || "";
-
-    for (const part of parts) {
-      const dataLines = part
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart());
-
-      if (!dataLines.length) continue;
-      const dataText = dataLines.join("\n");
-      if (dataText === "[DONE]") return fullContent;
-
-      let data = null;
-      try {
-        data = JSON.parse(dataText);
-      } catch {
-        continue;
-      }
-
-      const delta = extractStreamDelta(data);
-      if (delta) {
-        fullContent += delta;
-        sendSse(res, "delta", { delta });
-      }
-    }
-  }
-
-  return fullContent;
-}
-
 async function handleChat(req, res, sourceName) {
   const started = Date.now();
   const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
   const model = String(body.model || config.chatModel || "").trim();
+  const stream = Boolean(body.stream);
   let messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
   let sources = [];
+  let upstream = null;
+  let status = 502;
+  let usage = null;
+
+  function fail(statusCode, payload) {
+    if (stream) {
+      openSse(res);
+      sendSse(res, "error", payload);
+      sendSse(res, "done", { ok: false });
+      res.end();
+    } else {
+      sendJson(res, statusCode, payload);
+    }
+  }
 
   if (!model) {
-    sendJson(res, 400, { error: "model_required", message: "请先填写模型名称" });
+    fail(400, { error: "model_required", message: "请先填写模型名称" });
     return;
   }
 
   if (messages.length === 0) {
-    sendJson(res, 400, { error: "message_required", message: "请先输入要发送的话" });
+    fail(400, { error: "message_required", message: "请先输入要发送的话" });
     return;
   }
 
   const lastUserMessage = [...messages].reverse().find((message) => message?.role === "user")?.content || "";
   const wantsWebSearch = shouldUseWebSearch(lastUserMessage, Boolean(body.webSearch));
-  const wantsStream = Boolean(body.stream);
 
   if (wantsWebSearch) {
     try {
       sources = await searchWeb(lastUserMessage);
+      messages = [{ role: "system", content: formatSearchContext(lastUserMessage, sources) }, ...messages];
+    } catch (error) {
+      // 搜索失败不要让聊天整体崩掉，降级为普通模型回答。
       messages = [
-        { role: "system", content: formatSearchContext(lastUserMessage, sources) },
+        {
+          role: "system",
+          content: `本轮尝试联网搜索失败：${error.message}。请不要声称已经完成实时搜索；可以基于已有知识回答，并明确说明实时信息未能获取。`
+        },
         ...messages
       ];
-    } catch (error) {
-      const statusCode = error.code === "web_search_not_configured" ? 400 : 502;
-      sendJson(res, statusCode, { error: error.code || "web_search_failed", message: error.message });
-      return;
+      sources = [];
+      console.error("Web search degraded", error.code || "web_search_failed", error.message);
     }
   }
 
-  const upstream = selectUpstream({ model });
+  upstream = selectUpstream({ model });
   if (!upstream) {
-    sendJson(res, 503, { error: "no_enabled_upstream", message: "请先启用一个上游通道" });
+    fail(503, { error: "no_enabled_upstream", message: "请先启用一个上游通道" });
     return;
   }
 
-  let status = 502;
-  let usage = null;
-  let clientClosed = false;
-  const abortController = new AbortController();
-  req.on("close", () => {
-    clientClosed = true;
-    abortController.abort();
-  });
-
   try {
+    if (stream) {
+      openSse(res);
+      const result = await streamOpenAiResponse({ req, res, upstream, model, messages, body, sources });
+      status = result.status;
+      usage = result.usage;
+      return;
+    }
+
     const requestPath = upstream.requestPath || "/v1/chat/completions";
     const response = await fetch(buildUpstreamUrl(upstream, requestPath), {
       method: "POST",
@@ -393,49 +427,15 @@ async function handleChat(req, res, sourceName) {
         "content-type": "application/json",
         authorization: `Bearer ${upstream.apiKey}`
       },
-      signal: abortController.signal,
       body: JSON.stringify({
         model,
         messages,
         temperature: typeof body.temperature === "number" ? body.temperature : 0.7,
-        stream: wantsStream
+        stream: false
       })
     });
 
     status = response.status;
-
-    if (wantsStream) {
-      if (!response.ok) {
-        const text = await response.text();
-        let data = null;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = { text };
-        }
-        sendJson(res, response.status, {
-          error: "upstream_error",
-          upstream: upstream.name,
-          status: response.status,
-          detail: data
-        });
-        return;
-      }
-
-      res.writeHead(200, {
-        ...corsHeaders(),
-        "content-type": "text/event-stream; charset=utf-8",
-        "cache-control": "no-cache, no-transform",
-        connection: "keep-alive"
-      });
-      sendSse(res, "sources", { sources });
-      const content = await streamUpstreamToClient(response, res);
-      sendSseDone(res);
-      res.end();
-      usage = null;
-      return;
-    }
-
     const text = await response.text();
     let data = null;
     try {
@@ -455,11 +455,7 @@ async function handleChat(req, res, sourceName) {
       return;
     }
 
-    const content =
-      data?.choices?.[0]?.message?.content ||
-      data?.choices?.[0]?.text ||
-      data?.output_text ||
-      "";
+    const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.output_text || "";
 
     sendJson(res, 200, {
       upstream: upstream.name,
@@ -469,25 +465,39 @@ async function handleChat(req, res, sourceName) {
       raw: data
     });
   } catch (error) {
-    status = clientClosed ? 499 : 502;
-    if (!clientClosed && !res.headersSent) {
-      sendJson(res, 502, { error: "upstream_error", message: error.message });
-    } else if (!clientClosed) {
+    status = 499;
+    if (error?.name === "AbortError") {
+      try {
+        if (!res.writableEnded) {
+          sendSse(res, "done", { ok: false, aborted: true });
+          res.end();
+        }
+      } catch {}
+      return;
+    }
+    status = 502;
+    if (stream) {
+      if (!res.headersSent) openSse(res);
       sendSse(res, "error", { error: "upstream_error", message: error.message });
+      sendSse(res, "done", { ok: false });
       res.end();
+    } else {
+      sendJson(res, 502, { error: "upstream_error", message: error.message });
     }
   } finally {
-    recordLog({
-      apiKeyId: sourceName,
-      apiKeyName: sourceName === "public-chat" ? "公开对话" : "后台测试对话",
-      upstreamId: upstream.id,
-      model,
-      method: "POST",
-      path: upstream.requestPath || "/v1/chat/completions",
-      status,
-      latencyMs: Date.now() - started,
-      usage
-    });
+    if (upstream) {
+      recordLog({
+        apiKeyId: sourceName,
+        apiKeyName: sourceName === "public-chat" ? "公开对话" : "后台测试对话",
+        upstreamId: upstream.id,
+        model,
+        method: "POST",
+        path: upstream.requestPath || "/v1/chat/completions",
+        status,
+        latencyMs: Date.now() - started,
+        usage
+      });
+    }
   }
 }
 

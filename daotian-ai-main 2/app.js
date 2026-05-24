@@ -10,9 +10,20 @@ const state = {
   apiKeyVisible: new Set(),
   isSending: false,
   webSearchEnabled: false,
-  webSearchConfigured: false,
-  currentChatController: null
+  webSearchConfigured: false
 };
+
+let activeAbortController = null;
+let pendingStreamBuffer = "";
+let typewriterTimer = null;
+let activeAssistantMessageId = "";
+let streamFinished = false;
+let drainResolve = null;
+let lastAutoScrollAt = 0;
+
+function makeId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -151,9 +162,16 @@ function renderHistory() {
     .join("");
 }
 
+function ensureMessageIds(messages) {
+  for (const message of messages) {
+    if (!message.id) message.id = makeId();
+  }
+}
+
 function renderChat() {
   const conversation = activeConversation();
   const messages = conversation?.messages || [];
+  ensureMessageIds(messages);
   const box = $("chatMessages");
 
   if (messages.length === 0) {
@@ -168,25 +186,32 @@ function renderChat() {
     box.innerHTML = messages
       .map((message) => {
         const roleLabel = message.role === "user" ? "你" : message.role === "assistant" ? "稻田 Ai" : "系统";
-        const displayContent = message.pending && !message.content ? "正在整理回答…" : message.content;
-        const body = message.role === "assistant" ? renderMarkdown(displayContent) : escapeHtml(displayContent).replace(/\n/g, "<br>");
-        const sources = message.role === "assistant" ? renderSources(message.sources || []) : "";
         const pending = message.pending ? " pending" : "";
+        const streaming = message.streaming ? " streaming" : "";
+        let body = "";
+        if (message.role === "assistant") {
+          if (!message.content && message.pending) body = `<span class="typing-dots"><i></i><i></i><i></i></span>`;
+          else if (message.streaming) body = escapeHtml(message.content || "").replace(/\n/g, "<br>");
+          else body = renderMarkdown(message.content || "");
+        } else {
+          body = escapeHtml(message.content || "").replace(/\n/g, "<br>");
+        }
+        const sources = message.role === "assistant" ? renderSources(message.sources || []) : "";
         return `
-          <article class="message ${message.role}${pending}">
+          <article class="message ${message.role}${pending}${streaming}" data-message-id="${escapeAttr(message.id)}">
             <div class="message-meta">${roleLabel}</div>
-            <div class="message-content assistant-message">${body}${sources}</div>
+            <div class="message-content assistant-message">${body}</div>
+            ${sources}
           </article>
         `;
       })
       .join("");
   }
 
-  updateComposerState();
-  requestAnimationFrame(() => {
-    box.scrollTop = box.scrollHeight;
-  });
+  updateSendButton();
+  queueAutoScroll(true);
 }
+
 
 function renderAdminPanel() {
   $("chatModel").value = state.chatModel || "";
@@ -301,142 +326,267 @@ function closeProviderModal() {
   $("providerModal").classList.add("hidden");
 }
 
-async function sendChat() {
-  const input = $("chatInput");
-  const text = input.value.trim();
-  if (!text || state.isSending) return;
+function updateStreamingMessageDom(message, final = false) {
+  if (!message?.id) return;
+  const article = document.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
+  if (!article) {
+    renderChat();
+    return;
+  }
+  const content = article.querySelector(".message-content");
+  if (!content) return;
+
+  // Streaming 时只更新文本节点，不反复重建整段 HTML，避免 Safari 抽搐/发白。
+  if (final) {
+    content.innerHTML = renderMarkdown(message.content || "");
+  } else if (message.pending && !message.content) {
+    content.innerHTML = `<span class="typing-dots"><i></i><i></i><i></i></span>`;
+  } else {
+    content.textContent = message.content || "";
+  }
+
+  article.classList.toggle("pending", Boolean(message.pending));
+  article.classList.toggle("streaming", Boolean(message.streaming));
+}
+
+function queueAutoScroll(force = false) {
+  const now = Date.now();
+  if (!force && now - lastAutoScrollAt < 140) return;
+  lastAutoScrollAt = now;
+  requestAnimationFrame(() => {
+    const box = $("chatMessages");
+    if (!box) return;
+    const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
+    if (force || distanceFromBottom < 260) box.scrollTop = box.scrollHeight;
+  });
+}
+
+function takeTypewriterSlice(text) {
+  if (!text) return "";
+  const first = text[0];
+  const isAscii = /^[\x00-\x7F]$/.test(first);
+  const size = isAscii ? 4 : 2;
+  return text.slice(0, Math.min(size, text.length));
+}
+
+function startTypewriter(messageId) {
+  if (typewriterTimer) return;
+  typewriterTimer = setInterval(() => {
+    const conversation = activeConversation();
+    const message = conversation?.messages.find((item) => item.id === messageId);
+    if (!message) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+      return;
+    }
+
+    if (!pendingStreamBuffer) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+      if (streamFinished && drainResolve) {
+        const resolve = drainResolve;
+        drainResolve = null;
+        resolve();
+      }
+      return;
+    }
+
+    const next = takeTypewriterSlice(pendingStreamBuffer);
+    pendingStreamBuffer = pendingStreamBuffer.slice(next.length);
+    message.content = `${message.content || ""}${next}`;
+    message.pending = false;
+    updateStreamingMessageDom(message, false);
+    queueAutoScroll(false);
+  }, 28);
+}
+
+function waitForTypewriterDrain() {
+  if (!pendingStreamBuffer && !typewriterTimer) return Promise.resolve();
+  return new Promise((resolve) => {
+    drainResolve = resolve;
+  });
+}
+
+function stopGeneration() {
+  if (!state.isSending) return;
+  try {
+    activeAbortController?.abort();
+  } catch {}
+  activeAbortController = null;
+  pendingStreamBuffer = "";
+  streamFinished = true;
+  if (typewriterTimer) {
+    clearInterval(typewriterTimer);
+    typewriterTimer = null;
+  }
+  if (drainResolve) {
+    const resolve = drainResolve;
+    drainResolve = null;
+    resolve();
+  }
 
   const conversation = activeConversation();
-  conversation.messages.push({ role: "user", content: text });
-  conversation.updatedAt = new Date().toISOString();
-  if (conversation.title === "新对话") {
-    conversation.title = text.slice(0, 18);
+  const message = conversation?.messages.find((item) => item.id === activeAssistantMessageId);
+  if (message) {
+    message.pending = false;
+    message.streaming = false;
+    if (message.content) message.content = `${message.content}\n\n已停止生成`;
+    else message.content = "已停止生成";
   }
+  state.isSending = false;
+  activeAssistantMessageId = "";
+  saveLocalState();
+  renderChat();
+}
+
+function parseSseBlock(block) {
+  let event = "message";
+  const dataLines = [];
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  }
+  if (!dataLines.length) return null;
+  let data = dataLines.join("\n");
+  try { data = JSON.parse(data); } catch {}
+  return { event, data };
+}
+
+async function sendChat() {
+  if (state.isSending) {
+    stopGeneration();
+    return;
+  }
+
+  const input = $("chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+
+  const conversation = activeConversation();
+  const userMessage = { id: makeId(), role: "user", content: text };
+  const assistantMessage = { id: makeId(), role: "assistant", content: "", pending: true, streaming: true, sources: [] };
+  conversation.messages.push(userMessage, assistantMessage);
+  conversation.updatedAt = new Date().toISOString();
+  if (conversation.title === "新对话") conversation.title = text.slice(0, 18);
 
   input.value = "";
   autoResizeTextarea(input);
   state.isSending = true;
-  state.currentChatController = new AbortController();
-  const assistantMessage = { role: "assistant", content: "", pending: true, sources: [] };
-  conversation.messages.push(assistantMessage);
+  activeAssistantMessageId = assistantMessage.id;
+  pendingStreamBuffer = "";
+  streamFinished = false;
   saveLocalState();
   render();
 
-  try {
-    const messages = conversation.messages
-      .filter((message) => !message.pending && ["user", "assistant"].includes(message.role))
-      .map(({ role, content }) => ({ role, content }));
+  const messages = conversation.messages
+    .filter((message) => !message.pending && !message.streaming && ["user", "assistant"].includes(message.role))
+    .map(({ role, content }) => ({ role, content }));
+  messages.push({ role: "user", content: text });
 
+  activeAbortController = new AbortController();
+
+  try {
     const response = await fetch("/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: state.chatModel, messages, webSearch: state.webSearchEnabled, stream: true }),
-      signal: state.currentChatController.signal
+      signal: activeAbortController.signal,
+      body: JSON.stringify({ model: state.chatModel, messages, webSearch: state.webSearchEnabled, stream: true })
     });
 
-    if (!response.ok) {
-      let data = null;
+    if (!response.ok || !response.body) {
+      let errorMessage = "请求失败";
       try {
-        data = await response.json();
-      } catch {
-        data = { message: await response.text() };
+        const data = await response.json();
+        errorMessage = data.message || data.error || errorMessage;
+      } catch {}
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+      const blocks = sseBuffer.split(/\n\n/);
+      sseBuffer = blocks.pop() || "";
+
+      for (const block of blocks) {
+        const parsed = parseSseBlock(block);
+        if (!parsed) continue;
+        if (parsed.event === "sources") {
+          assistantMessage.sources = Array.isArray(parsed.data.sources) ? parsed.data.sources : [];
+        } else if (parsed.event === "content") {
+          const chunk = parsed.data?.content || "";
+          if (chunk) {
+            assistantMessage.content = `${assistantMessage.content || ""}${chunk}`;
+            assistantMessage.pending = false;
+            updateStreamingMessageDom(assistantMessage, false);
+            queueAutoScroll(false);
+          }
+        } else if (parsed.event === "error") {
+          throw new Error(parsed.data?.message || "发送失败");
+        }
       }
-      throw new Error(data.message || data.error || "发送失败");
     }
 
-    const contentType = response.headers.get("content-type") || "";
-    if (!response.body || !contentType.includes("text/event-stream")) {
-      const result = await response.json();
-      Object.assign(assistantMessage, {
-        role: "assistant",
-        content: result.content || "模型返回了空内容",
-        pending: false,
-        sources: Array.isArray(result.sources) ? result.sources : []
-      });
-      renderChat();
-    } else {
-      await readChatStream(response, assistantMessage);
-      assistantMessage.pending = false;
-      if (!assistantMessage.content.trim()) assistantMessage.content = "模型返回了空内容";
-    }
-
+    streamFinished = true;
+    assistantMessage.pending = false;
+    assistantMessage.streaming = false;
+    if (!assistantMessage.content) assistantMessage.content = "模型返回了空内容";
     conversation.updatedAt = new Date().toISOString();
+    updateStreamingMessageDom(assistantMessage, true);
     if (state.token) refreshAdminConfig().catch(() => {});
   } catch (error) {
-    if (error.name === "AbortError") {
+    if (error?.name !== "AbortError") {
+      assistantMessage.role = "system";
+      assistantMessage.content = `发送失败：${error.message}`;
       assistantMessage.pending = false;
-      assistantMessage.content = assistantMessage.content.trim()
-        ? `${assistantMessage.content}\n\n（已停止生成）`
-        : "已停止生成";
-    } else {
-      conversation.messages[conversation.messages.length - 1] = {
-        role: "system",
-        content: `发送失败：${error.message}`
-      };
+      assistantMessage.streaming = false;
+      updateStreamingMessageDom(assistantMessage, false);
     }
   } finally {
+    activeAbortController = null;
+    pendingStreamBuffer = "";
+    streamFinished = true;
+    if (typewriterTimer) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+    }
     state.isSending = false;
-    state.currentChatController = null;
+    activeAssistantMessageId = "";
     saveLocalState();
-    render();
+    updateSendButton();
+    renderHistory();
   }
 }
 
-async function readChatStream(response, assistantMessage) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() || "";
-
-    for (const part of parts) {
-      const lines = part.split("\n");
-      let eventName = "message";
-      const dataLines = [];
-      for (const line of lines) {
-        if (line.startsWith("event:")) eventName = line.slice(6).trim();
-        if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
-      }
-      if (!dataLines.length) continue;
-      const dataText = dataLines.join("\n");
-      if (dataText === "[DONE]" || eventName === "done") return;
-
-      let data = null;
-      try {
-        data = JSON.parse(dataText);
-      } catch {
-        continue;
-      }
-
-      if (eventName === "sources") {
-        assistantMessage.sources = Array.isArray(data.sources) ? data.sources : [];
-      } else if (eventName === "error") {
-        throw new Error(data.message || data.error || "发送失败");
-      } else if (eventName === "delta") {
-        assistantMessage.content += data.delta || "";
-        assistantMessage.pending = true;
-        renderChat();
-      }
-    }
+function updateSendButton() {
+  const button = $("sendChat");
+  const input = $("chatInput");
+  if (!button || !input) return;
+  if (state.isSending) {
+    button.disabled = false;
+    button.textContent = "停";
+    button.classList.add("stop-mode");
+    button.setAttribute("aria-label", "停止生成");
+  } else {
+    button.disabled = !input.value.trim();
+    button.textContent = "➤";
+    button.classList.remove("stop-mode");
+    button.setAttribute("aria-label", "发送消息");
   }
 }
 
 function autoResizeTextarea(textarea) {
   textarea.style.height = "auto";
   textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
-  updateComposerState();
+  updateSendButton();
 }
 
-function updateComposerState() {
-  const hasText = $("chatInput").value.trim().length > 0;
-  $("sendChat").disabled = state.isSending || !hasText;
-  $("stopChat").classList.toggle("hidden", !state.isSending);
-}
 
 
 function updateWebSearchButton() {
@@ -585,17 +735,11 @@ $("composerForm").addEventListener("submit", (event) => {
   sendChat();
 });
 
-$("stopChat").addEventListener("click", () => {
-  if (state.currentChatController) {
-    state.currentChatController.abort();
-  }
-});
-
 $("chatInput").addEventListener("input", (event) => autoResizeTextarea(event.target));
 $("chatInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
-    sendChat();
+    if (!state.isSending) sendChat();
   }
 });
 

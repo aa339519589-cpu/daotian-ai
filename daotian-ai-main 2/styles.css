@@ -695,24 +695,6 @@ textarea:focus {
   transform: none;
 }
 
-
-.stop-button {
-  height: 44px;
-  flex: 0 0 auto;
-  padding: 0 14px;
-  border: 1px solid #f0d1bb;
-  border-radius: 999px;
-  background: var(--accent-bg);
-  color: var(--accent-hover);
-  font-size: 13px;
-  transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
-}
-
-.stop-button:hover {
-  transform: translateY(-1px);
-  background: #ffe5d2;
-}
-
 .modal-layer {
   position: fixed;
   inset: 0;
@@ -1103,25 +1085,7 @@ th {
     padding: 10px;
   }
 
-  
-.stop-button {
-  height: 44px;
-  flex: 0 0 auto;
-  padding: 0 14px;
-  border: 1px solid #f0d1bb;
-  border-radius: 999px;
-  background: var(--accent-bg);
-  color: var(--accent-hover);
-  font-size: 13px;
-  transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
-}
-
-.stop-button:hover {
-  transform: translateY(-1px);
-  background: #ffe5d2;
-}
-
-.modal-layer {
+  .modal-layer {
     padding: 0;
     align-items: end;
   }
@@ -1142,4 +1106,102 @@ th {
   .secret-input {
     grid-template-columns: 1fr;
   }
+}
+
+/* V2.7 stable stream fixes: no ghost opacity, no repeated card animation, clear text. */
+.messages-container {
+  scroll-behavior: auto;
+}
+
+.message {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.message.assistant,
+.message.assistant.streaming,
+.message.assistant.pending,
+.message-content,
+.assistant-message {
+  color: var(--text) !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.message.pending .message-content:empty::after {
+  content: "";
+}
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 1.4em;
+  vertical-align: middle;
+}
+
+.typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: 0.45;
+  animation: typingPulse 1.05s ease-in-out infinite;
+}
+
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typingPulse {
+  0%, 70%, 100% { transform: translateY(0); opacity: 0.35; }
+  35% { transform: translateY(-2px); opacity: 0.75; }
+}
+
+.send-button.stop-mode {
+  width: auto;
+  min-width: 54px;
+  padding: 0 14px;
+  background: #b4533c;
+  color: #fff;
+  font-size: 14px;
+}
+
+.send-button.stop-mode:hover {
+  background: #9f3f2f;
+}
+
+/* V2.8 conservative stream fix: stable native streaming, no ghosting, no reflow animation. */
+.message,
+.message.streaming,
+.message.pending,
+.message.assistant,
+.message.assistant.streaming,
+.message.assistant.pending {
+  animation: none !important;
+  transition: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+.message.assistant,
+.message.assistant .message-content,
+.message.assistant .assistant-message {
+  color: #2f2a24 !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.message.assistant.streaming .message-content {
+  white-space: pre-wrap;
+}
+
+.messages-container {
+  scroll-behavior: auto !important;
 }
