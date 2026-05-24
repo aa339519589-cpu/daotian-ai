@@ -317,3 +317,11 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
   .field input,.field select{height:48px;font-size:16px}
   .modal-foot{padding:14px 18px calc(14px + env(safe-area-inset-bottom))}
 }
+
+
+/* V3.2.6 one-line empty logo */
+.empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--accent)}
+.empty > div{display:contents}
+.empty .logo,.empty h1,.empty p{display:none!important}
+.empty-logo{width:56px;height:56px;color:rgba(196,142,92,.62);opacity:.82;filter:none;background:none;border:0;box-shadow:none}
+@media (max-width:760px){.empty-logo{width:48px;height:48px;opacity:.72}body.keyboard-open .empty{display:none}}

@@ -126,7 +126,7 @@
     function renderMessages(){
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
       const msgs = Array.isArray(c.messages) ? c.messages : [];
-      if(msgs.length===0){ box.innerHTML = `<div class="empty"><div><div class="logo">稻</div><h1>稻田 Ai</h1><p>安静一点，直接开始。</p></div></div>`; return; }
+      if(msgs.length===0){ box.innerHTML = `<div class="empty"><svg class="empty-logo" viewBox="0 0 120 120" aria-hidden="true"><path d="M38 82 C52 72 54 54 66 38 C62 52 78 55 83 42 C79 59 64 64 61 82" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`; return; }
       box.innerHTML = msgs.map(m=>`<div class="message ${m.role==='user'?'user':'assistant'}"><div class="bubble">${escapeHTML(m.content)}</div></div>`).join('');
       box.scrollTop = box.scrollHeight;
     }
