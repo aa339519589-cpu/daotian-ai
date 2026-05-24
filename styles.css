@@ -437,3 +437,23 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
     display:none!important;
   }
 }
+
+
+/* V3.2.10 iOS keyboard gap hardfix: push composer down to real keyboard edge */
+@media (max-width:900px){
+  :root{
+    --ios-keyboard-gap:96px;
+  }
+
+  body.keyboard-open.ios-keyboard .composer-wrap{
+    transform:translate3d(0,var(--ios-keyboard-gap),0)!important;
+  }
+
+  body.keyboard-open.ios-keyboard .messages{
+    bottom:calc(var(--composer-h) - var(--ios-keyboard-gap))!important;
+  }
+
+  body.keyboard-open.ios-keyboard .search-toggle{
+    display:none!important;
+  }
+}

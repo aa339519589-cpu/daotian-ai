@@ -200,6 +200,11 @@
         const messagesBox = $('#messages');
         if(!root || !input || !composer || !messagesBox) return;
 
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        document.body.classList.toggle('ios-keyboard', !!isIOS);
+
+
         let timer = null;
 
         function isMobile(){
@@ -225,6 +230,15 @@
           root.style.setProperty('--vvh', Math.max(320, Math.round(h)) + 'px');
           root.style.setProperty('--vvo', Math.round(top) + 'px');
           root.style.setProperty('--composer-h', Math.ceil(composer.getBoundingClientRect().height || 122) + 'px');
+          if(isIOS){
+            const screenH = window.screen && window.devicePixelRatio ? (window.screen.height / window.devicePixelRatio) : 0;
+            const baseH = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
+            const rawGap = screenH && baseH ? Math.round(screenH - baseH) : 96;
+            const gap = Math.min(112, Math.max(82, rawGap || 96));
+            root.style.setProperty('--ios-keyboard-gap', gap + 'px');
+          }else{
+            root.style.setProperty('--ios-keyboard-gap', '0px');
+          }
           document.body.classList.toggle('keyboard-open', !!keyboardOpen);
 
           if(keyboardOpen){
@@ -233,6 +247,15 @@
 
             requestAnimationFrame(function(){
               root.style.setProperty('--composer-h', Math.ceil(composer.getBoundingClientRect().height || 122) + 'px');
+          if(isIOS){
+            const screenH = window.screen && window.devicePixelRatio ? (window.screen.height / window.devicePixelRatio) : 0;
+            const baseH = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
+            const rawGap = screenH && baseH ? Math.round(screenH - baseH) : 96;
+            const gap = Math.min(112, Math.max(82, rawGap || 96));
+            root.style.setProperty('--ios-keyboard-gap', gap + 'px');
+          }else{
+            root.style.setProperty('--ios-keyboard-gap', '0px');
+          }
               messagesBox.scrollTop = messagesBox.scrollHeight;
             });
           }
