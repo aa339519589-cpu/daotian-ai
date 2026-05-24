@@ -125,6 +125,21 @@
     function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
     function escapeHTML(s){ return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 
+    function ensureThinkingStyle(){
+      if(document.getElementById('daotianThinkingStyle')) return;
+      const style=document.createElement('style');
+      style.id='daotianThinkingStyle';
+      style.textContent = `
+        .daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:15px;color:var(--muted,currentColor);opacity:.72;background:transparent;border:0;box-shadow:none}
+        .daotian-thinking-mark{width:18px;height:18px;display:inline-grid;place-items:center;font-size:17px;line-height:1;transform-origin:50% 50%;animation:daotianThinkingSpin 1.25s cubic-bezier(.42,0,.18,1) infinite, daotianThinkingPulse 1.25s ease-in-out infinite}
+        .daotian-thinking-text{font-size:14px;letter-spacing:.02em;animation:daotianThinkingText 1.45s ease-in-out infinite}
+        @keyframes daotianThinkingSpin{0%{transform:rotate(0deg) scale(.94)}55%{transform:rotate(260deg) scale(1.04)}100%{transform:rotate(360deg) scale(.94)}}
+        @keyframes daotianThinkingPulse{0%,100%{opacity:.38}50%{opacity:.95}}
+        @keyframes daotianThinkingText{0%,100%{opacity:.52}50%{opacity:.86}}
+      `;
+      document.head.appendChild(style);
+    }
+
     function renderSidebar(){
       const side = $('#sidebar'); if(!side) return;
       side.classList.toggle('closed', !sidebarOpen);
@@ -144,14 +159,19 @@
         box.innerHTML = `<div class="empty"><div class="empty-center"><svg class="empty-logo empty-logo-gamma" viewBox="0 0 120 120" aria-hidden="true"><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
         return;
       }
-      box.innerHTML = msgs.map(m=>{
+      box.innerHTML = msgs.map(function(m){
+        const content = escapeHTML(m.content);
         if(m.role === 'user'){
-          return `<div class="message user"><div class="bubble">${escapeHTML(m.content)}</div></div>`;
+          return `<div class="message user"><div class="bubble">${content}</div></div>`;
         }
         if(m.role === 'error'){
-          return `<div class="message error"><div class="error-text" style="font-size:13px;line-height:1.7;opacity:.78;white-space:pre-wrap;word-break:break-word">${escapeHTML(m.content)}</div></div>`;
+          return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:12px 14px;border-radius:14px;line-height:1.65;white-space:pre-wrap;font-size:14px;color:#c96f66;background:rgba(196,80,70,.10);border:1px solid rgba(196,80,70,.22)">${content}</div></div>`;
         }
-        return `<div class="message assistant"><div class="assistant-text" style="background:transparent;border:0;box-shadow:none;padding:0;white-space:pre-wrap;word-break:break-word;line-height:1.8">${escapeHTML(m.content)}</div></div>`;
+        if(m.thinking && !m.content){
+          ensureThinkingStyle();
+          return `<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>`;
+        }
+        return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:2px 2px;line-height:1.75;white-space:pre-wrap;font-size:15px;color:var(--text);background:transparent;border:0;box-shadow:none">${content}</div></div>`;
       }).join('');
       box.scrollTop = box.scrollHeight;
     }
@@ -252,20 +272,22 @@
       if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
       c.messages.push({role:'user',content:text}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
       const requestMessages=c.messages.map(m=>({role:m.role,content:m.content}));
-      const assistant={role:'assistant',content:''};
+      const assistant={role:'assistant',content:'',thinking:true};
       c.messages.push(assistant);
       renderAll();
       try{
         const finalText=await callModel(requestMessages, function(delta){
+          if(assistant.thinking) assistant.thinking=false;
           assistant.content += delta;
           c.updatedAt=Date.now();
           renderMessages();
         });
+        assistant.thinking=false;
         if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
       }catch(err){
-        const index = c.messages.indexOf(assistant);
-        if(index >= 0) c.messages.splice(index, 1);
-        c.messages.push({role:'error',content:'请求失败：'+(err&&err.message?err.message:String(err))});
+        assistant.thinking=false;
+        assistant.role='error';
+        assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
     }
