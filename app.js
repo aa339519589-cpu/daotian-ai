@@ -191,50 +191,110 @@
 
 
 
+
     function setupMobileViewport(){
       try{
         const root = document.documentElement;
         const input = $('#input');
-        if(!root || !input) return;
-        let t = null;
-        function isMobile(){ return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 760; }
-        function update(){
-          try{
-            if(!isMobile()){
-              document.body.classList.remove('keyboard-open');
-              root.style.removeProperty('--vvh');
-              root.style.removeProperty('--vvo');
-              return;
-            }
-            const vv = window.visualViewport;
-            const h = vv && vv.height ? vv.height : window.innerHeight;
-            const top = vv && typeof vv.offsetTop === 'number' ? vv.offsetTop : 0;
-            root.style.setProperty('--vvh', Math.max(320, Math.round(h)) + 'px');
-            root.style.setProperty('--vvo', Math.round(top) + 'px');
-            const focused = document.activeElement === input;
-            document.body.classList.toggle('keyboard-open', !!focused);
-            if(focused){
-              sidebarOpen = false;
-              renderSidebar();
-              setTimeout(function(){
-                const box = $('#messages');
-                if(box) box.scrollTop = box.scrollHeight;
-              }, 60);
-            }
-          }catch(_e){}
+        const composer = $('.composer-wrap');
+        const messagesBox = $('#messages');
+        if(!root || !input || !composer || !messagesBox) return;
+
+        let timer = null;
+        let lastKeyboard = false;
+
+        function isMobile(){
+          return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
         }
-        function schedule(){ clearTimeout(t); t = setTimeout(update, 40); }
-        input.addEventListener('focus', function(){ setTimeout(update, 60); setTimeout(update, 220); });
-        input.addEventListener('blur', function(){ setTimeout(update, 120); });
-        window.addEventListener('resize', schedule, {passive:true});
-        window.addEventListener('orientationchange', function(){ setTimeout(update, 260); }, {passive:true});
+
+        function measure(){
+          if(!isMobile()){
+            document.body.classList.remove('keyboard-open');
+            root.style.removeProperty('--vvh');
+            root.style.removeProperty('--vvo');
+            root.style.removeProperty('--kb');
+            root.style.removeProperty('--composer-h');
+            return;
+          }
+
+          const vv = window.visualViewport;
+          const layoutH = window.innerHeight || document.documentElement.clientHeight || 0;
+          const vvH = vv && vv.height ? vv.height : layoutH;
+          const vvTop = vv && typeof vv.offsetTop === 'number' ? vv.offsetTop : 0;
+
+          const keyboardHeight = Math.max(0, Math.round(layoutH - vvH - vvTop));
+          const focused = document.activeElement === input;
+          const keyboardOpen = focused && (keyboardHeight > 80 || vvH < layoutH * 0.82);
+
+          root.style.setProperty('--vvh', Math.max(320, Math.round(vvH)) + 'px');
+          root.style.setProperty('--vvo', Math.round(vvTop) + 'px');
+          root.style.setProperty('--kb', keyboardOpen ? keyboardHeight + 'px' : '0px');
+          root.style.setProperty('--composer-h', Math.ceil(composer.getBoundingClientRect().height || 120) + 'px');
+
+          document.body.classList.toggle('keyboard-open', keyboardOpen);
+
+          if(keyboardOpen){
+            sidebarOpen = false;
+            renderSidebar();
+
+            requestAnimationFrame(function(){
+              try{
+                const active = document.activeElement;
+                if(active && active.scrollIntoView){
+                  active.scrollIntoView({block:'nearest', inline:'nearest'});
+                }
+                messagesBox.scrollTop = messagesBox.scrollHeight;
+              }catch(_e){}
+            });
+          }
+
+          if(lastKeyboard && !keyboardOpen){
+            requestAnimationFrame(function(){
+              try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
+            });
+          }
+          lastKeyboard = keyboardOpen;
+        }
+
+        function schedule(delay){
+          clearTimeout(timer);
+          timer = setTimeout(measure, delay || 30);
+        }
+
+        input.addEventListener('focus', function(){
+          schedule(20);
+          setTimeout(measure, 120);
+          setTimeout(measure, 320);
+          setTimeout(measure, 620);
+        });
+
+        input.addEventListener('blur', function(){
+          setTimeout(function(){
+            document.body.classList.remove('keyboard-open');
+            root.style.setProperty('--kb','0px');
+            measure();
+          }, 160);
+        });
+
+        input.addEventListener('input', function(){
+          schedule(20);
+          setTimeout(function(){
+            try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
+          }, 60);
+        });
+
+        window.addEventListener('resize', function(){ schedule(40); }, {passive:true});
+        window.addEventListener('orientationchange', function(){ setTimeout(measure, 260); }, {passive:true});
+
         if(window.visualViewport){
-          window.visualViewport.addEventListener('resize', schedule, {passive:true});
-          window.visualViewport.addEventListener('scroll', schedule, {passive:true});
+          window.visualViewport.addEventListener('resize', function(){ schedule(20); }, {passive:true});
+          window.visualViewport.addEventListener('scroll', function(){ schedule(20); }, {passive:true});
         }
-        update();
+
+        measure();
       }catch(_err){}
     }
+
 
     renderAll();
     setupMobileViewport();
