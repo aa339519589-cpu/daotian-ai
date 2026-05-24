@@ -1,5 +1,8 @@
 const STORAGE_KEY = "daotian_ai_v3_1_state";
 
+const $ = (selector) => document.querySelector(selector);
+const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 const PROVIDER_PRESETS = {
   openai: {
     name: "OpenAI",
@@ -33,9 +36,6 @@ const DEFAULT_PROVIDERS = [
   makeProvider("gemini"),
   makeProvider("anthropic"),
 ];
-
-const $ = (selector) => document.querySelector(selector);
-const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 let state = loadState();
 let sending = false;
