@@ -410,3 +410,57 @@ textarea::placeholder { color: var(--muted); }
     top: 14px;
   }
 }
+
+
+/* V3.2 provider switcher + delete hard fix */
+.chat-item {
+  border: 0;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.delete-chat {
+  opacity: .62 !important;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 3;
+  font-size: 16px;
+}
+.delete-chat:hover {
+  opacity: 1 !important;
+}
+.field select {
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.18);
+  padding: 0 12px;
+  outline: none;
+}
+.provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ghost-btn.small {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.ghost-btn.danger {
+  color: var(--danger);
+}
+.endpoint-hint {
+  margin-top: -4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.provider-card {
+  text-align: left;
+  cursor: pointer;
+}
+.provider-card.active {
+  background: var(--active);
+  border-color: rgba(189,138,97,.34);
+}
