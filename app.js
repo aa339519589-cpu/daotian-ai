@@ -204,29 +204,35 @@
           return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
         }
 
+        function scrollLatest(){
+          requestAnimationFrame(function(){
+            try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
+          });
+          setTimeout(function(){
+            try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
+          }, 120);
+        }
+
         function applyViewport(){
           if(!isMobile()){
             document.body.classList.remove('keyboard-open');
-            root.style.removeProperty('--app-h');
+            root.style.removeProperty('--app-height');
             return;
           }
 
           const vv = window.visualViewport;
           const h = vv && vv.height ? vv.height : window.innerHeight;
-          root.style.setProperty('--app-h', Math.max(320, Math.round(h)) + 'px');
+          root.style.setProperty('--app-height', Math.max(320, Math.round(h)) + 'px');
 
           const focused = document.activeElement === input;
-          document.body.classList.toggle('keyboard-open', !!focused);
+          document.body.classList.toggle('keyboard-open', focused);
 
           if(focused){
-            sidebarOpen = false;
-            renderSidebar();
-            requestAnimationFrame(function(){
-              try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
-            });
-            setTimeout(function(){
-              try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
-            }, 80);
+            if(sidebarOpen){
+              sidebarOpen = false;
+              renderSidebar();
+            }
+            scrollLatest();
           }
         }
 
@@ -236,7 +242,7 @@
         }
 
         input.addEventListener('focus', function(){
-          schedule(10);
+          schedule(0);
           setTimeout(applyViewport, 120);
           setTimeout(applyViewport, 320);
         });
@@ -250,9 +256,7 @@
 
         input.addEventListener('input', function(){
           schedule(20);
-          setTimeout(function(){
-            try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
-          }, 50);
+          scrollLatest();
         });
 
         window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
