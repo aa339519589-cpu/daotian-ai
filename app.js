@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  window.__DAOTIAN_THINKING_VERSION__ = 'v3.4.0-multi-model-switcher';
+  window.__DAOTIAN_THINKING_VERSION__ = 'v3.4.1-search-route-fix';
 
   function emergency(message){
     var app = document.getElementById('app');
@@ -309,6 +309,7 @@
       const choice = data && data.choices && data.choices[0];
       if(choice && choice.delta && typeof choice.delta.content === 'string') return choice.delta.content;
       if(choice && choice.message && typeof choice.message.content === 'string') return choice.message.content;
+      if(data && typeof data.content === 'string') return data.content;
       if(data && Array.isArray(data.content)){
         return data.content.map(function(part){ return part && part.text ? part.text : ''; }).join('');
       }
@@ -318,6 +319,7 @@
     function extractFullContent(data){
       return data.choices?.[0]?.message?.content ||
         data.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') ||
+        (typeof data.content === 'string' ? data.content : '') ||
         data.content?.[0]?.text ||
         '';
     }
@@ -326,8 +328,15 @@
       const cfg = preset || activePreset();
       if((cfg.providerType||'openai') !== 'openai') throw new Error('Gemini / Anthropic 已保存，但还需要后端转发适配。当前先用 OpenAI 兼容接口。');
       const headers={'Content-Type':'application/json'}; if(cfg.apiKey) headers.Authorization='Bearer '+cfg.apiKey;
-      const body={model:cfg.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true}; if(searchOn) body.web_search=true;
-      const res=await fetch(buildOpenAIURL(cfg),{method:'POST',headers,body:JSON.stringify(body)});
+      const body={model:cfg.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true};
+      let targetUrl = buildOpenAIURL(cfg);
+      if(searchOn){
+        targetUrl = '/chat';
+        body.webSearch = true;
+        body.search = true;
+      }
+      const fetchHeaders = searchOn ? {'Content-Type':'application/json'} : headers;
+      const res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:JSON.stringify(body)});
       if(!res.ok){ const txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
 
       if(!res.body){
