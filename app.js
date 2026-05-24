@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  window.__DAOTIAN_THINKING_VERSION__ = 'v3.5.2-keyboard-render-stable';
+  window.__DAOTIAN_THINKING_VERSION__ = 'v3.5.3-mobile-header-time-context';
 
   function emergency(message){
     var app = document.getElementById('app');
@@ -28,6 +28,23 @@
     const $ = (sel, root=document) => root.querySelector(sel);
     const uid = () => 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
     const nowTime = () => new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+    function formatBeijingTimestamp(value){
+      const d = value ? new Date(value) : new Date();
+      const parts = new Intl.DateTimeFormat('zh-CN',{
+        timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit',
+        hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+      }).formatToParts(d).reduce(function(acc,p){ acc[p.type]=p.value; return acc; },{});
+      return parts.year + '-' + parts.month + '-' + parts.day + ' ' + parts.hour + ':' + parts.minute + ':' + parts.second;
+    }
+    function messageForModel(m){
+      const role = m && m.role ? m.role : 'user';
+      const content = String((m && m.content) || '');
+      if(role === 'user'){
+        const t = formatBeijingTimestamp(m.createdAt || Date.now());
+        return {role:'user', content:'[用户消息发送时间：' + t + '，北京时间]\n' + content};
+      }
+      return {role, content};
+    }
 
     const KEYS = {
       chats:'daotian.chats.v323', active:'daotian.activeChat.v323', settings:'daotian.settings.v323', theme:'daotian.theme.v323',
@@ -176,6 +193,8 @@
       const role = m.role === 'assistant' || m.role === 'system' || m.role === 'error' ? m.role : 'user';
       const content = typeof m.content === 'string' ? m.content : (m.content == null ? '' : String(m.content));
       const out = {role, content};
+      if(m.createdAt) out.createdAt = m.createdAt;
+      if(m.sentAt) out.sentAt = m.sentAt;
       if(typeof m.model === 'string') out.model = m.model;
       if(typeof m.provider === 'string') out.provider = m.provider;
       if(typeof m.modelLabel === 'string') out.modelLabel = m.modelLabel;
@@ -243,6 +262,7 @@
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button></div>
         </aside>
         <main class="main">
+          <div class="mobile-topbar" id="mobileTopbar"><button class="mobile-topbar-btn" id="mobileMenuBtn" title="菜单">☰</button><div class="mobile-topbar-title">稻田 Ai</div><button class="mobile-topbar-btn" id="mobileThemeBtn" title="主题">☾</button></div>
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
           <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☀</button></div>
           <div class="messages" id="messages"></div>
@@ -444,6 +464,34 @@
     }
 
 
+    function ensureMobileAppStyle(){
+      if(document.getElementById('daotianMobileAppStyle')) return;
+      const style=document.createElement('style');
+      style.id='daotianMobileAppStyle';
+      style.textContent = `
+        .mobile-topbar{display:none}
+        @media (max-width:760px){
+          .app-shell{width:100vw!important;height:100dvh!important;overflow:hidden!important;}
+          .main{width:100vw!important;min-width:0!important;height:100dvh!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;margin:0!important;}
+          .mobile-topbar{display:flex!important;align-items:center;justify-content:space-between;flex:0 0 auto;height:38px;padding:0 12px;border-bottom:1px solid var(--border,rgba(127,127,127,.16));background:rgba(18,20,23,.72);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:70;}
+          [data-theme="light"] .mobile-topbar{background:rgba(248,246,240,.78)}
+          .mobile-topbar-title{font-size:14px;font-weight:650;letter-spacing:.04em;color:var(--text);opacity:.92;line-height:1;}
+          .mobile-topbar-btn{width:32px;height:32px;border-radius:14px;border:1px solid var(--border,rgba(127,127,127,.18));background:rgba(127,127,127,.08);color:var(--text);display:grid;place-items:center;font:inherit;font-size:16px;padding:0;}
+          .floating-menu,.top-actions{display:none!important;}
+          .sidebar{position:fixed!important;left:0!important;top:0!important;bottom:0!important;width:min(82vw,320px)!important;height:100dvh!important;z-index:130!important;transform:translateX(-105%)!important;transition:transform .22s ease,opacity .22s ease!important;box-shadow:18px 0 50px rgba(0,0,0,.28)!important;}
+          .sidebar:not(.closed){transform:translateX(0)!important;}
+          .sidebar.closed{transform:translateX(-105%)!important;}
+          .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding-top:18px!important;}
+          .composer-wrap{flex:0 0 auto!important;width:100%!important;}
+          .model-pill{max-width:132px!important;}
+          .model-toolbar{gap:7px!important;}
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+
+
 
     function renderSidebar(){
       const side = $('#sidebar'); if(!side) return;
@@ -499,9 +547,11 @@
     function closeModelMenu(){ const menu=$('#modelMenu'); if(menu) menu.classList.remove('show'); }
 
     function renderAll(){
+      ensureMobileAppStyle();
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
+      const mobileThemeBtn = $('#mobileThemeBtn'); if(mobileThemeBtn) mobileThemeBtn.textContent = theme === 'dark' ? '☾' : '☀';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -616,9 +666,10 @@
     }
     async function sendMessage(){
       if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
-      c.messages.push({role:'user',content:text}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
+      const sentAt = Date.now();
+      c.messages.push({role:'user',content:text,createdAt:sentAt}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
       const cfg = activePreset();
-      const requestMessages=c.messages.filter(m=>m.role==='user'||m.role==='assistant'||m.role==='system').map(m=>({role:m.role,content:m.content}));
+      const requestMessages=c.messages.filter(m=>m.role==='user'||m.role==='assistant'||m.role==='system').map(messageForModel);
       const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label};
       c.messages.push(assistant);
       renderAll();
@@ -700,7 +751,10 @@
         renderProviderEditor();
       }
     });
-    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();};
+    const mobileMenuBtn=$('#mobileMenuBtn'); if(mobileMenuBtn) mobileMenuBtn.onclick=()=>{sidebarOpen=!sidebarOpen;renderAll();};
+    const mobileThemeBtn=$('#mobileThemeBtn'); if(mobileThemeBtn) mobileThemeBtn.onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
+    $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#sendBtn').onclick=sendMessage;
@@ -718,6 +772,7 @@
 
         let timer = null;
         let keyboardActive = false;
+        let mobileSidebarInitialized = false;
         let lastHeight = 0;
         let lastTop = 0;
 
@@ -755,6 +810,10 @@
             return;
           }
 
+          if(isMobile() && !mobileSidebarInitialized){
+            mobileSidebarInitialized = true;
+            if(sidebarOpen){ sidebarOpen = false; renderSidebar(); }
+          }
           const focused = document.activeElement === input;
           const m = metrics();
           setVars(m);
