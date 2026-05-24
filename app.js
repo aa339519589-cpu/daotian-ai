@@ -191,19 +191,12 @@
 
 
 
-
     function setupMobileViewport(){
       try{
         const root = document.documentElement;
         const input = $('#input');
-        const composer = $('.composer-wrap');
         const messagesBox = $('#messages');
-        if(!root || !input || !composer || !messagesBox) return;
-
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        document.body.classList.toggle('ios-keyboard', !!isIOS);
-
+        if(!root || !input || !messagesBox) return;
 
         let timer = null;
 
@@ -211,91 +204,66 @@
           return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
         }
 
-        function updateViewport(){
+        function applyViewport(){
           if(!isMobile()){
             document.body.classList.remove('keyboard-open');
-            root.style.removeProperty('--vvh');
-            root.style.removeProperty('--vvo');
-            root.style.removeProperty('--composer-h');
+            root.style.removeProperty('--app-h');
             return;
           }
 
           const vv = window.visualViewport;
           const h = vv && vv.height ? vv.height : window.innerHeight;
-          const top = vv && typeof vv.offsetTop === 'number' ? vv.offsetTop : 0;
+          root.style.setProperty('--app-h', Math.max(320, Math.round(h)) + 'px');
+
           const focused = document.activeElement === input;
-          const layoutH = window.innerHeight || document.documentElement.clientHeight || h;
-          const keyboardOpen = focused && (h < layoutH * 0.92 || !!vv);
+          document.body.classList.toggle('keyboard-open', !!focused);
 
-          root.style.setProperty('--vvh', Math.max(320, Math.round(h)) + 'px');
-          root.style.setProperty('--vvo', Math.round(top) + 'px');
-          root.style.setProperty('--composer-h', Math.ceil(composer.getBoundingClientRect().height || 122) + 'px');
-          if(isIOS){
-            const screenH = window.screen && window.devicePixelRatio ? (window.screen.height / window.devicePixelRatio) : 0;
-            const baseH = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
-            const rawGap = screenH && baseH ? Math.round(screenH - baseH) : 96;
-            const gap = Math.min(112, Math.max(82, rawGap || 96));
-            root.style.setProperty('--ios-keyboard-gap', gap + 'px');
-          }else{
-            root.style.setProperty('--ios-keyboard-gap', '0px');
-          }
-          document.body.classList.toggle('keyboard-open', !!keyboardOpen);
-
-          if(keyboardOpen){
+          if(focused){
             sidebarOpen = false;
             renderSidebar();
-
             requestAnimationFrame(function(){
-              root.style.setProperty('--composer-h', Math.ceil(composer.getBoundingClientRect().height || 122) + 'px');
-          if(isIOS){
-            const screenH = window.screen && window.devicePixelRatio ? (window.screen.height / window.devicePixelRatio) : 0;
-            const baseH = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
-            const rawGap = screenH && baseH ? Math.round(screenH - baseH) : 96;
-            const gap = Math.min(112, Math.max(82, rawGap || 96));
-            root.style.setProperty('--ios-keyboard-gap', gap + 'px');
-          }else{
-            root.style.setProperty('--ios-keyboard-gap', '0px');
-          }
-              messagesBox.scrollTop = messagesBox.scrollHeight;
+              try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
             });
+            setTimeout(function(){
+              try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
+            }, 80);
           }
         }
 
         function schedule(delay){
           clearTimeout(timer);
-          timer = setTimeout(updateViewport, delay || 25);
+          timer = setTimeout(applyViewport, delay || 30);
         }
 
         input.addEventListener('focus', function(){
-          schedule(20);
-          setTimeout(updateViewport, 100);
-          setTimeout(updateViewport, 260);
-          setTimeout(updateViewport, 520);
+          schedule(10);
+          setTimeout(applyViewport, 120);
+          setTimeout(applyViewport, 320);
         });
 
         input.addEventListener('blur', function(){
           setTimeout(function(){
             document.body.classList.remove('keyboard-open');
-            updateViewport();
+            applyViewport();
           }, 160);
         });
 
         input.addEventListener('input', function(){
           schedule(20);
           setTimeout(function(){
-            messagesBox.scrollTop = messagesBox.scrollHeight;
+            try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
           }, 50);
         });
 
-        window.addEventListener('resize', function(){ schedule(30); }, {passive:true});
-        window.addEventListener('orientationchange', function(){ setTimeout(updateViewport, 260); }, {passive:true});
+        window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
+        window.addEventListener('orientationchange', function(){ setTimeout(applyViewport, 260); }, {passive:true});
 
         if(window.visualViewport){
           window.visualViewport.addEventListener('resize', function(){ schedule(20); }, {passive:true});
           window.visualViewport.addEventListener('scroll', function(){ schedule(20); }, {passive:true});
         }
 
-        updateViewport();
+        applyViewport();
       }catch(_err){}
     }
 
