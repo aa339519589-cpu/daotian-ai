@@ -52,7 +52,7 @@
 
     function normalizeMessage(m){
       if(!m || typeof m !== 'object') return null;
-      const role = m.role === 'assistant' || m.role === 'system' ? m.role : 'user';
+      const role = (m.role === 'assistant' || m.role === 'system' || m.role === 'error') ? m.role : 'user';
       const content = typeof m.content === 'string' ? m.content : (m.content == null ? '' : String(m.content));
       return {role, content};
     }
@@ -122,6 +122,14 @@
       </div></div>
       <div class="status" id="status"></div>`;
 
+    (function injectMessageFixStyle(){
+      if(document.getElementById('messageFixStyle')) return;
+      const style=document.createElement('style');
+      style.id='messageFixStyle';
+      style.textContent='.message.assistant .assistant-text{white-space:pre-wrap;line-height:1.72;max-width:min(820px,100%);word-break:break-word}.message.error .error-text{white-space:pre-wrap;line-height:1.6;max-width:min(820px,100%);word-break:break-word;opacity:.9}.message.error{font-size:13px}';
+      document.head.appendChild(style);
+    })();
+
     function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
     function escapeHTML(s){ return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 
@@ -144,7 +152,16 @@
         box.innerHTML = `<div class="empty"><div class="empty-center"><svg class="empty-logo empty-logo-gamma" viewBox="0 0 120 120" aria-hidden="true"><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
         return;
       }
-      box.innerHTML = msgs.map(m=>`<div class="message ${m.role==='user'?'user':'assistant'}"><div class="bubble">${escapeHTML(m.content)}</div></div>`).join('');
+      box.innerHTML = msgs.map(function(m){
+        const content = escapeHTML(m.content);
+        if(m.role === 'user'){
+          return `<div class="message user"><div class="bubble">${content}</div></div>`;
+        }
+        if(m.role === 'error'){
+          return `<div class="message error"><div class="error-text">${content}</div></div>`;
+        }
+        return `<div class="message assistant"><div class="assistant-text">${content}</div></div>`;
+      }).join('');
       box.scrollTop = box.scrollHeight;
     }
     function renderAll(){
@@ -255,7 +272,12 @@
         });
         if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
       }catch(err){
-        assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
+        const msg = '请求失败：' + (err && err.message ? err.message : String(err));
+        if(!assistant.content.trim()){
+          const i = c.messages.indexOf(assistant);
+          if(i >= 0) c.messages.splice(i, 1);
+        }
+        c.messages.push({role:'error', content:msg});
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
     }
