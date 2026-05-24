@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  window.__DAOTIAN_THINKING_VERSION__ = 'v3.5.0-provider-model-list-search-fix';
+  window.__DAOTIAN_THINKING_VERSION__ = 'v3.5.2-keyboard-render-stable';
 
   function emergency(message){
     var app = document.getElementById('app');
@@ -266,6 +266,119 @@
     function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
     function escapeHTML(s){ return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 
+    function escapeAttr(s){ return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+    function ensureRenderStyle(){
+      if(document.getElementById('daotianRenderStyle')) return;
+      const style=document.createElement('style');
+      style.id='daotianRenderStyle';
+      style.textContent = `
+        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.78;font-size:15px;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
+        .assistant-render p{margin:.25em 0 .72em;}
+        .assistant-render p:last-child{margin-bottom:0;}
+        .assistant-render h1,.assistant-render h2,.assistant-render h3{margin:1em 0 .45em;line-height:1.35;font-weight:700;}
+        .assistant-render h1{font-size:1.28em}.assistant-render h2{font-size:1.18em}.assistant-render h3{font-size:1.08em}
+        .assistant-render ul,.assistant-render ol{margin:.45em 0 .8em;padding-left:1.35em;}
+        .assistant-render li{margin:.18em 0;}
+        .assistant-render blockquote{margin:.65em 0;padding:.2em .9em;border-left:3px solid rgba(127,127,127,.32);color:var(--muted);}
+        .assistant-render code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em;background:rgba(127,127,127,.12);border-radius:6px;padding:.08em .32em;}
+        .assistant-render pre{margin:.7em 0;padding:12px 13px;border-radius:14px;background:rgba(127,127,127,.10);border:1px solid rgba(127,127,127,.14);overflow:auto;-webkit-overflow-scrolling:touch;white-space:pre;}
+        .assistant-render pre code{background:transparent;padding:0;border-radius:0;white-space:pre;}
+        .assistant-render a{color:inherit;text-decoration:underline;text-underline-offset:3px;}
+        .assistant-render table{border-collapse:collapse;margin:.7em 0;display:block;overflow:auto;max-width:100%;}
+        .assistant-render th,.assistant-render td{border:1px solid rgba(127,127,127,.22);padding:6px 9px;}
+        .assistant-render .math-block{overflow-x:auto;overflow-y:hidden;margin:.7em 0;padding:.15em 0;}
+        .assistant-render .html-preview-frame{width:100%;min-height:240px;border:1px solid rgba(127,127,127,.18);border-radius:14px;background:white;margin:.55em 0;}
+        .assistant-render details{margin:.55em 0;}
+        .assistant-render summary{cursor:pointer;color:var(--muted);font-size:13px;margin-bottom:.35em;}
+        .assistant-render .mermaid{background:rgba(255,255,255,.04);border-radius:14px;padding:12px;overflow:auto;}
+        @media (max-width:760px){.assistant-render{max-width:calc(100vw - 36px);font-size:15px}.assistant-render .html-preview-frame{min-height:210px}}
+      `;
+      document.head.appendChild(style);
+    }
+
+    function renderInlineMarkdown(text){
+      let html = escapeHTML(text);
+      html = html.replace(/`([^`]+)`/g, function(_m, code){ return '<code>' + code + '</code>'; });
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+      html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      return html;
+    }
+
+    function renderMarkdownText(text){
+      const lines = String(text || '').split('\n');
+      let out = '';
+      let list = null;
+      let para = [];
+      function flushPara(){
+        if(para.length){
+          out += '<p>' + renderInlineMarkdown(para.join('\n')).replace(/\n/g,'<br>') + '</p>';
+          para = [];
+        }
+      }
+      function closeList(){ if(list){ out += '</' + list + '>'; list = null; } }
+      lines.forEach(function(line){
+        if(/^\s*$/.test(line)){ flushPara(); closeList(); return; }
+        const heading = line.match(/^(#{1,3})\s+(.+)$/);
+        if(heading){ flushPara(); closeList(); const level=heading[1].length; out += '<h'+level+'>'+renderInlineMarkdown(heading[2])+'</h'+level+'>'; return; }
+        const quote = line.match(/^>\s?(.+)$/);
+        if(quote){ flushPara(); closeList(); out += '<blockquote>'+renderInlineMarkdown(quote[1])+'</blockquote>'; return; }
+        const bullet = line.match(/^\s*[-*+]\s+(.+)$/);
+        if(bullet){ flushPara(); if(list !== 'ul'){ closeList(); list='ul'; out += '<ul>'; } out += '<li>'+renderInlineMarkdown(bullet[1])+'</li>'; return; }
+        const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+        if(ordered){ flushPara(); if(list !== 'ol'){ closeList(); list='ol'; out += '<ol>'; } out += '<li>'+renderInlineMarkdown(ordered[1])+'</li>'; return; }
+        closeList();
+        para.push(line);
+      });
+      flushPara(); closeList();
+      return out;
+    }
+
+    function renderAssistantContent(raw){
+      ensureRenderStyle();
+      const text = String(raw || '');
+      const re = /```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g;
+      let out = '';
+      let last = 0;
+      let match;
+      while((match = re.exec(text))){
+        out += renderMarkdownText(text.slice(last, match.index));
+        const lang = (match[1] || '').trim().toLowerCase();
+        const code = match[2] || '';
+        const safeCode = escapeHTML(code);
+        if(lang === 'mermaid'){
+          out += '<pre class="mermaid">' + safeCode + '</pre>';
+        }else if(lang === 'html' || lang === 'svg'){
+          const srcdoc = lang === 'svg' ? '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;display:grid;place-items:center;min-height:100vh">' + code + '</body>' : code;
+          out += '<iframe class="html-preview-frame" sandbox="allow-scripts allow-same-origin" srcdoc="' + escapeAttr(srcdoc) + '"></iframe>';
+          out += '<details><summary>源码</summary><pre><code class="language-' + escapeAttr(lang) + '">' + safeCode + '</code></pre></details>';
+        }else{
+          out += '<pre><code class="language-' + escapeAttr(lang || 'text') + '">' + safeCode + '</code></pre>';
+        }
+        last = re.lastIndex;
+      }
+      out += renderMarkdownText(text.slice(last));
+      out = out.replace(/<p>\s*\$\$([\s\S]*?)\$\$\s*<\/p>/g, '<div class="math-block">$$$1$$</div>');
+      return out || '';
+    }
+
+    let enhanceTimer = null;
+    function scheduleEnhanceRender(){
+      clearTimeout(enhanceTimer);
+      enhanceTimer = setTimeout(function(){
+        const box = document.getElementById('messages');
+        if(!box) return;
+        try{
+          if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
+        }catch(_e){}
+        try{
+          if(window.mermaid && window.mermaid.run){ window.mermaid.run({nodes: box.querySelectorAll('.mermaid')}).catch(function(){}); }
+        }catch(_e){}
+      }, 220);
+    }
+
     function ensureThinkingStyle(){
       if(document.getElementById('daotianThinkingStyle')) return;
       const style=document.createElement('style');
@@ -309,6 +422,29 @@
       document.head.appendChild(style);
     }
 
+    function ensureMobileKeyboardStyle(){
+      if(document.getElementById('daotianMobileKeyboardStyle')) return;
+      const style=document.createElement('style');
+      style.id='daotianMobileKeyboardStyle';
+      style.textContent = `
+        @media (max-width:900px){
+          body.keyboard-open{overflow:hidden!important;overscroll-behavior:none!important;}
+          body.keyboard-open #app{position:fixed!important;left:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;transform:none!important;}
+          body.keyboard-open .app-shell{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;}
+          body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
+          body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:14px 18px 10px!important;scroll-padding-bottom:18px!important;}
+          body.keyboard-open .composer-wrap{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;flex:0 0 auto!important;width:100vw!important;z-index:100!important;transform:none!important;padding:8px 14px calc(8px + env(safe-area-inset-bottom))!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;}
+          body.keyboard-open .search-toggle{display:none!important;}
+          body.keyboard-open .empty{display:none!important;}
+          body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}
+          body.keyboard-open .sidebar:not(.closed){transform:translateX(-105%)!important;opacity:0!important;pointer-events:none!important;}
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+
+
     function renderSidebar(){
       const side = $('#sidebar'); if(!side) return;
       side.classList.toggle('closed', !sidebarOpen);
@@ -340,8 +476,9 @@
           ensureThinkingStyle();
           return `<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>`;
         }
-        return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:2px 2px;line-height:1.75;white-space:pre-wrap;font-size:15px;color:var(--text);background:transparent;border:0;box-shadow:none">${content}</div></div>`;
+        return `<div class="message assistant"><div class="assistant-render">${renderAssistantContent(m.content)}</div></div>`;
       }).join('');
+      scheduleEnhanceRender();
       box.scrollTop = box.scrollHeight;
     }
     function renderModelSwitcher(){
@@ -572,45 +709,62 @@
 
     function setupMobileViewport(){
       try{
+        ensureMobileKeyboardStyle();
         const root = document.documentElement;
+        const appEl = document.getElementById('app');
         const input = $('#input');
         const messagesBox = $('#messages');
-        if(!root || !input || !messagesBox) return;
+        if(!root || !appEl || !input || !messagesBox) return;
 
         let timer = null;
+        let keyboardActive = false;
+        let lastHeight = 0;
+        let lastTop = 0;
 
         function isMobile(){
           return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
         }
 
+        function metrics(){
+          const vv = window.visualViewport;
+          const height = vv && vv.height ? vv.height : window.innerHeight;
+          const top = vv && typeof vv.offsetTop === 'number' ? vv.offsetTop : 0;
+          return {height: Math.max(320, Math.round(height)), top: Math.max(0, Math.round(top))};
+        }
+
+        function setVars(m){
+          lastHeight = m.height;
+          lastTop = m.top;
+          root.style.setProperty('--app-height', m.height + 'px');
+          root.style.setProperty('--app-top', m.top + 'px');
+        }
+
         function scrollLatest(){
-          requestAnimationFrame(function(){
-            try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
-          });
-          setTimeout(function(){
-            try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){}
-          }, 120);
+          requestAnimationFrame(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} });
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 80);
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 260);
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 520);
         }
 
         function applyViewport(){
           if(!isMobile()){
+            keyboardActive = false;
             document.body.classList.remove('keyboard-open');
             root.style.removeProperty('--app-height');
+            root.style.removeProperty('--app-top');
             return;
           }
 
-          const vv = window.visualViewport;
-          const h = vv && vv.height ? vv.height : window.innerHeight;
-          root.style.setProperty('--app-height', Math.max(320, Math.round(h)) + 'px');
-
           const focused = document.activeElement === input;
+          const m = metrics();
+          setVars(m);
+
           document.body.classList.toggle('keyboard-open', focused);
+          keyboardActive = focused;
 
           if(focused){
-            if(sidebarOpen){
-              sidebarOpen = false;
-              renderSidebar();
-            }
+            if(sidebarOpen){ sidebarOpen = false; renderSidebar(); }
+            try{ window.scrollTo(0, 0); }catch(_e){}
             scrollLatest();
           }
         }
@@ -622,33 +776,40 @@
 
         input.addEventListener('focus', function(){
           schedule(0);
-          setTimeout(applyViewport, 120);
-          setTimeout(applyViewport, 320);
+          setTimeout(applyViewport, 80);
+          setTimeout(applyViewport, 180);
+          setTimeout(applyViewport, 360);
+          setTimeout(applyViewport, 650);
         });
 
         input.addEventListener('blur', function(){
           setTimeout(function(){
+            keyboardActive = false;
             document.body.classList.remove('keyboard-open');
+            root.style.setProperty('--app-top','0px');
             applyViewport();
-          }, 160);
+          }, 180);
         });
 
-        input.addEventListener('input', function(){
-          schedule(20);
-          scrollLatest();
-        });
-
+        input.addEventListener('input', function(){ schedule(20); scrollLatest(); });
         window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
         window.addEventListener('orientationchange', function(){ setTimeout(applyViewport, 260); }, {passive:true});
 
         if(window.visualViewport){
-          window.visualViewport.addEventListener('resize', function(){ schedule(20); }, {passive:true});
-          window.visualViewport.addEventListener('scroll', function(){ schedule(20); }, {passive:true});
+          window.visualViewport.addEventListener('resize', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
+          window.visualViewport.addEventListener('scroll', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
         }
+
+        setInterval(function(){
+          if(!keyboardActive) return;
+          const m = metrics();
+          if(Math.abs(m.height - lastHeight) > 2 || Math.abs(m.top - lastTop) > 2) applyViewport();
+        }, 180);
 
         applyViewport();
       }catch(_err){}
     }
+
 
 
     renderAll();
