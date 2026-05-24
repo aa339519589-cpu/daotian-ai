@@ -52,7 +52,7 @@
 
     function normalizeMessage(m){
       if(!m || typeof m !== 'object') return null;
-      const role = m.role === 'assistant' || m.role === 'system' ? m.role : 'user';
+      const role = m.role === 'assistant' || m.role === 'system' || m.role === 'error' ? m.role : 'user';
       const content = typeof m.content === 'string' ? m.content : (m.content == null ? '' : String(m.content));
       return {role, content};
     }
@@ -144,7 +144,16 @@
         box.innerHTML = `<div class="empty"><div class="empty-center"><svg class="empty-logo empty-logo-gamma" viewBox="0 0 120 120" aria-hidden="true"><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
         return;
       }
-      box.innerHTML = msgs.map(m=>`<div class="message ${m.role==='user'?'user':'assistant'}"><div class="bubble">${escapeHTML(m.content)}</div></div>`).join('');
+      box.innerHTML = msgs.map(function(m){
+        const content = escapeHTML(m.content);
+        if(m.role === 'user'){
+          return `<div class="message user"><div class="bubble">${content}</div></div>`;
+        }
+        if(m.role === 'error'){
+          return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:12px 14px;border-radius:14px;line-height:1.65;white-space:pre-wrap;font-size:14px;color:#c96f66;background:rgba(196,80,70,.10);border:1px solid rgba(196,80,70,.22)">${content}</div></div>`;
+        }
+        return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:2px 2px;line-height:1.75;white-space:pre-wrap;font-size:15px;color:var(--text);background:transparent;border:0;box-shadow:none">${content}</div></div>`;
+      }).join('');
       box.scrollTop = box.scrollHeight;
     }
     function renderAll(){
@@ -255,6 +264,7 @@
         });
         if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
       }catch(err){
+        assistant.role='error';
         assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
