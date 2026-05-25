@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>稻田 Ai</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="appShell" class="app-shell sidebar-open">
+      <aside id="sidebar" class="sidebar open" aria-label="对话侧边栏">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div>
+            <h1>稻田 Ai</h1>
+            <p>简洁 · 稳定 · 自由</p>
+          </div>
+          <button id="sidebarClose" class="icon-button sidebar-close" type="button" aria-label="收起侧边栏">‹</button>
+        </div>
+
+        <button id="newChat" class="new-chat" type="button">
+          <span>＋</span>
+          新建对话
+        </button>
+
+        <section class="history-section">
+          <div class="section-label">对话历史</div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+
+        <div class="sidebar-bottom">
+          <button id="openProviderSide" class="side-action" type="button">
+            <span>⚙</span>
+            模型设置
+          </button>
+          <div class="user-card">
+            <span class="avatar">稻</span>
+            <div>
+              <strong>稻田用户</strong>
+              <small>本地工作台</small>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div id="sidebarBackdrop" class="sidebar-backdrop hidden"></div>
+
+      <main class="main-chat">
+        <header class="chat-header">
+          <div class="header-left">
+            <button id="sidebarToggle" class="icon-button" type="button" aria-label="展开或收起侧边栏">☰</button>
+            <div>
+              <div id="conversationTitle" class="conversation-title">新对话</div>
+              <div class="conversation-subtitle">安静地使用各种模型</div>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button id="openProvider" class="provider-button" type="button">
+              <span class="provider-icon">▧</span>
+              <span id="providerLabel">模型提供方</span>
+              <span>⌄</span>
+            </button>
+            <button id="themeToggle" class="icon-button" type="button" aria-label="主题">☼</button>
+          </div>
+        </header>
+
+        <section id="chatMessages" class="messages-container" aria-live="polite"></section>
+
+        <form id="composerForm" class="composer-wrapper">
+          <div class="composer-tools">
+            <button id="webSearchToggle" class="web-search-toggle" type="button" aria-pressed="false"><span>○</span> 联网搜索</button>
+          </div>
+          <div class="composer">
+            <textarea id="chatInput" rows="1" placeholder="输入消息…（Enter 发送，Shift + Enter 换行）"></textarea>
+            <button id="sendChat" class="send-button" type="submit" aria-label="发送消息">➤</button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <div id="providerModal" class="modal-layer hidden" role="dialog" aria-modal="true" aria-labelledby="providerTitle">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h2 id="providerTitle">模型提供方</h2>
+            <p>统一管理 API 地址、密钥与模型名称。</p>
+          </div>
+          <button id="closeProvider" class="icon-button" type="button" aria-label="关闭">×</button>
+        </div>
+
+        <div class="admin-connect">
+          <label>
+            <span>后台口令</span>
+            <input id="adminToken" type="password" placeholder="输入管理 Token 后加载配置" autocomplete="current-password" />
+          </label>
+          <button id="saveToken" type="button">连接后台</button>
+          <div id="connectionState" class="connection-state">未连接</div>
+        </div>
+
+        <div class="settings-grid">
+          <label>
+            <span>默认聊天模型 / Model</span>
+            <input id="chatModel" placeholder="例如 deepseek-chat、gpt-4o-mini、qwen-plus" />
+          </label>
+          <button id="saveChatSettings" class="soft-button" type="button">保存默认模型</button>
+        </div>
+
+        <div class="modal-toolbar">
+          <h3>上游提供方</h3>
+          <button id="createUpstream" class="soft-button" type="button">添加提供方</button>
+        </div>
+        <div id="upstreams" class="provider-list"></div>
+
+        <details class="quiet-details">
+          <summary>中转 Key 与最近请求</summary>
+          <div class="modal-toolbar compact">
+            <h3>访问 Key</h3>
+            <button id="createKey" class="soft-button" type="button">新建 Key</button>
+          </div>
+          <div id="secretBox" class="secret hidden"></div>
+          <div id="keys" class="key-list"></div>
+          <div class="modal-toolbar compact">
+            <h3>调用记录</h3>
+            <button id="refresh" class="soft-button" type="button">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>来源</th>
+                  <th>模型</th>
+                  <th>状态</th>
+                  <th>耗时</th>
+                </tr>
+              </thead>
+              <tbody id="logs"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <div id="providerToast" class="toast hidden"></div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
