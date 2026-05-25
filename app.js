@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'V3.6.0 Stream First Provider Restore';
+  const VERSION = 'V3.6.1 Stream First Clean Provider Rebuild';
 
   function emergency(message){
     var app = document.getElementById('app');
@@ -61,7 +61,12 @@ html[data-theme="dark"],.app-shell[data-theme="dark"]{--dt-bg:#111315;--dt-panel
 
 .quick-model{position:relative;display:inline-flex}.quick-model-btn{display:inline-flex;align-items:center;gap:8px;max-width:260px}.quick-model-btn span:first-child{display:block;max-width:205px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.quick-chev{font-size:12px;line-height:1;transition:transform .12s ease}.quick-model.open .quick-chev{transform:rotate(180deg)}.quick-model-menu{position:absolute;left:0;bottom:42px;z-index:50;min-width:260px;max-width:min(380px,calc(100vw - 36px));max-height:310px;overflow:auto;padding:7px;background:var(--dt-panel);border:1px solid var(--dt-border);border-radius:17px;box-shadow:0 16px 45px rgba(0,0,0,.18);opacity:0;transform:translateY(6px) scale(.985);pointer-events:none;transition:opacity .12s ease,transform .12s ease}.quick-model.open .quick-model-menu{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}.quick-provider-title{font-size:11px;color:var(--dt-muted);padding:7px 9px 4px}.quick-model-item{width:100%;height:34px;border:0;border-radius:11px;background:transparent;color:var(--dt-text);font:inherit;font-size:13px;text-align:left;padding:0 10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px}.quick-model-item:hover,.quick-model-item.active{background:var(--dt-soft)}.quick-model-item .model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.quick-model-item .active-mark{color:var(--dt-accent);font-weight:700}.mini-add-model{display:flex;gap:8px;margin-top:10px}.mini-add-model input{height:38px;flex:1}.mini-add-model .btn{white-space:nowrap}
 @media(max-width:760px){.app-shell,.app-shell.sidebar-collapsed{grid-template-columns:1fr}.sidebar{position:fixed;left:0;top:0;bottom:0;width:min(82vw,292px);z-index:60;box-shadow:20px 0 60px rgba(0,0,0,.18)}.sidebar.closed{transform:translateX(-105%);margin-left:0;opacity:1;pointer-events:none}.messages{padding:64px 17px 178px}.composer-wrap{padding-left:12px;padding-right:12px}.row,.settings-grid{grid-template-columns:1fr}.bubble{max-width:94%;font-size:15px}.modal-backdrop{padding:10px}.modal{border-radius:20px;max-height:94dvh}.sidebar-bottom{grid-template-columns:1fr 1fr}.side-bottom-btn{font-size:12px;padding:0 8px}}
-body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-wrap{padding-bottom:10px}`;
+body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-wrap{padding-bottom:10px}
+/* V3.6.1 stream-first / provider cleanup */
+.app-shell.sidebar-collapsed{grid-template-columns:0 minmax(0,1fr)!important}.app-shell.sidebar-collapsed .sidebar{width:0!important;min-width:0!important;max-width:0!important;border-right:0!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important}.floating-menu{transition:none!important}.model-select,.quick-row,.pill{transition:none!important;animation:none!important}.quick-row{min-height:34px}.quick-row .model-select{flex:0 1 auto;max-width:min(56vw,260px)}.message.streaming .assistant-content{white-space:normal}.provider-card-head{grid-template-columns:auto 1fr auto}.provider-card .btn{flex:0 0 auto}.provider-actions-top{position:sticky;top:0;z-index:2;background:var(--dt-panel);padding-bottom:10px}.provider-models{max-height:150px;overflow:auto}.provider-model-chip{transition:none!important}.mini-add-model{align-items:center}.modal .hint strong{color:var(--dt-text)}
+@media(max-width:760px){.app-shell.sidebar-collapsed{grid-template-columns:1fr!important}.app-shell.sidebar-collapsed .sidebar{width:min(82vw,292px)!important;min-width:0!important;max-width:min(82vw,292px)!important;opacity:1!important;border-right:1px solid var(--dt-border)!important}.sidebar.closed{transform:translateX(-105%)!important}.sidebar:not(.closed){transform:translateX(0)!important;opacity:1!important;pointer-events:auto!important}.quick-row .model-select{max-width:calc(100vw - 160px);min-width:120px}.provider-card-head{gap:7px}.provider-card-meta{display:none}}
+`;
+
       document.head.appendChild(st);
     }
 
@@ -281,7 +286,7 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
           <div class="field"><label>Base URL</label><input id="baseUrl" placeholder="https://api.deepseek.com"></div>
           <div class="field"><label>API Key</label><input id="apiKey" type="password" placeholder="sk-... / AIza... / anthropic key"></div>
           <div class="row"><div class="field"><label>模型列表（每行一个；保存时只追加/合并，不会删旧模型）</label><textarea id="model" placeholder="deepseek-chat&#10;deepseek-reasoner"></textarea></div><div class="field"><label>请求路径</label><input id="path" placeholder="/v1/chat/completions"><div class="mini-add-model"><input id="appendModelName" placeholder="新增一个模型名"><button class="btn" id="appendModelBtn" type="button">加入当前供应商</button></div></div></div>
-          <div class="hint">原有模型提供方配置完整保留。结构是“多个供应商，每个供应商多个模型”。保存当前供应商时会合并旧模型，避免新增模型导致旧模型消失。底部联网搜索旁边可以随时切换供应商 / 模型。OpenAI 兼容接口继续保持流式输出。</div>
+          <div class="hint">原有模型提供方配置完整保留。结构是“多个供应商，每个供应商多个模型”。结构固定为“多个供应商 → 每个供应商多个模型”。新增模型会追加到当前供应商，旧供应商和旧模型不会被覆盖。底部联网搜索旁边保留快速模型切换。OpenAI 兼容接口固定使用 stream:true 流式输出。</div>
         </div>
         <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
       </div></div>
@@ -479,6 +484,26 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       box.scrollTop = box.scrollHeight;
       if(!sending) typesetMath();
     }
+
+    let streamPaintHandle = 0;
+    function updateStreamingAssistant(content){
+      const box = $('#messages');
+      if(!box) return;
+      cancelAnimationFrame(streamPaintHandle);
+      streamPaintHandle = requestAnimationFrame(function(){
+        const nodes = box.querySelectorAll('.message.assistant.streaming .assistant-content');
+        const node = nodes[nodes.length - 1];
+        if(node){
+          node.innerHTML = escapeHTML(content || '').replace(/\n/g,'<br>');
+          box.scrollTop = box.scrollHeight;
+        }
+      });
+    }
+    function finishStreamingAssistant(){
+      cancelAnimationFrame(streamPaintHandle);
+      streamPaintHandle = 0;
+      renderAll();
+    }
     function closeQuickModel(){}
     function toggleQuickModel(){}
     function renderQuickModelSelect(){
@@ -523,7 +548,9 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       const choice = data && data.choices && data.choices[0];
       if(choice && choice.delta && typeof choice.delta.content === 'string') return choice.delta.content;
       if(choice && choice.delta && typeof choice.delta.reasoning_content === 'string') return choice.delta.reasoning_content;
+      if(choice && typeof choice.text === 'string') return choice.text;
       if(choice && choice.message && typeof choice.message.content === 'string') return choice.message.content;
+      if(data && typeof data.output_text === 'string') return data.output_text;
       if(data && Array.isArray(data.content)) return data.content.map(function(part){ return part && part.text ? part.text : ''; }).join('');
       return '';
     }
@@ -597,10 +624,10 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       const requestMessages=c.messages.map(m=>({role:m.role,content:m.content}));
       const assistant={role:'assistant',content:''}; c.messages.push(assistant); sending=true; $('#sendBtn').disabled=true; renderAll();
       try{
-        const finalText=await callModel(requestMessages, function(delta){ assistant.content += delta; c.updatedAt=Date.now(); renderMessages(); });
+        const finalText=await callModel(requestMessages, function(delta){ assistant.content += delta; c.updatedAt=Date.now(); updateStreamingAssistant(assistant.content); });
         if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
       }catch(err){ assistant.content='请求失败：'+(err&&err.message?err.message:String(err)); }
-      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
+      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); finishStreamingAssistant();
     }
 
     async function sendMessage(){
@@ -610,10 +637,10 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       const requestMessages=c.messages.map(m=>({role:m.role,content:m.content}));
       const assistant={role:'assistant',content:''}; c.messages.push(assistant); renderAll();
       try{
-        const finalText=await callModel(requestMessages, function(delta){ assistant.content += delta; c.updatedAt=Date.now(); renderMessages(); });
+        const finalText=await callModel(requestMessages, function(delta){ assistant.content += delta; c.updatedAt=Date.now(); updateStreamingAssistant(assistant.content); });
         if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
       }catch(err){ assistant.content='请求失败：'+(err&&err.message?err.message:String(err)); }
-      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
+      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); finishStreamingAssistant();
     }
 
     let editingProviderId = null;
@@ -686,19 +713,38 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       $('#providerModal').classList.add('show');
     }
     function closeProvider(){ $('#providerModal').classList.remove('show'); }
+    function sameProviderShape(a,b){
+      if(!a || !b) return false;
+      return String(a.providerType||'openai')===String(b.providerType||'openai') &&
+        String(a.providerName||'').trim()===String(b.providerName||'').trim() &&
+        String(a.baseUrl||'').trim()===String(b.baseUrl||'').trim() &&
+        String(a.path||'/v1/chat/completions').trim()===String(b.path||'/v1/chat/completions').trim();
+    }
     function saveProvider(){
       settings.providers = normalizeProviders(settings.providers, settings);
       const wasNew = !editingProviderId || editingProviderId === '__new__';
-      const id = wasNew ? uid() : editingProviderId;
-      const data = providerFromForm(id);
-      const idx = settings.providers.findIndex(function(p){return p.id===id;});
-      if(idx>=0) settings.providers[idx] = data; else settings.providers.push(data);
-      if(data.id === settings.activeProviderId){
-        const currentModelStillExists = data.models.find(function(m){return m.id === settings.activeModelId;});
-        syncProviderToSettings(data, currentModelStillExists ? currentModelStillExists.id : (data.models[0] && data.models[0].id));
+      let id = wasNew ? uid() : editingProviderId;
+      let old = settings.providers.find(function(p){return p.id===id;});
+      let data = providerFromForm(id);
+      let idx = settings.providers.findIndex(function(p){return p.id===id;});
+      if(idx < 0){
+        idx = settings.providers.findIndex(function(p){return sameProviderShape(p, data);});
+        if(idx >= 0){ old = settings.providers[idx]; data.id = old.id; data.models = modelTextareaToModels($('#model').value, old.models); id = old.id; }
       }
-      editingProviderId = data.id;
-      persist(); renderQuickModelSelect(); renderProviderSavedSelect(); toast(wasNew ? '已新增供应商，旧供应商已保留' : '已保存，旧模型已保留');
+      if(idx>=0){
+        const previous = settings.providers[idx];
+        data.models = modelTextareaToModels($('#model').value, previous.models);
+        settings.providers[idx] = Object.assign({}, previous, data);
+      }else{
+        settings.providers.push(data);
+      }
+      const saved = settings.providers.find(function(p){return p.id===data.id;}) || data;
+      if(saved.id === settings.activeProviderId){
+        const currentModelStillExists = saved.models.find(function(m){return m.id === settings.activeModelId;});
+        syncProviderToSettings(saved, currentModelStillExists ? currentModelStillExists.id : (saved.models[0] && saved.models[0].id));
+      }
+      editingProviderId = saved.id;
+      persist(); renderQuickModelSelect(); renderProviderSavedSelect(); fillProviderForm(saved); toast(wasNew ? '已新增供应商，旧供应商已保留' : '已保存，旧模型已保留');
     }
     function newProvider(){
       editingProviderId = '__new__';
@@ -722,8 +768,19 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       if(!lines.includes(name)) lines.push(name);
       ta.value = lines.join('\n');
       input.value = '';
+      if(editingProviderId && editingProviderId !== '__new__'){
+        settings.providers = normalizeProviders(settings.providers, settings);
+        const p = settings.providers.find(function(x){return x.id===editingProviderId;});
+        if(p && !p.models.some(function(m){return m.name===name;})){
+          p.models.push({id:uid(), name:name});
+          p.models = normalizeModels(p.models);
+          if(p.id === settings.activeProviderId && !settings.activeModelId) syncProviderToSettings(p, p.models[0] && p.models[0].id);
+          persist(); renderQuickModelSelect(); renderProviderSavedSelect(); fillProviderForm(p); toast('已加入当前供应商，旧模型保留');
+          return;
+        }
+      }
       ta.focus();
-      toast('已加入模型列表，点保存生效');
+      toast('已加入模型列表，保存后生效');
     }
     function deleteProvider(){
       settings.providers = normalizeProviders(settings.providers, settings);
