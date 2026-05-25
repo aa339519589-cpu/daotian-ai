@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'V3.5.7 Sidebar + Multi Provider Hotfix';
+  const VERSION = 'V3.5.8 Multi Provider Multi Model Streaming Fix';
 
   function emergency(message){
     var app = document.getElementById('app');
@@ -37,7 +37,7 @@
 
     const defaultSettings = {
       providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions',
-      providers:null, activeProviderId:'default',
+      providers:null, activeProviderId:'default', activeModelId:'default-model',
       temperature:0.7, topP:1, contextMode:'recent', contextLimit:24,
       systemPrompt:'', personalityPrompt:'', autoMemory:true, memoryInPrompt:true, markdownRender:true, mathRender:true
     };
@@ -111,63 +111,132 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
     settings.topP = clamp(settings.topP,0.01,1);
     settings.contextLimit = clamp(settings.contextLimit,4,80);
 
+    function normalizeModelName(name){ return String(name||'').trim(); }
+    function normalizeModels(models, fallbackModel){
+      let arr = [];
+      if(Array.isArray(models)){
+        models.forEach(function(m){
+          if(typeof m === 'string') arr.push({id:uid(), name:normalizeModelName(m)});
+          else if(m && typeof m === 'object') arr.push({id:m.id || uid(), name:normalizeModelName(m.name || m.model || m.value || m.label)});
+        });
+      }else if(typeof models === 'string'){
+        models.split(/[\n,，]/).forEach(function(x){ arr.push({id:uid(), name:normalizeModelName(x)}); });
+      }
+      const fb = normalizeModelName(fallbackModel);
+      if(fb) arr.unshift({id:'legacy-model', name:fb});
+      arr = arr.filter(function(m){return m && m.name;});
+      const seen = new Set();
+      arr = arr.filter(function(m){ const k=m.name; if(seen.has(k)) return false; seen.add(k); return true; });
+      if(!arr.length) arr.push({id:'default-model', name:'deepseek-chat'});
+      const ids = new Set();
+      arr.forEach(function(m){ if(!m.id || ids.has(m.id)) m.id='m_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6); ids.add(m.id); });
+      return arr;
+    }
     function providerLabel(p){
-      if(!p) return '未配置模型';
-      const name = (p.providerName || p.name || '模型').trim();
-      const model = (p.model || '').trim();
+      if(!p) return '未配置供应商';
+      return (p.providerName || p.name || '模型提供方').trim();
+    }
+    function modelLabel(p, m){
+      const name = providerLabel(p);
+      const model = (m && m.name) || getActiveModelName(p) || p.model || '';
       return model ? (name + ' / ' + model) : name;
     }
     function normalizeProviders(raw, legacy){
-      let arr = Array.isArray(raw) ? raw : [];
-      arr = arr.map(function(p){
-        if(!p || typeof p !== 'object') return null;
+      const source = Array.isArray(raw) ? raw : [];
+      let arr = [];
+      const groups = new Map();
+      function baseOf(p){
         return {
           id: p.id || uid(),
           providerType: p.providerType || p.type || 'openai',
-          providerName: p.providerName || p.name || '模型',
+          providerName: p.providerName || p.name || '模型提供方',
           baseUrl: p.baseUrl || p.baseURL || '',
           apiKey: p.apiKey || '',
-          model: p.model || '',
-          path: p.path || '/v1/chat/completions'
+          path: p.path || '/v1/chat/completions',
+          models: normalizeModels(p.models, p.model)
         };
-      }).filter(Boolean);
+      }
+      source.forEach(function(item){
+        if(!item || typeof item !== 'object') return;
+        const p = baseOf(item);
+        if(item.models){
+          arr.push(p);
+          return;
+        }
+        const key = [p.providerType,p.providerName,p.baseUrl,p.apiKey,p.path].join('\u0001');
+        if(!groups.has(key)) groups.set(key, p);
+        else{
+          const g = groups.get(key);
+          p.models.forEach(function(m){ if(!g.models.some(function(x){return x.name===m.name;})) g.models.push(m); });
+          if(legacy && item.id === legacy.activeProviderId){ legacy.activeProviderId = g.id; legacy.activeModelId = p.models[0] && p.models[0].id; }
+        }
+      });
+      arr = arr.concat(Array.from(groups.values()));
       const hasLegacy = legacy && (legacy.baseUrl || legacy.apiKey || legacy.model || legacy.providerName);
       if(!arr.length && hasLegacy){
-        arr.push({id: legacy.activeProviderId || 'default', providerType: legacy.providerType || 'openai', providerName: legacy.providerName || 'DeepSeek', baseUrl: legacy.baseUrl || 'https://api.deepseek.com', apiKey: legacy.apiKey || '', model: legacy.model || 'deepseek-chat', path: legacy.path || '/v1/chat/completions'});
+        arr.push({id: legacy.activeProviderId || 'default', providerType: legacy.providerType || 'openai', providerName: legacy.providerName || 'DeepSeek', baseUrl: legacy.baseUrl || 'https://api.deepseek.com', apiKey: legacy.apiKey || '', path: legacy.path || '/v1/chat/completions', models: normalizeModels(null, legacy.model || 'deepseek-chat')});
       }
       if(!arr.length){
-        arr.push({id:'default', providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions'});
+        arr.push({id:'default', providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', path:'/v1/chat/completions', models:[{id:'default-model', name:'deepseek-chat'}]});
       }
       const seen = new Set();
-      arr.forEach(function(p){ if(!p.id || seen.has(p.id)) p.id = uid(); seen.add(p.id); if(!p.path) p.path='/v1/chat/completions'; });
+      arr.forEach(function(p){
+        if(!p.id || seen.has(p.id)) p.id = uid(); seen.add(p.id);
+        if(!p.path) p.path='/v1/chat/completions';
+        p.models = normalizeModels(p.models, p.model);
+        p.model = p.models[0] ? p.models[0].name : (p.model || 'deepseek-chat');
+      });
       return arr;
     }
     function getActiveProvider(){
       settings.providers = normalizeProviders(settings.providers, settings);
       let p = settings.providers.find(function(x){return x.id === settings.activeProviderId;});
       if(!p){ p = settings.providers[0]; settings.activeProviderId = p.id; }
+      if(!settings.activeModelId || !p.models.some(function(m){return m.id===settings.activeModelId;})){
+        const byName = p.models.find(function(m){return m.name === settings.model;});
+        settings.activeModelId = (byName || p.models[0]).id;
+      }
       return p;
     }
-    function syncProviderToSettings(p){
+    function getActiveModel(p){
+      p = p || getActiveProvider();
+      if(!p || !Array.isArray(p.models) || !p.models.length) return {id:'default-model', name:p && p.model || settings.model || 'deepseek-chat'};
+      return p.models.find(function(m){return m.id===settings.activeModelId;}) || p.models.find(function(m){return m.name===settings.model;}) || p.models[0];
+    }
+    function getActiveModelName(p){ return (getActiveModel(p).name || '').trim(); }
+    function syncProviderToSettings(p, modelId){
       if(!p) p = getActiveProvider();
+      const m = modelId ? (p.models.find(function(x){return x.id===modelId;}) || p.models[0]) : getActiveModel(p);
       settings.activeProviderId = p.id;
+      settings.activeModelId = m && m.id;
       settings.providerType = p.providerType || 'openai';
       settings.providerName = p.providerName || '';
       settings.baseUrl = p.baseUrl || '';
       settings.apiKey = p.apiKey || '';
-      settings.model = p.model || '';
+      settings.model = (m && m.name) || p.model || '';
       settings.path = p.path || '/v1/chat/completions';
     }
     function setActiveProvider(id){
       settings.providers = normalizeProviders(settings.providers, settings);
       const p = settings.providers.find(function(x){return x.id === id;}) || settings.providers[0];
-      syncProviderToSettings(p);
+      syncProviderToSettings(p, p.models[0] && p.models[0].id);
+      persist();
+      renderQuickModelSelect();
+    }
+    function quickModelValue(providerId, modelId){ return providerId + '::' + modelId; }
+    function setActiveModelValue(value){
+      settings.providers = normalizeProviders(settings.providers, settings);
+      const parts = String(value||'').split('::');
+      const pid = parts[0]; const mid = parts.slice(1).join('::');
+      const p = settings.providers.find(function(x){return x.id===pid;}) || settings.providers[0];
+      const m = p.models.find(function(x){return x.id===mid;}) || p.models[0];
+      syncProviderToSettings(p, m && m.id);
       persist();
       renderQuickModelSelect();
     }
     settings.providers = normalizeProviders(settings.providers, settings);
     if(!settings.activeProviderId || !settings.providers.some(function(p){return p.id === settings.activeProviderId;})) settings.activeProviderId = settings.providers[0].id;
-    syncProviderToSettings(getActiveProvider());
+    syncProviderToSettings(getActiveProvider(), settings.activeModelId);
 
     let memory = normalizeMemory(readJSON(KEYS.memory,[]));
     let chats = loadChats();
@@ -203,12 +272,12 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       <div class="modal-backdrop" id="providerModal"><div class="modal">
         <div class="modal-head"><span>模型提供方</span><button class="icon-btn" id="closeProvider">×</button></div>
         <div class="modal-body">
-          <div class="row"><div class="field"><label>已保存模型 / 提供方</label><select id="providerSavedSelect"></select></div><div class="field"><label>操作</label><div class="provider-actions"><button class="btn" id="newProvider" type="button">新增模型</button><button class="btn" id="setActiveProvider" type="button">设为当前</button><button class="btn" id="deleteProvider" type="button">删除</button></div></div></div>
+          <div class="row"><div class="field"><label>已保存供应商</label><select id="providerSavedSelect"></select></div><div class="field"><label>操作</label><div class="provider-actions"><button class="btn" id="newProvider" type="button">新增供应商</button><button class="btn" id="addModelLine" type="button">添加模型行</button><button class="btn" id="setActiveProvider" type="button">设为当前</button><button class="btn" id="deleteProvider" type="button">删除供应商</button></div></div></div>
           <div class="row"><div class="field"><label>提供方类型</label><select id="providerType"><option value="openai">OpenAI 兼容</option><option value="gemini">Gemini</option><option value="anthropic">Anthropic</option></select></div><div class="field"><label>名称</label><input id="providerName" placeholder="DeepSeek / OpenAI / Gemini / Anthropic"></div></div>
           <div class="field"><label>Base URL</label><input id="baseUrl" placeholder="https://api.deepseek.com"></div>
           <div class="field"><label>API Key</label><input id="apiKey" type="password" placeholder="sk-... / AIza... / anthropic key"></div>
-          <div class="row"><div class="field"><label>模型名</label><input id="model" placeholder="deepseek-chat"></div><div class="field"><label>请求路径</label><input id="path" placeholder="/v1/chat/completions"></div></div>
-          <div class="hint">原有模型提供方配置完整保留。OpenAI 兼容接口可直接浏览器请求。Gemini / Anthropic 配置先保存，后续需要后端适配转发。</div>
+          <div class="row"><div class="field"><label>模型列表（每行一个，可同一供应商多个模型）</label><textarea id="model" placeholder="deepseek-chat&#10;deepseek-reasoner"></textarea></div><div class="field"><label>请求路径</label><input id="path" placeholder="/v1/chat/completions"></div></div>
+          <div class="hint">原有模型提供方配置完整保留。一个供应商可以保存多个模型；底部联网搜索旁边的下拉框会展开为“供应商 / 模型”，可随时切换。OpenAI 兼容接口继续保持流式输出。</div>
         </div>
         <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
       </div></div>
@@ -408,9 +477,16 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
     function renderQuickModelSelect(){
       const sel = $('#quickModelSelect'); if(!sel) return;
       settings.providers = normalizeProviders(settings.providers, settings);
-      sel.innerHTML = settings.providers.map(function(p){ return '<option value="'+escapeHTML(p.id)+'">'+escapeHTML(providerLabel(p))+'</option>'; }).join('');
-      if(!settings.providers.some(function(p){return p.id===settings.activeProviderId;})) settings.activeProviderId = settings.providers[0].id;
-      sel.value = settings.activeProviderId;
+      const opts = [];
+      settings.providers.forEach(function(p){
+        (p.models || []).forEach(function(m){
+          opts.push('<option value="'+escapeHTML(quickModelValue(p.id,m.id))+'">'+escapeHTML(modelLabel(p,m))+'</option>');
+        });
+      });
+      sel.innerHTML = opts.join('');
+      const p = getActiveProvider();
+      const m = getActiveModel(p);
+      sel.value = quickModelValue(p.id, m.id);
     }
 
     function renderAll(){
@@ -462,7 +538,7 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       const activeProvider = getActiveProvider();
       if((activeProvider.providerType||'openai') !== 'openai') throw new Error('Gemini / Anthropic 已保存，但还需要后端转发适配。当前先用 OpenAI 兼容接口。');
       const headers={'Content-Type':'application/json'}; if(activeProvider.apiKey) headers.Authorization='Bearer '+activeProvider.apiKey;
-      const body={model:activeProvider.model||'deepseek-chat',messages:buildRequestMessages(messages).map(m=>({role:m.role,content:m.content})),stream:true,temperature:clamp(settings.temperature,0,2),top_p:clamp(settings.topP,0.01,1)};
+      const body={model:getActiveModelName(activeProvider)||activeProvider.model||'deepseek-chat',messages:buildRequestMessages(messages).map(m=>({role:m.role,content:m.content})),stream:true,temperature:clamp(settings.temperature,0,2),top_p:clamp(settings.topP,0.01,1)};
       if(searchOn) body.web_search=true;
       const res=await fetch(buildOpenAIURL(),{method:'POST',headers,body:JSON.stringify(body)});
       if(!res.ok){ const txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
@@ -527,20 +603,47 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
     }
 
     let editingProviderId = null;
+    function modelTextareaToModels(value, keepModels){
+      const oldByName = new Map((keepModels || []).map(function(m){return [m.name,m];}));
+      return normalizeModels(String(value||'').split(/\n/).map(function(x){
+        const name = x.trim();
+        const old = oldByName.get(name);
+        return {id: old && old.id || uid(), name:name};
+      }).filter(function(x){return x.name;}));
+    }
     function providerFromForm(id){
-      return {id:id || uid(), providerType:$('#providerType').value || 'openai', providerName:$('#providerName').value.trim() || ($('#model').value.trim() || '模型'), baseUrl:$('#baseUrl').value.trim(), apiKey:$('#apiKey').value.trim(), model:$('#model').value.trim(), path:$('#path').value.trim() || '/v1/chat/completions'};
+      const old = settings.providers.find(function(p){return p.id===id;});
+      const models = modelTextareaToModels($('#model').value, old && old.models);
+      return {id:id || uid(), providerType:$('#providerType').value || 'openai', providerName:$('#providerName').value.trim() || (models[0] && models[0].name) || '模型提供方', baseUrl:$('#baseUrl').value.trim(), apiKey:$('#apiKey').value.trim(), path:$('#path').value.trim() || '/v1/chat/completions', models:models, model:models[0] && models[0].name || 'deepseek-chat'};
     }
     function fillProviderForm(p){
-      p = p || {providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions'};
-      $('#providerType').value=p.providerType||'openai'; $('#providerName').value=p.providerName||''; $('#baseUrl').value=p.baseUrl||''; $('#apiKey').value=p.apiKey||''; $('#model').value=p.model||''; $('#path').value=p.path||'/v1/chat/completions';
+      p = p || {providerType:'openai', providerName:'', baseUrl:'', apiKey:'', models:[{id:'default-model',name:'deepseek-chat'}], path:'/v1/chat/completions'};
+      p.models = normalizeModels(p.models, p.model);
+      $('#providerType').value=p.providerType||'openai';
+      $('#providerName').value=p.providerName||'';
+      $('#baseUrl').value=p.baseUrl||'';
+      $('#apiKey').value=p.apiKey||'';
+      $('#model').value=(p.models||[]).map(function(m){return m.name;}).join('\n');
+      $('#path').value=p.path||'/v1/chat/completions';
     }
     function renderProviderSavedSelect(){
       const sel = $('#providerSavedSelect'); if(!sel) return;
       settings.providers = normalizeProviders(settings.providers, settings);
-      sel.innerHTML = settings.providers.map(function(p){ return '<option value="'+escapeHTML(p.id)+'">'+escapeHTML((p.id===settings.activeProviderId?'当前 · ':'') + providerLabel(p))+'</option>'; }).join('');
-      sel.value = editingProviderId || settings.activeProviderId || settings.providers[0].id;
+      sel.innerHTML = settings.providers.map(function(p){
+        const mark = p.id===settings.activeProviderId ? '当前 · ' : '';
+        const count = (p.models||[]).length;
+        return '<option value="'+escapeHTML(p.id)+'">'+escapeHTML(mark + providerLabel(p) + '（' + count + ' 个模型）')+'</option>';
+      }).join('');
+      if(!editingProviderId || !settings.providers.some(function(p){return p.id===editingProviderId;})) editingProviderId = settings.activeProviderId || settings.providers[0].id;
+      sel.value = editingProviderId;
     }
-    function openProvider(){ settings.providers = normalizeProviders(settings.providers, settings); editingProviderId = settings.activeProviderId || settings.providers[0].id; renderProviderSavedSelect(); fillProviderForm(settings.providers.find(function(p){return p.id===editingProviderId;}) || settings.providers[0]); $('#providerModal').classList.add('show'); }
+    function openProvider(){
+      settings.providers = normalizeProviders(settings.providers, settings);
+      editingProviderId = settings.activeProviderId || settings.providers[0].id;
+      renderProviderSavedSelect();
+      fillProviderForm(settings.providers.find(function(p){return p.id===editingProviderId;}) || settings.providers[0]);
+      $('#providerModal').classList.add('show');
+    }
     function closeProvider(){ $('#providerModal').classList.remove('show'); }
     function saveProvider(){
       settings.providers = normalizeProviders(settings.providers, settings);
@@ -548,21 +651,35 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
       const data = providerFromForm(id);
       const idx = settings.providers.findIndex(function(p){return p.id===id;});
       if(idx>=0) settings.providers[idx] = data; else settings.providers.push(data);
-      syncProviderToSettings(data);
-      persist(); renderQuickModelSelect(); renderProviderSavedSelect(); closeProvider(); toast('已保存并切换模型');
+      const currentModelStillExists = data.models.find(function(m){return m.id === settings.activeModelId;});
+      syncProviderToSettings(data, currentModelStillExists ? currentModelStillExists.id : data.models[0].id);
+      editingProviderId = data.id;
+      persist(); renderQuickModelSelect(); renderProviderSavedSelect(); closeProvider(); toast('已保存供应商和模型');
     }
-    function newProvider(){ editingProviderId = null; fillProviderForm({providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions'}); const sel=$('#providerSavedSelect'); if(sel) sel.value=''; }
+    function newProvider(){
+      editingProviderId = null;
+      fillProviderForm({providerType:'openai', providerName:'', baseUrl:'', apiKey:'', models:[{id:uid(),name:'deepseek-chat'}], path:'/v1/chat/completions'});
+      const sel=$('#providerSavedSelect'); if(sel) sel.value='';
+    }
+    function addModelLine(){
+      const ta = $('#model'); if(!ta) return;
+      const v = ta.value.trim();
+      ta.value = v ? (v + '\n') : '';
+      ta.focus();
+      toast('在新行输入模型名');
+    }
     function deleteProvider(){
       settings.providers = normalizeProviders(settings.providers, settings);
       const id = editingProviderId || ($('#providerSavedSelect') && $('#providerSavedSelect').value);
-      if(settings.providers.length<=1){ toast('至少保留一个模型'); return; }
+      if(settings.providers.length<=1){ toast('至少保留一个供应商'); return; }
       settings.providers = settings.providers.filter(function(p){return p.id!==id;});
-      if(settings.activeProviderId===id) settings.activeProviderId=settings.providers[0].id;
-      editingProviderId=settings.activeProviderId; syncProviderToSettings(getActiveProvider()); persist(); renderProviderSavedSelect(); fillProviderForm(getActiveProvider()); renderQuickModelSelect(); toast('已删除模型');
+      if(settings.activeProviderId===id){ settings.activeProviderId=settings.providers[0].id; settings.activeModelId=settings.providers[0].models[0].id; }
+      editingProviderId=settings.activeProviderId; syncProviderToSettings(getActiveProvider(), settings.activeModelId); persist(); renderProviderSavedSelect(); fillProviderForm(getActiveProvider()); renderQuickModelSelect(); toast('已删除供应商');
     }
     function setActiveProviderFromPanel(){
       const id = editingProviderId || ($('#providerSavedSelect') && $('#providerSavedSelect').value);
-      if(id){ setActiveProvider(id); editingProviderId=id; renderProviderSavedSelect(); fillProviderForm(getActiveProvider()); toast('已切换当前模型'); }
+      const p = settings.providers.find(function(x){return x.id===id;});
+      if(p){ syncProviderToSettings(p, p.models[0] && p.models[0].id); editingProviderId=id; persist(); renderProviderSavedSelect(); fillProviderForm(p); renderQuickModelSelect(); toast('已切换当前供应商'); }
     }
 
     function renderMemoryList(){
@@ -596,11 +713,11 @@ body.keyboard-open .messages{padding-bottom:210px} body.keyboard-open .composer-
     });
 
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
-    $('#openProvider').onclick=openProvider; $('#closeProvider').onclick=closeProvider; $('#cancelProvider').onclick=closeProvider; $('#saveProvider').onclick=saveProvider; $('#newProvider').onclick=newProvider; $('#deleteProvider').onclick=deleteProvider; $('#setActiveProvider').onclick=setActiveProviderFromPanel; $('#providerSavedSelect').onchange=function(e){ editingProviderId=e.target.value; fillProviderForm(settings.providers.find(function(p){return p.id===editingProviderId;}) || getActiveProvider()); };
+    $('#openProvider').onclick=openProvider; $('#closeProvider').onclick=closeProvider; $('#cancelProvider').onclick=closeProvider; $('#saveProvider').onclick=saveProvider; $('#newProvider').onclick=newProvider; $('#addModelLine').onclick=addModelLine; $('#deleteProvider').onclick=deleteProvider; $('#setActiveProvider').onclick=setActiveProviderFromPanel; $('#providerSavedSelect').onchange=function(e){ editingProviderId=e.target.value; fillProviderForm(settings.providers.find(function(p){return p.id===editingProviderId;}) || getActiveProvider()); };
     $('#openSettings').onclick=openSettingsPanel; $('#closeSettings').onclick=closeSettingsPanel; $('#cancelSettings').onclick=closeSettingsPanel; $('#saveSettings').onclick=saveSettingsPanel;
     $('#temperature').addEventListener('input',()=>{$('#temperatureValue').textContent=$('#temperature').value;}); $('#topP').addEventListener('input',()=>{$('#topPValue').textContent=$('#topP').value;});
     $('#addMemory').onclick=function(){ const v=$('#newMemory').value.trim(); if(addMemoryText(v,'manual')){ $('#newMemory').value=''; renderMemoryList(); toast('已添加记忆'); } };
-    $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#quickModelSelect').onchange=function(e){ setActiveProvider(e.target.value); toast('已切换模型'); }; $('#sendBtn').onclick=sendMessage;
+    $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#quickModelSelect').onchange=function(e){ setActiveModelValue(e.target.value); toast('已切换模型'); }; $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
     $('#providerType').addEventListener('change', e=>{ const v=e.target.value; if(v==='openai'){ $('#path').value='/v1/chat/completions'; if(!$('#baseUrl').value) $('#baseUrl').value='https://api.deepseek.com'; } if(v==='gemini'){ $('#providerName').value=$('#providerName').value||'Gemini'; $('#baseUrl').value=$('#baseUrl').value||'https://generativelanguage.googleapis.com'; $('#model').value=$('#model').value||'gemini-1.5-flash'; } if(v==='anthropic'){ $('#providerName').value=$('#providerName').value||'Anthropic'; $('#baseUrl').value=$('#baseUrl').value||'https://api.anthropic.com'; $('#model').value=$('#model').value||'claude-3-5-sonnet-latest'; } });
 
