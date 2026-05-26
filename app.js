@@ -682,7 +682,7 @@
         box.innerHTML = `<div class="empty"><div class="empty-center"><div class="brand-main-row"><svg class="empty-logo" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="3"/><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="brand-name">稻田 AI</div></div><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
         return;
       }
-      box.innerHTML = msgs.map(function(m){
+      box.innerHTML = msgs.map(function(m, idx){
         const content = escapeHTML(m.content);
         if(m.role === 'user'){
           return '<div class="message user"><div class="bubble">'+content+'</div></div>';
@@ -695,9 +695,8 @@
           var label = m.memoryNotice ? '记忆已更新' : '想一下';
           return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
-        var ttsIdx = 'tts_'+c.id+'_'+idx;
         var ttsBtn = (m.content && m.content.length>5 && m.role==='assistant' && !m.thinking)
-          ? '<button class="tts-play-btn" data-tts-idx="'+ttsIdx+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
+          ? '<button class="tts-play-btn" data-tts-idx="tts_'+c.id+'_'+idx+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
         return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
