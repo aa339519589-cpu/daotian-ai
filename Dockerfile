@@ -2,9 +2,9 @@ FROM node:24-alpine
 
 WORKDIR /app
 COPY package.json ./
-COPY server.js ./server.js
+RUN npm install --production
+COPY server.js fileParser.js ./
 COPY index.html styles.css app.js ./
-COPY README.md ./
 
 ENV HOST=0.0.0.0
 ENV PORT=8787

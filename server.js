@@ -2,6 +2,7 @@ import http from "node:http";
 import { createReadStream } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseUploadedFile, buildFileContext } from "./fileParser.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = ROOT;
@@ -246,10 +247,10 @@ async function handleChat(req, res){
     return;
   }
 
-  /* Check if multipart */
+  /* Parse body: JSON or multipart */
   const contentType = String(req.headers["content-type"] || "");
   let body = {};
-  let uploadedFiles = [];
+  let rawFiles = []; // { filename, mimetype, buffer, size }
 
   if(contentType.includes("multipart/form-data")){
     const parsed = await readMultipartBody(req);
@@ -257,25 +258,11 @@ async function handleChat(req, res){
       sendJson(res, 400, { error:"parse_error", message:"无法解析上传的表单数据" });
       return;
     }
-    /* Parse JSON fields from multipart */
     for(const key of Object.keys(parsed.fields)){
-      try{
-        body[key] = JSON.parse(parsed.fields[key]);
-      }catch{
-        body[key] = parsed.fields[key];
-      }
+      try{ body[key] = JSON.parse(parsed.fields[key]); }catch{ body[key] = parsed.fields[key]; }
     }
-    /* Convert file buffers to base64 data URLs for images */
     for(const file of parsed.files){
-      const b64 = file.buffer.toString("base64");
-      const isImage = /^image\//.test(file.mimetype);
-      uploadedFiles.push({
-        name: file.filename,
-        type: file.mimetype,
-        size: file.size,
-        dataUrl: isImage ? `data:${file.mimetype};base64,${b64}` : null,
-        isImage
-      });
+      rawFiles.push({ filename: file.filename, mimetype: file.mimetype, buffer: file.buffer, size: file.size });
     }
   }else{
     body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
@@ -299,53 +286,49 @@ async function handleChat(req, res){
   }
 
   if(!model){ fail(400, { error:"model_required", message:"请先填写模型名称" }); return; }
-  if(!messages.length){ fail(400, { error:"message_required", message:"请先输入要发送的话" }); return; }
+  if(!messages.length && !rawFiles.length){ fail(400, { error:"message_required", message:"请先输入要发送的话" }); return; }
   if(!upstream){ fail(400, { error:"frontend_upstream_required", message:"联网搜索需要使用当前模型配置，请先在设置里填 Base URL 和 API Key" }); return; }
 
-  /* ── Handle uploaded files: inject into user message ── */
-  if(uploadedFiles.length > 0){
-    const lastUserMsg = [...messages].reverse().find(m=>m?.role === "user");
-    const lastUserText = lastUserMsg ? (lastUserMsg.content || "") : "";
-    let fileContext = "";
-    for(const file of uploadedFiles){
-      if(file.isImage && file.dataUrl){
-        fileContext += `\n[图片已发送：${file.name}]`;
+  /* ── Real file parsing pipeline ── */
+  if(rawFiles.length > 0){
+    const parsedFiles = [];
+    console.log(`[fileParser] Parsing ${rawFiles.length} file(s)...`);
+
+    for(const file of rawFiles){
+      const result = await parseUploadedFile(file.buffer, file.filename, file.mimetype);
+      parsedFiles.push(result);
+      const status = result.parseStatus === "ok" ? "OK" : result.parseStatus;
+      const textLen = result.text ? result.text.length : 0;
+      console.log(`[fileParser] ${file.filename} → ${status} (${textLen} chars)` +
+        (result.error ? ` err: ${result.error}` : ""));
+    }
+
+    /* Build file context and inject as system message */
+    const fileContext = buildFileContext(parsedFiles, "standard");
+    if(fileContext){
+      const sysIdx = messages.findIndex(m=>m?.role === "system");
+      if(sysIdx >= 0){
+        messages[sysIdx] = { role:"system", content: messages[sysIdx].content + "\n\n" + fileContext };
       }else{
-        fileContext += `\n[文件已发送：${file.name}（${file.type}，${file.size} 字节）。当前版本暂不支持解析该文件类型的内容，仅文件名已收到。]`;
+        messages.unshift({ role:"system", content: fileContext });
       }
     }
-    /* For images, convert to vision format if model supports it */
-    const hasImages = uploadedFiles.some(f=>f.isImage);
+
+    /* For images: also add vision content if already in messages */
+    const hasImages = parsedFiles.some(f=>f.fileType === "image" || /^image\//.test(f.mimeType||""));
     if(hasImages){
-      /* Try vision-compatible format */
-      const imageParts = uploadedFiles.filter(f=>f.isImage).map(f=>({
-        type: "image_url",
-        image_url: { url: f.dataUrl }
-      }));
-      const textPart = lastUserText || "请分析这张图片";
-      /* Replace last user message with vision format */
-      const lastUserIdx = messages.findLastIndex(m=>m?.role === "user");
-      if(lastUserIdx >= 0){
-        messages[lastUserIdx] = {
-          role: "user",
-          content: [
-            { type: "text", text: textPart },
-            ...imageParts
-          ]
-        };
-      }
-      /* Add file names to a system note */
-      const fileNames = uploadedFiles.map(f=>f.name).join(", ");
-      const systemNote = `用户发送了以下文件：${fileNames}。${hasImages ? "图片已转为视觉格式。" : ""}`;
-      messages.unshift({ role: "system", content: systemNote });
-    }else{
-      /* Non-image files: append file info to last user message */
-      const lastUserIdx2 = messages.findLastIndex(m=>m?.role === "user");
-      if(lastUserIdx2 >= 0){
-        messages[lastUserIdx2] = {
-          role: "user",
-          content: (messages[lastUserIdx2].content || "") + fileContext
-        };
+      const lastUserIdx = messages.findLastIndex?.(m=>m?.role==="user") ?? -1;
+      const imageFiles = rawFiles.filter(f=>/^image\//.test(f.mimetype));
+      if(lastUserIdx >= 0 && imageFiles.length > 0){
+        const textContent = typeof messages[lastUserIdx].content === "string"
+          ? messages[lastUserIdx].content
+          : "请分析这些图片";
+        const visionContent = [{ type:"text", text:textContent }];
+        for(const img of imageFiles){
+          const b64 = img.buffer.toString("base64");
+          visionContent.push({ type:"image_url", image_url:{ url:`data:${img.mimetype};base64,${b64}` } });
+        }
+        messages[lastUserIdx] = { role:"user", content: visionContent };
       }
     }
   }

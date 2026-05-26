@@ -864,46 +864,35 @@
       if(!hasUsableModelConfig()){ toast('请先添加模型'); openSettings(); return; }
       var cfg = activePreset();
 
-      /* Check image attachments vs model capability */
+      /* Image check: non-vision model blocks images */
       if(hasAttachments){
         var hasImages = false;
         for(var ai=0; ai<_attachments.length; ai++){
           if(isImageFile(_attachments[ai].name)){ hasImages = true; break; }
         }
         if(hasImages && !modelSupportsVision(cfg.model)){
-          toast('当前模型不支持图片阅读，请切换支持图片的模型');
+          toast('当前模型不支持图片阅读，请切换支持视觉的模型');
           return;
         }
       }
 
       var c=activeChat();
-      /* Build display text with file content */
-      var fileContentText = '';
+      /* Build display text — file content parsed server-side */
       var displayText = text || '';
       if(hasAttachments){
-        var fileNames = [];
-        for(var afi=0; afi<_attachments.length; afi++){
-          var a = _attachments[afi];
-          fileNames.push(a.name);
-          if(a.content && isTextFile(a.name)){
-            var contentPreview = a.content;
-            var maxLen = a.name.match(/\.(csv|json)$/i) ? 4000 : 2000;
-            if(contentPreview.length > maxLen){ contentPreview = contentPreview.slice(0,maxLen) + '\n...（文件较大，已截断）'; }
-            fileContentText += '\n\n--- 附件：' + a.name + ' ---\n' + contentPreview;
-          }else if(a.dataUrl && isImageFile(a.name)){
-            fileContentText += '\n[图片：' + a.name + ']';
-          }else if(isBinaryFile(a.name)){
-            fileContentText += '\n[文件：' + a.name + '（将在服务器端解析）]';
-          }else{
-            fileContentText += '\n[文件：' + a.name + ']';
-          }
+        var fileNames = _attachments.map(function(a){ return a.name; }).join('、');
+        var sizeTotal = 0;
+        for(var afi=0; afi<_attachments.length; afi++){ sizeTotal += _attachments[afi].size || 0; }
+        var sizeStr = sizeTotal > 1024*1024 ? (sizeTotal/1024/1024).toFixed(1)+'MB' : (sizeTotal/1024).toFixed(0)+'KB';
+        displayText = (text||'请查看文件内容') + '\n\n[已发送 ' + _attachments.length + ' 个文件：' + fileNames + '（' + sizeStr + '）]';
+        var hasBinaries = false;
+        for(var abi=0; abi<_attachments.length; abi++){ if(isBinaryFile(_attachments[abi].name)||!isTextFile(_attachments[abi].name)&&!isImageFile(_attachments[abi].name)){ hasBinaries = true; break; } }
+        if(!text && !hasBinaries && _attachments.every(function(a){return isTextFile(a.name);})){
+          displayText = '请查看以下文件的内容\n\n[已发送 ' + _attachments.length + ' 个文件：' + fileNames + ']';
         }
-        if(!displayText) displayText = '请查看以下文件内容';
-        displayText += fileContentText;
       }
-      c.messages.push({role:'user',content:displayText,time:Date.now(),files:hasAttachments?_attachments.slice():undefined}); if(!c.title || c.title==='新对话') c.title=(text||'文件对话').slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
+      c.messages.push({role:'user',content:displayText,time:Date.now(),files:hasAttachments?_attachments.map(function(a){return{name:a.name,type:a.type,size:a.size};}):undefined}); if(!c.title || c.title==='新对话') c.title=(text||'文件对话').slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
-      var cfg = activePreset();
       var params = getModelParams(cfg.id);
       var sysParts = [];
       if(params && params.systemPrompt && params.systemPrompt.trim()){
@@ -932,26 +921,6 @@
       }
       var requestMessages=c.messages.filter(m=>m.role==='user'||m.role==='assistant'||m.role==='system').map(m=>({role:m.role,content:m.content}));
 
-      /* Handle vision: convert last user message to content array if we have images */
-      if(hasAttachments){
-        var imageAtts = [];
-        for(var ai2=0; ai2<_attachments.length; ai2++){
-          if(_attachments[ai2].dataUrl && isImageFile(_attachments[ai2].name)) imageAtts.push(_attachments[ai2]);
-        }
-        if(imageAtts.length > 0 && modelSupportsVision(cfg.model)){
-          var lastUserIdx = -1;
-          for(var ri=requestMessages.length-1; ri>=0; ri--){
-            if(requestMessages[ri].role === 'user'){ lastUserIdx = ri; break; }
-          }
-          if(lastUserIdx >= 0){
-            var visionContent = [{type:'text', text: text || '请分析以下图片'}];
-            for(var vi=0; vi<imageAtts.length; vi++){
-              visionContent.push({type:'image_url', image_url:{url:imageAtts[vi].dataUrl}});
-            }
-            requestMessages[lastUserIdx] = {role:'user', content:visionContent};
-          }
-        }
-      }
       if(systemText.trim()){
         requestMessages.unshift({role:'system', content:systemText});
       }
@@ -1055,16 +1024,27 @@
     }
 
     async function callModelWithBody(requestMessages, body, cfg, onDelta){
-      var fetchBody, fetchHeaders;
-      if(searchOn){
-        fetchBody = JSON.stringify(body);
-        fetchHeaders = {'Content-Type':'application/json'};
+      var hasFiles = _attachments && _attachments.length > 0;
+      var fetchBody, fetchHeaders, targetUrl;
+
+      if(hasFiles || searchOn){
+        /* Send to our backend for file parsing + proxying */
+        var fd = new FormData();
+        fd.append('body', JSON.stringify(body));
+        if(hasFiles){
+          for(var fai=0; fai<_attachments.length; fai++){
+            fd.append('files', _attachments[fai].file, _attachments[fai].name);
+          }
+        }
+        fetchBody = fd;
+        fetchHeaders = {};
+        targetUrl = '/chat';
       }else{
         fetchHeaders = {'Content-Type':'application/json'};
         if(cfg.apiKey) fetchHeaders.Authorization = 'Bearer '+cfg.apiKey;
         fetchBody = JSON.stringify(body);
+        targetUrl = buildOpenAIURL(cfg);
       }
-      var targetUrl = searchOn ? '/chat' : buildOpenAIURL(cfg);
 
       var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody});
       if(!res.ok){ var txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
@@ -3832,30 +3812,10 @@
 
     function addAttachment(file){
       if(_attachments.length >= 5){ toast('最多添加5个附件'); return; }
-      var entry = { file:file, name:file.name, type:file.type, size:file.size, content:null, status:'pending' };
+      var entry = { file:file, name:file.name, type:file.type, size:file.size, status:'ready' };
       _attachments.push(entry);
       showAttachPreview();
       closePlusMenu();
-      /* Read text files immediately */
-      if(isTextFile(file.name)){
-        var reader = new FileReader();
-        reader.onload = function(){
-          entry.content = reader.result;
-          entry.status = 'ready';
-        };
-        reader.onerror = function(){ entry.status = 'error'; };
-        reader.readAsText(file);
-      }else if(isImageFile(file.name)){
-        var imgReader = new FileReader();
-        imgReader.onload = function(){
-          entry.dataUrl = imgReader.result;
-          entry.status = 'ready';
-        };
-        imgReader.onerror = function(){ entry.status = 'error'; };
-        imgReader.readAsDataURL(file);
-      }else{
-        entry.status = 'ready'; // will be sent as binary via FormData
-      }
     }
 
     function safeShowAttachPreview(data){
