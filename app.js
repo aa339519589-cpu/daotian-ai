@@ -126,7 +126,26 @@
     }
     function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=13&&v<=22) return v; return 16; }
     function saveFontSize(v){ setItem(KEYS.fontSize, String(v)); applyFontSize(v); }
-    function applyFontSize(v){ document.documentElement.style.fontSize = (v||16) + 'px'; }
+    function applyFontSize(v){
+      var s = (v||16)/16;
+      var id = 'daotianFontScale'; var old = document.getElementById(id); if(old) old.remove();
+      var st = document.createElement('style'); st.id = id;
+      st.textContent = 'body{font-size:'+Math.round(17*s)+'px!important}'+
+        '.bubble{font-size:'+Math.round(15*s)+'px!important}'+
+        '.assistant-render{font-size:'+Math.round(15*s)+'px!important}'+
+        'textarea{font-size:'+Math.round(17*s)+'px!important}'+
+        '.model-top-trigger{font-size:'+Math.round(18*s)+'px!important}'+
+        '.plus-menu-item{font-size:'+Math.round(14*s)+'px!important}'+
+        '.chat-title{font-size:'+Math.round(14*s)+'px!important}'+
+        '.settings-entry-title{font-size:'+Math.round(15*s)+'px!important}'+
+        '.settings-card-title{font-size:'+Math.round(15*s)+'px!important}'+
+        '.settings-radio-title{font-size:'+Math.round(15*s)+'px!important}'+
+        '.settings-toggle-title{font-size:'+Math.round(15*s)+'px!important}'+
+        '.hint,.settings-entry-desc,.settings-radio-desc,.settings-toggle-desc,.settings-card-hint{font-size:'+Math.round(12*s)+'px!important}'+
+        '.side-bottom-btn{font-size:'+Math.round(13*s)+'px!important}'+
+        '.btn{font-size:'+Math.round(15*s)+'px!important}';
+      document.head.appendChild(st);
+    }
     function loadThemeMode(){
       var v = safeGet(KEYS.themeMode);
       if(v === 'light' || v === 'dark' || v === 'system') return v;
