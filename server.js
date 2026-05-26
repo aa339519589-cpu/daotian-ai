@@ -283,7 +283,9 @@ async function handleChat(req, res){
 
   const model = String(body.model || body.frontendUpstream?.model || "").trim();
   const stream = Boolean(body.stream);
-  let messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
+  const contextMode = String(body.contextMode || "standard").trim();
+  let messages = Array.isArray(body.messages) ? body.messages.slice(-50) : [];
+  messages = applyContextMode(messages, contextMode);
   let sources = [];
   const upstream = normalizeFrontendUpstream(body);
 
@@ -528,6 +530,133 @@ async function handleModelsList(req, res){
   }
 }
 
+/* ── Context mode: apply message trimming rules ── */
+function applyContextMode(messages, contextMode){
+  const mode = String(contextMode || "standard").trim();
+  if(mode === "minimal"){
+    return messages.slice(-4);
+  }else if(mode === "light"){
+    return messages.slice(-10);
+  }else if(mode === "deep"){
+    return messages.slice(-30);
+  }else if(mode === "extreme"){
+    return messages.slice(-50);
+  }
+  // standard: keep what was passed (already limited)
+  return messages;
+}
+
+/* ── File parsing endpoint ── */
+async function handleFileParse(req, res){
+  const contentType = String(req.headers["content-type"] || "");
+  if(!contentType.includes("multipart/form-data")){
+    return sendJson(res, 400, { ok:false, error:"请使用 multipart/form-data 上传文件" });
+  }
+  const parsed = await readMultipartBody(req);
+  if(!parsed || !parsed.files.length){
+    return sendJson(res, 400, { ok:false, error:"未收到文件" });
+  }
+
+  const results = [];
+  for(const file of parsed.files){
+    const ext = extname(file.filename).toLowerCase();
+    let text = null;
+    let error = null;
+    let pages = 0;
+
+    /* Text files */
+    if([".txt",".md",".json",".csv",".html",".css",".js",".py",".java",".cpp",".c",".h",".rb",".go",".rs",".ts",".tsx",".jsx",".xml",".yaml",".yml",".toml",".ini",".cfg",".log",".sh",".sql",".r",".m",".swift",".kt",".lua",".pl",".php"].includes(ext)){
+      text = file.buffer.toString("utf8");
+    }
+    /* PDF */
+    else if(ext === ".pdf"){
+      try{
+        const pdfParse = (await import("pdf-parse")).default;
+        const data = await pdfParse(file.buffer);
+        text = data.text;
+        pages = data.numpages || 0;
+      }catch(e){
+        error = "PDF 解析失败，可能是扫描件或加密文件。" + (e.message ? " (" + e.message.slice(0,80) + ")" : "");
+      }
+    }
+    /* DOCX */
+    else if(ext === ".docx"){
+      try{
+        const AdmZip = (await import("adm-zip")).default;
+        const zip = new AdmZip(file.buffer);
+        const xmlEntry = zip.getEntry("word/document.xml");
+        if(xmlEntry){
+          const xml = xmlEntry.getData().toString("utf8");
+          text = xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        }else{
+          error = "DOCX 解析失败：文件结构异常";
+        }
+      }catch(e){
+        error = "DOCX 解析失败，请确认文件格式正确";
+      }
+    }
+    /* XLSX */
+    else if(ext === ".xlsx"){
+      try{
+        const AdmZip = (await import("adm-zip")).default;
+        const zip = new AdmZip(file.buffer);
+        const sharedStringsEntry = zip.getEntry("xl/sharedStrings.xml");
+        let sharedStrings = [];
+        if(sharedStringsEntry){
+          const xml = sharedStringsEntry.getData().toString("utf8");
+          const matches = xml.match(/<t[^>]*>([^<]+)<\/t>/g);
+          if(matches) sharedStrings = matches.map(m=>m.replace(/<\/?t[^>]*>/g,""));
+        }
+        const sheetEntry = zip.getEntry("xl/worksheets/sheet1.xml");
+        if(sheetEntry){
+          const sheetXml = sheetEntry.getData().toString("utf8");
+          const rows = sheetXml.match(/<row[^>]*>[\s\S]*?<\/row>/g) || [];
+          const lines = [];
+          for(const row of rows.slice(0,200)){
+            const cells = row.match(/<c[^>]*>[\s\S]*?<\/c>/g) || [];
+            const cellValues = cells.map(c=>{
+              const t = c.match(/t="([^"]*)"/);
+              const v = (c.match(/<v[^>]*>([^<]+)<\/v>/) || [])[1];
+              if(t && t[1]==="s" && v) return sharedStrings[parseInt(v)] || v;
+              return v || "";
+            });
+            lines.push(cellValues.join("\t"));
+          }
+          text = lines.join("\n");
+        }else{
+          error = "XLSX 解析失败：文件结构异常";
+        }
+      }catch(e){
+        error = "XLSX 解析失败，请确认文件格式正确";
+      }
+    }
+    else{
+      error = "暂不支持此文件类型（" + ext + "）";
+    }
+
+    /* Truncate long text */
+    const maxLen = 8000;
+    let truncated = false;
+    if(text && text.length > maxLen){
+      text = text.slice(0, maxLen);
+      truncated = true;
+    }
+
+    results.push({
+      name: file.filename,
+      type: file.mimetype,
+      size: file.size,
+      text: text || "",
+      pages,
+      error: error || null,
+      truncated,
+      textLength: text ? text.length : 0
+    });
+  }
+
+  sendJson(res, 200, { ok:true, files:results });
+}
+
 function serveStatic(req, res){
   const cleanPath = normalize(decodeURIComponent(req.url.split("?")[0])).replace(/^(\.\.[/\\])+/, "");
   const relativePath = cleanPath === "/" ? "/index.html" : cleanPath;
@@ -546,6 +675,7 @@ const server = http.createServer(async (req, res)=>{
     }
     if(req.method === "POST" && req.url === "/chat") return await handleChat(req, res);
     if(req.method === "POST" && req.url === "/models/list") return await handleModelsList(req, res);
+    if(req.method === "POST" && req.url === "/file/parse") return await handleFileParse(req, res);
     if(req.method === "POST" && req.url === "/memories/sync"){
       try{
         const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");

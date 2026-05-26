@@ -62,7 +62,8 @@
       tokenDisplay:'daotian.tokenDisplay.v1',
       autoScroll:'daotian.autoScroll.v1',
       themeMode:'daotian.themeMode.v1',
-      thinkingDepth:'daotian.thinkingDepth.v1'
+      thinkingDepth:'daotian.thinkingDepth.v1',
+      contextMode:'daotian.contextMode.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -129,6 +130,8 @@
       return 'medium';
     }
     function saveThinkingDepth(v){ setItem(KEYS.thinkingDepth, v); }
+    function loadContextMode(){ var v=safeGet(KEYS.contextMode); if(v==='minimal'||v==='light'||v==='standard'||v==='deep'||v==='extreme') return v; return 'standard'; }
+    function saveContextMode(v){ setItem(KEYS.contextMode, v); }
     function loadThemeMode(){
       var v = safeGet(KEYS.themeMode);
       if(v === 'light' || v === 'dark' || v === 'system') return v;
@@ -332,6 +335,8 @@
     let searchOn = false;
     let sending = false;
     let thinkingDepth = loadThinkingDepth();
+    let contextMode = loadContextMode();
+    let currentAbortController = null;
     if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
 
     function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
@@ -366,7 +371,7 @@
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
-            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
+            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span></button>
             <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
             <div class="model-popover" id="modelPopover"></div>
             <button class="top-new-chat-btn" id="topNewChatBtn" title="新建对话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -857,6 +862,22 @@
         return { content: raw.replace(/^data:\s*/gm,'').replace(/\[DONE\]/g,'').trim(), usage: capturedUsage };
       }
     }
+    function showStopButton(){
+      var btn=$('#sendBtn'); if(!btn) return;
+      btn.innerHTML='<span style="display:block;width:16px;height:16px;background:white;border-radius:3px"></span>';
+      btn.title='停止生成';
+      btn.classList.add('stop-mode');
+    }
+    function showSendButton(){
+      var btn=$('#sendBtn'); if(!btn) return;
+      btn.innerHTML='›';
+      btn.title='发送';
+      btn.classList.remove('stop-mode');
+    }
+    function stopGeneration(){
+      if(currentAbortController){ try{ currentAbortController.abort(); }catch(e){} currentAbortController=null; }
+      sending=false; showSendButton();
+    }
     async function sendMessage(){
       if(sending) return; var input=$('#input'); var text=(input.value||'').trim();
       var hasAttachments = _attachments && _attachments.length > 0;
@@ -901,7 +922,7 @@
         if(!displayText) displayText = '请查看以下文件内容';
         displayText += fileContentText;
       }
-      c.messages.push({role:'user',content:displayText,time:Date.now(),files:hasAttachments?_attachments.slice():undefined}); if(!c.title || c.title==='新对话') c.title=(text||'文件对话').slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
+      c.messages.push({role:'user',content:displayText,time:Date.now(),files:hasAttachments?_attachments.slice():undefined}); if(!c.title || c.title==='新对话') c.title=(text||'文件对话').slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; showStopButton(); currentAbortController = new AbortController();
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       var cfg = activePreset();
       var params = getModelParams(cfg.id);
@@ -984,7 +1005,7 @@
       }
 
       /* Build request body */
-      var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true},thinkingDepth:thinkingDepth};
+      var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true},thinkingDepth:thinkingDepth,contextMode:contextMode};
       exportModelParamsBody(cfg.id, body);
       if(searchOn){
         body.webSearch = true;
@@ -1030,7 +1051,12 @@
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
-        assistant.role='error';
+        if(err && err.name==='AbortError'){
+          assistant.role = 'assistant';
+          assistant.content = (assistant.content||'') + '\n\n_（已停止生成）_';
+        }else{
+          assistant.role='error';
+        }
         var errMsg = err&&err.message?err.message:String(err);
         /* Humanize common errors */
         if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
@@ -1040,7 +1066,7 @@
         else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
         assistant.content = errMsg;
       }
-      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
+      sending=false; currentAbortController=null; showSendButton(); c.updatedAt=Date.now(); renderAll();
       if(willExtract){
         try{
           var _extracted = quickExtract(text);
@@ -1066,7 +1092,14 @@
       }
       var targetUrl = searchOn ? '/chat' : buildOpenAIURL(cfg);
 
-      var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody});
+      var signal = currentAbortController ? currentAbortController.signal : null;
+      var res;
+      try{
+        res = await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody,signal:signal});
+      }catch(err){
+        if(err && err.name==='AbortError'){ throw err; }
+        throw new Error('网络连接失败，请检查网络后重试');
+      }
       if(!res.ok){ var txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
 
       if(!res.body){
@@ -3574,7 +3607,10 @@
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
-    $('#sendBtn').onclick=sendMessage;
+    $('#sendBtn').onclick=function(){
+      if(sending){ stopGeneration(); return; }
+      sendMessage();
+    };
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
     /* ── 模态框：点击遮罩关闭 ── */
