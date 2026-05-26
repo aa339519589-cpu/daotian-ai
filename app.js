@@ -338,9 +338,11 @@
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
         </aside>
         <main class="main">
-          <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
-          <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
-          <div class="model-popover" id="modelPopover"></div>
+          <div class="chat-topbar" id="chatTopbar">
+            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
+            <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
+            <div class="model-popover" id="modelPopover"></div>
+          </div>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
             <div class="composer">
@@ -654,6 +656,7 @@
       theme = resolveTheme();
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
+      if(sidebarOpen) closeModelPopover();
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -3192,7 +3195,7 @@
         renderProviderEditor();
       }
     });
-    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat;
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
