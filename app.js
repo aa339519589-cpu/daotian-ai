@@ -670,7 +670,10 @@
           var label = m.memoryNotice ? '记忆已更新' : '想一下';
           return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
-        return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+'</div></div>';
+        var ttsIdx = 'tts_'+c.id+'_'+idx;
+        var ttsBtn = (m.content && m.content.length>5 && m.role==='assistant' && !m.thinking)
+          ? '<button class="tts-play-btn" data-tts-idx="'+ttsIdx+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
+        return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
       if(loadAutoScroll()) box.scrollTop = box.scrollHeight;
@@ -3838,6 +3841,79 @@
     }
 
 
+
+    /* ── TTS Engine ── */
+    var _ttsCache = {};
+    var _ttsAudio = null;
+    var _ttsPlayingIdx = null;
+
+    function stripHtmlForTts(html){
+      var d = document.createElement('div'); d.innerHTML = html;
+      return (d.textContent || d.innerText || '').replace(/\s+/g,' ').trim();
+    }
+
+    async function handleTtsClick(idx, btn){
+      if(!btn) return;
+      var content = btn.getAttribute('data-tts-idx');
+      if(!content) return;
+
+      /* Already playing this - pause/resume */
+      if(_ttsPlayingIdx === idx && _ttsAudio){
+        if(_ttsAudio.paused){ _ttsAudio.play(); btn.classList.add('playing'); btn.classList.remove('paused'); }
+        else{ _ttsAudio.pause(); btn.classList.add('paused'); btn.classList.remove('playing'); }
+        return;
+      }
+
+      /* Stop previous */
+      if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
+      var prev = document.querySelector('.tts-play-btn.playing,.tts-play-btn.paused,.tts-play-btn.loading');
+      if(prev){ prev.classList.remove('playing','paused','loading'); }
+
+      /* Check cache */
+      if(_ttsCache[idx]){
+        _playTtsAudio(_ttsCache[idx], idx, btn);
+        return;
+      }
+
+      /* Fetch TTS */
+      btn.classList.add('loading');
+      var plainText = stripHtmlForTts(content);
+      if(plainText.length > 1000) plainText = plainText.slice(0,1000);
+
+      try{
+        var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:plainText})});
+        if(!res.ok){ throw new Error('TTS failed'); }
+        var blob = await res.blob();
+        _ttsCache[idx] = blob;
+        btn.classList.remove('loading');
+        _playTtsAudio(blob, idx, btn);
+      }catch(e){
+        btn.classList.remove('loading');
+        btn.classList.add('error');
+        setTimeout(function(){ btn.classList.remove('error'); }, 2000);
+        console.warn('[TTS]',e.message);
+      }
+    }
+
+    function _playTtsAudio(blob, idx, btn){
+      var url = URL.createObjectURL(blob);
+      _ttsAudio = new Audio(url);
+      _ttsPlayingIdx = idx;
+      _ttsAudio.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
+      _ttsAudio.onerror = function(){ btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); _ttsPlayingIdx=null; _ttsAudio=null; };
+      _ttsAudio.play();
+      btn.classList.add('playing');
+    }
+
+    document.addEventListener('click', function(e){
+      var btn = e.target.closest('.tts-play-btn');
+      if(btn){
+        e.preventDefault();
+        var idx = btn.getAttribute('data-tts-idx');
+        if(idx) handleTtsClick(idx, btn);
+        return;
+      }
+    });
 
     renderAll();
     applyFontSize(loadFontSize());

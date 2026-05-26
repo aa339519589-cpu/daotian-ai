@@ -12,6 +12,13 @@ const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PUBLIC_CHAT_DAILY_LIMIT = Number(process.env.PUBLIC_CHAT_DAILY_LIMIT || 100);
 const publicChatLimits = new Map();
 
+/* Volcengine TTS */
+const TTS_APP_ID = process.env.VOLCENGINE_TTS_APP_ID || "";
+const TTS_TOKEN = process.env.VOLCENGINE_TTS_ACCESS_TOKEN || "";
+const TTS_CLUSTER = process.env.VOLCENGINE_TTS_CLUSTER || "";
+const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "zh_female_wanwanxiaohe_moon_bigtts";
+const TTS_ENABLED = !!(TTS_APP_ID && TTS_TOKEN && TTS_CLUSTER);
+
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
 function nowIso(){ return new Date().toISOString(); }
@@ -624,6 +631,68 @@ async function handleFileParse(req, res){
   sendJson(res, 200, { ok:true, files:results });
 }
 
+/* ── Volcengine TTS handler ── */
+async function handleTts(req, res){
+  if(!TTS_ENABLED){
+    return sendJson(res, 503, { error:"tts_not_configured", message:"TTS 未配置，请设置环境变量" });
+  }
+  let body = {};
+  try{ body = JSON.parse((await readBody(req)).toString("utf8") || "{}"); }catch(e){
+    return sendJson(res, 400, { error:"parse_error" });
+  }
+  let text = String(body.text || "").trim();
+  if(!text) return sendJson(res, 400, { error:"text_required" });
+  if(text.length > 1000) text = text.slice(0, 1000);
+
+  const reqid = "tts_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,6);
+  const voice = TTS_VOICE;
+
+  const payload = {
+    app: { appid: TTS_APP_ID, token: TTS_TOKEN, cluster: TTS_CLUSTER },
+    user: { uid: "daotian-user" },
+    audio: { voice_type: voice, encoding: "mp3", speed_ratio: 1.0, volume_ratio: 1.0, pitch_ratio: 1.0 },
+    request: { reqid, text, text_type: "plain", operation: "query" }
+  };
+
+  try{
+    const ttsRes = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if(!ttsRes.ok){
+      const errText = await ttsRes.text();
+      console.error("[TTS] API error", ttsRes.status, errText.slice(0,200));
+      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 服务异常" });
+    }
+
+    const data = await ttsRes.json();
+    if(data && data.code !== 0 && data.code !== undefined || (data && data.message && data.code !== 0)){
+      console.error("[TTS] business error", JSON.stringify(data).slice(0,300));
+      return sendJson(res, 502, { error:"tts_business_fail", message: data.message || "TTS 合成失败" });
+    }
+
+    /* audio comes as base64 in data.audio */
+    const audioB64 = data && data.audio;
+    if(!audioB64){
+      return sendJson(res, 502, { error:"tts_no_audio", message:"TTS 未返回音频数据" });
+    }
+
+    const audioBuf = Buffer.from(audioB64, "base64");
+    res.writeHead(200, {
+      ...corsHeaders(),
+      "Content-Type": "audio/mpeg",
+      "Content-Length": String(audioBuf.length),
+      "Cache-Control": "public, max-age=86400"
+    });
+    res.end(audioBuf);
+  }catch(err){
+    console.error("[TTS] error", err.message);
+    if(!res.headersSent) sendJson(res, 502, { error:"tts_error", message:"TTS 请求失败" });
+  }
+}
+
 function serveStatic(req, res){
   const cleanPath = normalize(decodeURIComponent(req.url.split("?")[0])).replace(/^(\.\.[/\\])+/, "");
   const relativePath = cleanPath === "/" ? "/index.html" : cleanPath;
@@ -643,6 +712,7 @@ const server = http.createServer(async (req, res)=>{
     if(req.method === "POST" && req.url === "/chat") return await handleChat(req, res);
     if(req.method === "POST" && req.url === "/models/list") return await handleModelsList(req, res);
     if(req.method === "POST" && req.url === "/file/parse") return await handleFileParse(req, res);
+    if(req.method === "POST" && req.url === "/api/tts") return await handleTts(req, res);
     if(req.method === "POST" && req.url === "/memories/sync"){
       try{
         const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");

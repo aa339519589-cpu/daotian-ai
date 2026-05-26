@@ -464,6 +464,14 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .top-new-chat-btn:hover{background:rgba(127,127,127,.12);color:var(--text)}
 [data-theme="dark"] .top-new-chat-btn{background:rgba(255,255,255,.06)}
 
+/* ── TTS Play Button ── */
+.tts-play-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:rgba(127,127,127,.06);color:var(--muted);cursor:pointer;margin-top:6px;transition:all .15s}
+.tts-play-btn:hover{background:rgba(127,127,127,.14);color:var(--text)}
+.tts-play-btn.loading{opacity:.6;pointer-events:none;animation:ttsPulse .8s ease-in-out infinite}
+.tts-play-btn.playing{color:var(--accent);border-color:rgba(220,128,98,.35);background:rgba(220,128,98,.12)}
+.tts-play-btn.paused{color:var(--accent);border-color:rgba(220,128,98,.25)}
+.tts-play-btn.error{color:#d46a64;border-color:rgba(212,106,100,.3)}
+@keyframes ttsPulse{0%,100%{opacity:.4}50%{opacity:.8}}
 /* ── Web Search Capsule Toggle ── */
 .search-capsule{width:40px;height:24px;border-radius:12px;background:rgba(127,127,127,.2);display:inline-flex;align-items:center;padding:2px;margin-left:auto;transition:background .18s;cursor:pointer;flex:0 0 auto}
 .search-capsule.on{background:rgba(220,128,98,.35)}
