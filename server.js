@@ -16,7 +16,7 @@ const publicChatLimits = new Map();
 const TTS_APP_ID = process.env.VOLCENGINE_TTS_APP_ID || "";
 const TTS_TOKEN = process.env.VOLCENGINE_TTS_ACCESS_TOKEN || "";
 const TTS_CLUSTER = process.env.VOLCENGINE_TTS_CLUSTER || "";
-const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "BV701_streaming";
+const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "BV702_streaming";
 const TTS_ENABLED = !!(TTS_APP_ID && TTS_TOKEN && TTS_CLUSTER);
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
