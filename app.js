@@ -991,6 +991,9 @@
         };
       }
 
+      var timeoutId = setTimeout(function(){
+        if(assistant.thinking){ assistant.thinking=false; assistant.content='请求超时，没有收到回复。请检查网络或 API Key 配置。'; assistant.role='error'; sending=false; $('#sendBtn').disabled=false; renderAll(); }
+      }, 30000);
       try{
         var result=await callModelWithBody(requestMessages, body, cfg, function(delta){
           if(assistant.thinking){
@@ -1007,6 +1010,7 @@
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
         });
+        clearTimeout(timeoutId);
         /* Clear attachments after sending */
         _attachments = [];
         safeShowAttachPreview();
@@ -1016,6 +1020,7 @@
         if(!assistant.content.trim()) assistant.content=result.content || '没有返回内容';
         assistant.usage = result.usage || null;
       }catch(err){
+        clearTimeout(timeoutId);
         if(err&&err.message==='ABORTED'){
           assistant.role='system'; assistant.content=''; assistant.thinking=false;
         }else{
@@ -1075,8 +1080,12 @@
         targetUrl = buildOpenAIURL(cfg);
       }
 
+      console.log('[send] targetUrl:', targetUrl, 'hasKey:', !!cfg.apiKey, 'model:', body.model);
+
       var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody,signal:activeAbortController?activeAbortController.signal:undefined}).catch(function(e){ if(e.name==='AbortError'){ throw new Error('ABORTED'); } throw e; });
-      if(!res.ok){ var txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
+      console.log('[send] response status:', res.status, 'ok:', res.ok, 'hasBody:', !!res.body);
+
+      if(!res.ok){ var txt=await res.text(); console.error('[send] HTTP error:', res.status, txt.slice(0,300)); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
 
       if(!res.body){
         var txt2=await res.text();
