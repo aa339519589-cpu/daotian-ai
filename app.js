@@ -339,13 +339,13 @@
         </aside>
         <main class="main">
           <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
+          <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
+          <div class="model-popover" id="modelPopover"></div>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
             <div class="composer">
               <button class="plus-btn" id="plusBtn" title="添加附件">+</button>
-              <div class="model-btn-wrap"><button class="model-btn-short" id="modelBtnShort" title="切换模型">...</button><div class="model-menu" id="modelMenu"></div></div>
               <textarea id="input" placeholder="输入消息..."></textarea>
-              <button class="search-globe" id="searchGlobe" title="联网搜索"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg></button>
               <button class="send" id="sendBtn">›</button>
             </div>
             <div class="attach-preview" id="attachPreview" style="display:none"></div>
@@ -354,6 +354,7 @@
             <button class="plus-menu-item" data-action="camera"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>拍照</button>
             <button class="plus-menu-item" data-action="image"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>添加图片</button>
             <button class="plus-menu-item" data-action="file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>添加文件</button>
+            <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>联网搜索</button>
           </div>
           <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
           <input type="file" id="imageInput" accept="image/*" style="display:none">
@@ -522,16 +523,6 @@
       style.id='daotianModelStyle';
       style.textContent = `
         .model-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-        .model-btn-wrap{position:relative;display:inline-flex}
-        .model-pill{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .model-menu{display:none;position:absolute;left:0;bottom:calc(100% + 8px);z-index:80;width:min(280px,calc(100vw - 42px));padding:8px;border-radius:18px;background:var(--panel,#15171a);border:1px solid var(--border,rgba(255,255,255,.10));box-shadow:0 18px 50px rgba(0,0,0,.28)}
-        .model-menu.show{display:block}
-        .model-menu-item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;color:var(--text);border-radius:12px;padding:10px 11px;text-align:left;font:inherit;cursor:pointer}
-        .model-menu-item:hover,.model-menu-item.active{background:rgba(127,127,127,.12)}
-        .model-menu-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .model-menu-sub{display:block;font-size:11px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .model-menu-check{opacity:.75;flex:0 0 auto}
-        .model-menu-manage{margin-top:6px;border-top:1px solid var(--border,rgba(255,255,255,.10));padding-top:6px}
         .preset-list{display:flex;flex-direction:column;gap:12px}
         .preset-card{border:1px solid var(--border,rgba(127,127,127,.18));border-radius:18px;padding:14px;background:rgba(127,127,127,.06)}
         .preset-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;color:var(--text)}
@@ -641,20 +632,23 @@
     }
     function renderModelSwitcher(){
       ensureModelStyle();
-      const btn = $('#modelBtnShort');
-      const menu = $('#modelMenu');
       const current = activePreset();
-      if(btn){ btn.textContent = shortModelName((current && current.model) || ''); btn.title = (current && current.label) || (current && current.model) || '切换模型'; }
-      if(menu){
+      const label = $('#modelTopLabel');
+      if(label){ label.textContent = (current && current.model) || '...'; }
+      const popover = $('#modelPopover');
+      if(popover){
         const presets = modelPresets();
-        menu.innerHTML = presets.map(function(p){
+        popover.innerHTML = presets.map(function(p){
           const active = p.id === settings.activePresetId;
-          return `<button class="model-menu-item ${active?'active':''}" data-model-preset="${escapeHTML(p.id)}"><span class="model-menu-title">${escapeHTML(p.label || p.model)}<span class="model-menu-sub">${escapeHTML((p.providerName||'') + ' · ' + (p.model||''))}</span></span><span class="model-menu-check">${active?'✓':''}</span></button>`;
-        }).join('') + `<div class="model-menu-manage"><button class="model-menu-item" id="manageModels" type="button"><span class="model-menu-title">管理模型配置<span class="model-menu-sub">一个提供方多个模型</span></span><span class="model-menu-check">›</span></button></div>`;
+          return '<button class="model-option'+(active?' selected':'')+'" data-model-preset="'+escapeHTML(p.id)+'"><span class="model-option-check">'+(active?'✓':'')+'</span><span><div class="model-option-title">'+escapeHTML(p.label||p.model)+'</div><div class="model-option-subtitle">'+escapeHTML((p.providerName||'')+' · '+(p.model||''))+'</div></span></button>';
+        }).join('') + '<div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">一个提供方多个模型</div></span></button>';
       }
     }
 
-    function closeModelMenu(){ const menu=$('#modelMenu'); if(menu) menu.classList.remove('show'); }
+    function openModelPopover(){ var p=$('#modelPopover'); if(p){ renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
+    function closeModelPopover(){ var p=$('#modelPopover'); if(p) p.classList.remove('open'); var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
+    function toggleModelPopover(){ var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
+    function closeModelMenu(){ closeModelPopover(); }
 
     function renderAll(){
       theme = resolveTheme();
@@ -3183,8 +3177,8 @@
       if(presetBtn){ settings.activePresetId = presetBtn.getAttribute('data-model-preset'); syncLegacySettings(); persist(); renderModelSwitcher(); closeModelMenu(); toast('已切换模型'); return; }
       const manage = e.target.closest('#manageModels');
       if(manage){ closeModelMenu(); openSettings(); return; }
-      if(e.target.closest('#modelBtnShort')){ var anyOpen = document.querySelector('.modal-backdrop.show'); if(anyOpen){ anyOpen.classList.remove('show'); } const menu=$('#modelMenu'); if(menu){ renderModelSwitcher(); menu.classList.toggle('show'); } return; }
-      if(!e.target.closest('.model-btn-wrap')) closeModelMenu();
+      if(e.target.closest('#modelTopTrigger')){ toggleModelPopover(); return; }
+      if(!e.target.closest('#modelPopover') && !e.target.closest('#modelTopTrigger')) closeModelPopover();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
       const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
       const providerDel=e.target.closest('[data-provider-delete]');
@@ -3201,7 +3195,7 @@
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
-    $('#searchGlobe').onclick=()=>{searchOn=!searchOn; $('#searchGlobe').classList.toggle('active',searchOn);}; $('#sendBtn').onclick=sendMessage;
+    $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
     /* ── 模态框：点击遮罩关闭 ── */
@@ -3464,6 +3458,7 @@
         if(action === 'camera'){ var ci = document.getElementById('cameraInput'); if(ci) ci.click(); }
         else if(action === 'image'){ var ii = document.getElementById('imageInput'); if(ii) ii.click(); }
         else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
+        else if(action === 'search'){ searchOn=!searchOn; closePlusMenu(); toast(searchOn?'已开启联网搜索':'已关闭联网搜索'); }
         return;
       }
       if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){
