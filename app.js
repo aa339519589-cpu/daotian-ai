@@ -3053,7 +3053,7 @@
       collectProviderEditor(); persist(); renderModelSwitcher();
     }
 
-    function openSettings(){ closeModelPopover(); closeAdvanced(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
     function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
 
