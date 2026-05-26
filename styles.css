@@ -369,6 +369,10 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
   .mem-content{font-size:13px}
 }
 
+/* ── 消息时间戳 ── */
+.msg-time{font-size:10px;color:var(--muted);opacity:.4;line-height:1;margin-bottom:2px}
+.message.user .msg-time{text-align:right}
+
 /* ── Token 消耗显示 ── */
 .usage-footer{
   margin-top:4px;

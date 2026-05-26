@@ -572,6 +572,12 @@
       return '<div class="usage-footer">' + text + '</div>';
     }
 
+    function formatMsgTime(ts){
+      if(!ts) return '';
+      var d = new Date(ts);
+      var h = d.getHours(), m = d.getMinutes();
+      return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;
+    }
     function renderMessages(){
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
       const msgs = Array.isArray(c.messages) ? c.messages : [];
@@ -581,17 +587,18 @@
       }
       box.innerHTML = msgs.map(function(m){
         const content = escapeHTML(m.content);
+        var timeHtml = m.time ? '<div class="msg-time">'+formatMsgTime(m.time)+'</div>' : '';
         if(m.role === 'user'){
-          return `<div class="message user"><div class="bubble">${content}</div></div>`;
+          return '<div class="message user"><div>'+timeHtml+'<div class="bubble">'+content+'</div></div></div>';
         }
         if(m.role === 'error'){
-          return `<div class="message assistant"><div style="max-width:min(720px,88%);padding:12px 14px;border-radius:14px;line-height:1.65;white-space:pre-wrap;font-size:14px;color:#c96f66;background:rgba(196,80,70,.10);border:1px solid rgba(196,80,70,.22)">${content}</div></div>`;
+          return '<div class="message assistant"><div style="max-width:min(720px,88%);padding:12px 14px;border-radius:14px;line-height:1.65;white-space:pre-wrap;font-size:14px;color:#c96f66;background:rgba(196,80,70,.10);border:1px solid rgba(196,80,70,.22)">'+content+'</div></div>';
         }
         if(m.thinking && !m.content){
           ensureThinkingStyle();
-          return `<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>`;
+          return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>';
         }
-        return `<div class="message assistant"><div><div class="assistant-render">${renderAssistantContent(m.content)}</div>${renderTokenUsage(m)}</div></div>`;
+        return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+timeHtml+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
       box.scrollTop = box.scrollHeight;
@@ -738,7 +745,7 @@
     }
     async function sendMessage(){
       if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
-      c.messages.push({role:'user',content:text}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
+      c.messages.push({role:'user',content:text,time:Date.now()}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       const cfg = activePreset();
       const params = getModelParams(cfg.id);
@@ -771,7 +778,7 @@
       if(systemText.trim()){
         requestMessages.unshift({role:'system', content:systemText});
       }
-      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null};
+      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now()};
       c.messages.push(assistant);
       renderAll();
       try{
