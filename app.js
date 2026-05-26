@@ -379,7 +379,7 @@
             <button class="plus-menu-item" data-action="camera"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>拍照</button>
             <button class="plus-menu-item" data-action="image"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>添加图片</button>
             <button class="plus-menu-item" data-action="file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>添加文件</button>
-            <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>联网搜索</button>
+            <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>联网<span class="search-status-capsule" id="searchStatusCapsule">关</span></button>
           </div>
           <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
           <input type="file" id="imageInput" accept="image/*" style="display:none">
@@ -3135,9 +3135,7 @@
         settingsEntry('模型与参数','模型、Temperature、Top P','model','⚙')+
         settingsEntry('记忆设置','跨聊天记忆与提取','memory','♡')+
         settingsEntry('个性化','系统提示词与风格','personalization','✎')+
-        settingsEntry('聊天偏好','流式输出、自动滚动','chatPrefs','☰')+
-        settingsEntry('上下文与成本','上下文策略、Token 控制','chatPrefs','◎')+
-        settingsEntry('文件与附件','上传、解析、文件状态','chatPrefs','⬆')+
+        settingsEntry('聊天偏好','流式输出、自动滚动、Token','chatPrefs','☰')+
       '</div>';
     }
 
@@ -3164,12 +3162,6 @@
           settingsSlider('Max Tokens', params.max_tokens||0, 0, 16384, 256, true) +
           settingsSlider('Presence Penalty', params.presence_penalty, -2, 2, 0.1) +
           settingsSlider('Frequency Penalty', params.frequency_penalty, -2, 2, 0.1) +
-        '</div>'+
-        '<div class="settings-card">'+
-          settingsToggle('流式输出', '开启后逐字显示回复', params.stream!==false, 'stream')+
-          settingsToggle('记忆注入', '发送请求时注入相关记忆', params.memoryInjection!==false, 'memoryInjection')+
-          settingsToggle('显示 Token', '在消息下方显示消耗', loadTokenDisplay(), 'tokenDisplay')+
-          settingsToggle('自动滚动', '回复时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
         '</div>'+
       '</div>';
     }
@@ -3861,14 +3853,10 @@
     }
 
     function updateSearchVisual(){
-      var plusBtn = $('#plusBtn');
-      var composer = document.querySelector('.composer');
-      if(searchOn){
-        if(plusBtn) plusBtn.classList.add('web-active');
-        if(composer) composer.classList.add('web-on');
-      }else{
-        if(plusBtn) plusBtn.classList.remove('web-active');
-        if(composer) composer.classList.remove('web-on');
+      var capsule = $('#searchStatusCapsule');
+      if(capsule){
+        capsule.textContent = searchOn ? '开' : '关';
+        if(searchOn){ capsule.classList.add('on'); }else{ capsule.classList.remove('on'); }
       }
     }
 
