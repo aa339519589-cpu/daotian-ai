@@ -361,7 +361,7 @@
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
-            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span></button>
+            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
             <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
             <div class="model-popover" id="modelPopover"></div>
             <button class="top-new-chat-btn" id="topNewChatBtn" title="新建对话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -3157,18 +3157,18 @@
           '<select id="adv-model-select" class="settings-select">'+presets.map(function(p){ return '<option value="'+escapeHTML(p.id)+'"'+(p.id===currentPreset.id?' selected':'')+'>'+escapeHTML(p.label||p.model)+'</option>'; }).join('')+'</select>'+
         '</div>'+
         '<div class="settings-card"><div class="settings-card-title">参数</div>'+
-          settingsSlider('Temperature', params.temperature, 0, 2, 0.05) +
+          settingsSlider('温度', params.temperature, 0, 2, 0.05) +
           settingsSlider('Top P', params.top_p, 0, 1, 0.05) +
           settingsSlider('Max Tokens', params.max_tokens||0, 0, 16384, 256, true) +
-          settingsSlider('Presence Penalty', params.presence_penalty, -2, 2, 0.1) +
-          settingsSlider('Frequency Penalty', params.frequency_penalty, -2, 2, 0.1) +
+          settingsSlider('存在惩罚', params.presence_penalty, -2, 2, 0.1) +
+          settingsSlider('频率惩罚', params.frequency_penalty, -2, 2, 0.1) +
         '</div>'+
       '</div>';
     }
     function settingsSlider(label, value, min, max, step, isToken){
       var displayVal = (isToken && (value===0||!value)) ? '默认' : value;
       var paramName = label.toLowerCase().replace(/\s+/g,'_');
-      var nameMap = {'Temperature':'temperature','Top P':'top_p','Max Tokens':'max_tokens','Presence Penalty':'presence_penalty','Frequency Penalty':'frequency_penalty'};
+      var nameMap = {'温度':'temperature','Top P':'top_p','Max Tokens':'max_tokens','存在惩罚':'presence_penalty','频率惩罚':'frequency_penalty'};
       var realName = nameMap[label] || paramName;
       return '<div class="settings-slider-row"><div class="settings-slider-head"><span>'+escapeHTML(label)+'</span><span class="settings-slider-val" id="pv-'+realName+'">'+displayVal+'</span></div><input type="range" class="param-slider settings-range" data-param="'+realName+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'"><div class="settings-slider-labels"><span>'+min+'</span><span>'+max+'</span></div></div>';
     }
