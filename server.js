@@ -665,25 +665,27 @@ async function handleTts(req, res){
     let data = null;
     try{ data = JSON.parse(respText); }catch(e){}
 
-    if(!ttsRes.ok || (data && data.code && data.code !== 0)){
-      const code = data ? data.code : ttsRes.status;
+    if(!ttsRes.ok){
+      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 服务 HTTP 错误: " + ttsRes.status });
+    }
+    if(!data || data.code !== 3000){
+      const code = data ? data.code : 'no_response';
       const msg = data ? data.message : respText;
       console.error("[TTS] API error", code, String(msg).slice(0,200));
-
       if(String(code) === "3001" && String(msg).includes("not granted")){
-        return sendJson(res, 502, { error:"tts_no_service", message:"火山引擎 TTS 服务未开通，请在控制台开通语音合成服务" });
+        return sendJson(res, 502, { error:"tts_no_service", message:"火山引擎 TTS 服务未开通" });
       }
       if(String(code) === "3001" && String(msg).includes("invalid auth")){
-        return sendJson(res, 502, { error:"tts_auth_fail", message:"Access Token 无效，请检查火山引擎密钥" });
+        return sendJson(res, 502, { error:"tts_auth_fail", message:"Access Token 无效" });
       }
-      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 服务异常: " + (msg||"未知").slice(0,60) });
+      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 失败: " + (msg||"未知").slice(0,60) });
     }
 
-    /* audio comes as base64 in data.audio or data.data */
-    const audioB64 = data && (data.audio || data.data);
-    if(!audioB64){
-      console.error("[TTS] no audio in response, keys:", Object.keys(data||{}).join(','));
-      return sendJson(res, 502, { error:"tts_no_audio", message:"TTS 未返回音频数据" });
+    /* 火山引擎TTS成功返回code:3000，音频在data字段(base64) */
+    const audioB64 = data.data;
+    if(!audioB64 || audioB64.length < 100){
+      console.error("[TTS] no audio, keys:", Object.keys(data||{}).join(','), 'dataLen:', audioB64?audioB64.length:0);
+      return sendJson(res, 502, { error:"tts_no_audio", message:"TTS 返回音频数据异常" });
     }
 
     const audioBuf = Buffer.from(audioB64, "base64");
