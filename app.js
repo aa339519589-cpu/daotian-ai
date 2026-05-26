@@ -3082,7 +3082,7 @@
 
     function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
-    function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
+    function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); console.log('[settings] saved, providers:', settings.modelProviders.length, 'presets:', settings.modelPresets.length); }
 
     /* ── 统一设置系统 ── */
     var settingsPage = 'home';
