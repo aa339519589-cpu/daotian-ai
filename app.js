@@ -477,10 +477,9 @@
       style.id='daotianThinkingStyle';
       style.textContent = `
         .daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:15px;color:var(--muted,currentColor);opacity:.72;background:transparent;border:0;box-shadow:none}
-        .daotian-thinking-mark{width:18px;height:18px;display:inline-grid;place-items:center;font-size:17px;line-height:1;transform-origin:50% 50%;animation:daotianThinkingSpin 1.25s cubic-bezier(.42,0,.18,1) infinite, daotianThinkingPulse 1.25s ease-in-out infinite}
+        .daotian-thinking-mark{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;animation:daotianDotPulse 1.6s ease-in-out infinite}
         .daotian-thinking-text{font-size:14px;letter-spacing:.02em;animation:daotianThinkingText 1.45s ease-in-out infinite}
-        @keyframes daotianThinkingSpin{0%{transform:rotate(0deg) scale(.94)}55%{transform:rotate(260deg) scale(1.04)}100%{transform:rotate(360deg) scale(.94)}}
-        @keyframes daotianThinkingPulse{0%,100%{opacity:.38}50%{opacity:.95}}
+        @keyframes daotianDotPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:.95;transform:scale(1.25)}}
         @keyframes daotianThinkingText{0%,100%{opacity:.52}50%{opacity:.86}}
       `;
       document.head.appendChild(style);
@@ -597,7 +596,8 @@
         }
         if(m.thinking && !m.content){
           ensureThinkingStyle();
-          return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>';
+          var label = m.memoryNotice ? '记忆已更新' : '想一下';
+          return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
         return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+timeHtml+'</div></div>';
       }).join('');
@@ -775,38 +775,54 @@
       if(systemText.trim()){
         requestMessages.unshift({role:'system', content:systemText});
       }
-      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now()};
+      /* 预检：用户发送的消息是否会触发记忆提取 */
+      var willExtract = loadAutoExtract() && quickExtract(text);
+      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now(),memoryNotice:!!willExtract};
       c.messages.push(assistant);
       renderAll();
+      var memoryNoticeTimer = null;
       try{
         const result=await callModel(requestMessages, function(delta){
-          if(assistant.thinking) assistant.thinking=false;
+          if(assistant.thinking){
+            assistant.thinking=false;
+            if(assistant.memoryNotice){
+              /* 想一下 → 记忆已更新 直接变形，停留 1.8 秒 */
+              renderMessages();
+              memoryNoticeTimer = setTimeout(function(){
+                assistant.memoryNotice = false;
+                renderMessages();
+              }, 1800);
+            }
+          }
           assistant.content += delta;
           c.updatedAt=Date.now();
-          renderMessages();
+          if(!assistant.memoryNotice) renderMessages();
         }, cfg);
+        clearTimeout(memoryNoticeTimer);
+        assistant.memoryNotice = false;
         assistant.thinking=false;
         if(!assistant.content.trim()) assistant.content=result.content || '没有返回内容';
         assistant.usage = result.usage || null;
       }catch(err){
+        clearTimeout(memoryNoticeTimer);
+        assistant.memoryNotice = false;
         assistant.thinking=false;
         assistant.role='error';
         assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
       /* 自动提取记忆 → 直接存入跨聊天记忆 */
-      try{
-        if(loadAutoExtract()){
+      if(willExtract){
+        try{
           var _extracted = quickExtract(text);
           if(_extracted){
             var _mems = loadMemories();
             _mems.unshift({ id: uid(), content: _extracted, tags: [], createdAt: Date.now(), updatedAt: Date.now(), enabled: true });
             if(_mems.length > 200) _mems = _mems.slice(0,200);
             saveMemories(_mems);
-            showMemoryNotice(_extracted);
           }
-        }
-      }catch(_e){}
+        }catch(_e){}
+      }
     }
 
     /* ── 简化记忆提取：分类 → 直接存，不评分、不候选 ── */
@@ -827,20 +843,6 @@
         }
       }catch(_e){}
       return null;
-    }
-
-    function showMemoryNotice(savedText){
-      var box = $('#messages');
-      if(!box) return;
-      ensureThinkingStyle();
-      var el = document.createElement('div');
-      el.className = 'message assistant';
-      el.innerHTML = '<div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">记忆已更新</span></div>';
-      el.title = savedText.slice(0, 100);
-      box.appendChild(el);
-      box.scrollTop = box.scrollHeight;
-      setTimeout(function(){ el.style.opacity = '0'; el.style.transition = 'opacity .6s ease'; }, 2200);
-      setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2800);
     }
 
     /*
