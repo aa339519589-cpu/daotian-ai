@@ -461,9 +461,11 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .top-new-chat-btn:hover{background:rgba(127,127,127,.12);color:var(--text)}
 [data-theme="dark"] .top-new-chat-btn{background:rgba(255,255,255,.06)}
 
-/* ── Web Search Capsule ── */
-.search-status-capsule{font-size:10px;padding:1px 7px;border-radius:10px;margin-left:4px;font-weight:500;background:rgba(127,127,127,.15);color:var(--muted);transition:all .15s}
-.search-status-capsule.on{background:rgba(220,128,98,.18);color:var(--accent)}
+/* ── Web Search Capsule Toggle ── */
+.search-capsule{width:40px;height:24px;border-radius:12px;background:rgba(127,127,127,.2);display:inline-flex;align-items:center;padding:2px;margin-left:auto;transition:background .18s;cursor:pointer;flex:0 0 auto}
+.search-capsule.on{background:rgba(220,128,98,.35)}
+.search-capsule-knob{width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .18s;transform:translateX(0)}
+.search-capsule.on .search-capsule-knob{transform:translateX(16px)}
 
 /* ── Fetch Models ── */
 .fetch-models-btn{height:34px;font-size:13px;padding:0 14px}

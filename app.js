@@ -379,7 +379,7 @@
             <button class="plus-menu-item" data-action="camera"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>拍照</button>
             <button class="plus-menu-item" data-action="image"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>添加图片</button>
             <button class="plus-menu-item" data-action="file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>添加文件</button>
-            <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>联网<span class="search-status-capsule" id="searchStatusCapsule">关</span></button>
+            <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>联网</span><span class="search-capsule" id="searchCapsule"><span class="search-capsule-knob"></span></span></button>
           </div>
           <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
           <input type="file" id="imageInput" accept="image/*" style="display:none">
@@ -3808,6 +3808,7 @@
 
     renderAll();
     APP_READY = true;
+    updateSearchVisual();
     setupMobileViewport();
     /* 预初始化记忆引擎（后台加载向量模型） */
     initMemoryEngine();
@@ -3853,9 +3854,8 @@
     }
 
     function updateSearchVisual(){
-      var capsule = $('#searchStatusCapsule');
+      var capsule = $('#searchCapsule');
       if(capsule){
-        capsule.textContent = searchOn ? '开' : '关';
         if(searchOn){ capsule.classList.add('on'); }else{ capsule.classList.remove('on'); }
       }
     }
