@@ -613,11 +613,14 @@
 
     function closeModelMenu(){ const menu=$('#modelMenu'); if(menu) menu.classList.remove('show'); }
 
+    function isMobile(){ return (window.innerWidth||9999) <= 900; }
     function renderAll(){
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
       const mtb = $('#mobileThemeBtn'); if(mtb) mtb.textContent = theme === 'dark' ? '◑' : '◐';
+      var fm = $('#openSide'); if(fm) fm.style.display = isMobile() ? 'none' : '';
+      var ta = document.querySelector('.top-actions'); if(ta) ta.style.display = isMobile() ? 'none' : '';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
