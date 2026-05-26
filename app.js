@@ -627,16 +627,16 @@
       scheduleEnhanceRender();
       if(loadAutoScroll()) box.scrollTop = box.scrollHeight;
     }
-    function shortModelName(name){
-      if(!name) return '...';
-      if(name.length <= 4) return name;
-      return name.slice(0,4) + '...';
+    function friendlyModelName(model){
+      if(!model) return '...';
+      var map={'deepseek-chat':'DeepSeek Chat','deepseek-v4-flash':'DeepSeek Flash','deepseek-reasoner':'DeepSeek Reasoner','gemini-2.5-flash':'Gemini Flash','gemini-2.5-pro':'Gemini Pro','gpt-4o':'GPT-4o','gpt-4o-mini':'GPT-4o Mini','claude-sonnet-4-6':'Claude Sonnet','claude-opus-4-7':'Claude Opus'};
+      return map[model] || model;
     }
     function renderModelSwitcher(){
       ensureModelStyle();
       const current = activePreset();
       const label = $('#modelTopLabel');
-      if(label){ label.textContent = (current && current.model) || '...'; }
+      if(label){ label.textContent = friendlyModelName((current && current.model) || ''); label.title = (current && current.label) || (current && current.model) || '切换模型'; }
       const popover = $('#modelPopover');
       if(popover){
         const presets = modelPresets();
