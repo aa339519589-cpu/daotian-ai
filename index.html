@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <title>稻田 Ai</title>
+  <link rel="stylesheet" href="./styles.css?v=v356" />
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)'], ['$', '$']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script','noscript','style','textarea','pre','code']
+      },
+      startup: { typeset: false }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onload="try{mermaid.initialize({startOnLoad:false,theme:'dark'});}catch(e){}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js"></script>
+  <script type="module">
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.0/dist/transformers.min.js';
+    window.__HF = window.__HF || {};
+    window.__HF.pipeline = pipeline;
+    (async function() {
+      try {
+        var ext = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+        window.__HF.extractor = ext;
+        window.__HF.loaded = true;
+        console.log('[MemEngine] Model loaded');
+      } catch(e) {
+        console.warn('[MemEngine] Model failed:', e.message);
+        window.__HF.loaded = false;
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div style="padding:24px;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#222">稻田 Ai 正在加载...</div>
+  </div>
+  <script src="./app.js?v=v356"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+node_modules/
+.env
+.claude/
+*.log
+.DS_Store
+daotian-ai-main*
+daotian-ai-v27/*
+daotian-ai-v3-2/*
+daotian-ai-v3-ui-polish/*
+app\ 2.js
+app\ 3.js
