@@ -314,7 +314,7 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
 
 /* V3.2.7 gamma-style empty logo + dynamic prompt */
 .empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--accent)}
-.empty-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.empty-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding-bottom:8vh}
 .empty .logo,.empty h1,.empty p{display:none!important}
 .empty-logo{background:none!important;border:0!important;box-shadow:none!important;filter:none!important}
 .empty-logo-gamma{width:64px;height:64px;color:rgba(196,142,92,.72);opacity:.92}
