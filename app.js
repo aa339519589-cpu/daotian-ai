@@ -373,6 +373,31 @@
     }
     function persist(){ syncLegacySettings(); saveJSON(KEYS.chats,chats); setItem(KEYS.active,activeId); saveJSON(KEYS.settings,settings); }
 
+    /* ── Model state sync ── */
+    function findFirstUsableProvider(){
+      settings = ensureSettingsShape(settings);
+      var providers = settings.modelProviders || [];
+      for(var i=0; i<providers.length; i++){
+        var p = providers[i];
+        if(p.apiKey && p.apiKey.trim() && p.baseUrl && p.baseUrl.trim() && p.models && p.models.length){
+          return p;
+        }
+      }
+      return null;
+    }
+    function syncModelState(){
+      settings = ensureSettingsShape(settings);
+      var provider = findFirstUsableProvider();
+      if(provider){
+        var preset = presetFromProvider(provider, provider.models[0], 0);
+        settings.activePresetId = preset.id;
+        syncLegacySettings();
+        saveJSON(KEYS.settings, settings);
+        return true;
+      }
+      return false;
+    }
+
     const app = $('#app');
     if(!app) throw new Error('#app not found');
     app.innerHTML = `
@@ -684,11 +709,12 @@
       return map[model] || model;
     }
     function hasUsableModelConfig(){
-      var current = activePreset();
-      if(!current) return false;
-      if(!current.apiKey || !current.apiKey.trim()) return false;
-      if(!current.baseUrl || !current.baseUrl.trim()) return false;
-      if(!current.model || !current.model.trim()) return false;
+      settings = ensureSettingsShape(settings);
+      var provider = findFirstUsableProvider();
+      if(!provider) return false;
+      var preset = settings.modelPresets.find(function(p){ return p.providerId===provider.id; });
+      if(!preset) return false;
+      if(!settings.activePresetId || !settings.modelPresets.some(function(p){return p.id===settings.activePresetId;})){ settings.activePresetId=preset.id; }
       return true;
     }
 
@@ -3088,8 +3114,8 @@
     }
 
     function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
-    function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
-    function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); if(hasUsableModelConfig()){ toast('配置已保存'); }else{ var p=activePreset(); if(!p||!p.apiKey||!p.apiKey.trim()){ toast('已保存，但缺少 API Key，请填写后主页才会显示模型'); }else{ toast('配置已保存'); } } console.log('[settings] saved providers:', JSON.stringify(settings.modelProviders.map(function(p){return {name:p.providerName,key:p.apiKey?'***':'EMPTY',models:p.models};}))); }
+    function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
+    function saveSettings(){ collectProviderEditor(); syncModelState(); persist(); renderModelSwitcher(); closeSettings(); if(hasUsableModelConfig()){ toast('配置已保存'); }else{ toast('已保存，但缺少 API Key，请填写后主页才会显示模型'); } console.log('[settings] saved, usable:', hasUsableModelConfig(), 'providers:', JSON.stringify(settings.modelProviders.map(function(p){return {name:p.providerName,key:p.apiKey?'***':'EMPTY',models:p.models};}))); }
     window.__saveSettings__ = saveSettings;
 
     /* ── 统一设置系统 ── */
@@ -3924,6 +3950,7 @@
     });
 
     renderAll();
+    syncModelState();
     applyFontSize(loadFontSize());
     APP_READY = true;
     updateSearchVisual();
