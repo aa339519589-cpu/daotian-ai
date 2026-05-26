@@ -180,17 +180,6 @@ async function searchWeb(query){
     .filter(item=>item.title || item.url || item.content);
 }
 
-/* ── Thinking depth system prompt injection ── */
-function thinkDepthPrompt(depth){
-  const map = {
-    low: "请用较低推理强度回答，优先简洁直接，只保留必要推理。",
-    medium: "请用中等推理强度回答，在简洁和可靠之间平衡。",
-    high: "请用较高推理强度回答，先充分分析问题，再给出清晰结论。",
-    extreme: "请用最高可用推理强度处理，优先保证准确性、完整性和复杂问题拆解。"
-  };
-  return map[depth] || "";
-}
-
 async function streamOpenAiResponse({ req, res, upstream, model, messages, body, sources }){
   const controller = new AbortController();
   req.on("close", ()=>controller.abort());
@@ -343,23 +332,6 @@ async function handleChat(req, res){
           visionContent.push({ type:"image_url", image_url:{ url:`data:${img.mimetype};base64,${b64}` } });
         }
         messages[lastUserIdx] = { role:"user", content: visionContent };
-      }
-    }
-  }
-
-  /* ── Thinking depth injection (only if frontend hasn't already injected) ── */
-  const thinkingDepth = String(body.thinkingDepth || "medium").trim();
-  if(thinkingDepth !== "off"){
-    const depthPrompt = thinkDepthPrompt(thinkingDepth);
-    if(depthPrompt){
-      const alreadyInjected = messages.some(m=>m?.role==="system" && m.content && m.content.indexOf(depthPrompt)>=0);
-      if(!alreadyInjected){
-        const sysIdx = messages.findIndex(m=>m?.role === "system");
-        if(sysIdx >= 0){
-          messages[sysIdx] = { role: "system", content: messages[sysIdx].content + "\n\n" + depthPrompt };
-        }else{
-          messages.unshift({ role: "system", content: depthPrompt });
-        }
       }
     }
   }

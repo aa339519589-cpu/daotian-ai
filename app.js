@@ -62,7 +62,6 @@
       tokenDisplay:'daotian.tokenDisplay.v1',
       autoScroll:'daotian.autoScroll.v1',
       themeMode:'daotian.themeMode.v1',
-      thinkingDepth:'daotian.thinkingDepth.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -123,12 +122,6 @@
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
     }
-    function loadThinkingDepth(){
-      var v = safeGet(KEYS.thinkingDepth);
-      if(v === 'off' || v === 'low' || v === 'medium' || v === 'high' || v === 'extreme') return v;
-      return 'medium';
-    }
-    function saveThinkingDepth(v){ setItem(KEYS.thinkingDepth, v); }
     function loadThemeMode(){
       var v = safeGet(KEYS.themeMode);
       if(v === 'light' || v === 'dark' || v === 'system') return v;
@@ -331,7 +324,8 @@
     let sidebarOpen = true;
     let searchOn = false;
     let sending = false;
-    let thinkingDepth = loadThinkingDepth();
+    let activeAbortController = null;
+    let generatingChatId = null;
     if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
 
     function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
@@ -366,7 +360,7 @@
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
-            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
+            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span></button>
             <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
             <div class="model-popover" id="modelPopover"></div>
             <button class="top-new-chat-btn" id="topNewChatBtn" title="新建对话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -385,19 +379,6 @@
             <button class="plus-menu-item" data-action="image"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>添加图片</button>
             <button class="plus-menu-item" data-action="file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>添加文件</button>
             <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>联网搜索</button>
-            <div class="plus-menu-item thinking-depth-row" data-action="thinking">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>思考深度</span>
-              <span class="thinking-depth-val" id="thinkingDepthVal">中</span>
-              <span class="thinking-depth-arrow">▾</span>
-            </div>
-            <div class="thinking-depth-pills" id="thinkingDepthPills" style="display:none">
-              <button class="td-pill" data-depth="off">关</button>
-              <button class="td-pill" data-depth="low">低</button>
-              <button class="td-pill active" data-depth="medium">中</button>
-              <button class="td-pill" data-depth="high">高</button>
-              <button class="td-pill" data-depth="extreme">极限</button>
-            </div>
           </div>
           <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
           <input type="file" id="imageInput" accept="image/*" style="display:none">
@@ -654,9 +635,8 @@
       }
       box.innerHTML = msgs.map(function(m){
         const content = escapeHTML(m.content);
-        var timeHtml = m.time ? '<div class="msg-time">'+formatMsgTime(m.time)+'</div>' : '';
         if(m.role === 'user'){
-          return '<div class="message user"><div class="bubble">'+timeHtml+content+'</div></div>';
+          return '<div class="message user"><div class="bubble">'+content+'</div></div>';
         }
         if(m.role === 'error'){
           return '<div class="message assistant"><div style="max-width:min(720px,88%);padding:12px 14px;border-radius:14px;line-height:1.65;white-space:pre-wrap;font-size:14px;color:#c96f66;background:rgba(196,80,70,.10);border:1px solid rgba(196,80,70,.22)">'+content+'</div></div>';
@@ -666,7 +646,7 @@
           var label = m.memoryNotice ? '记忆已更新' : '想一下';
           return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
-        return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+timeHtml+'</div></div>';
+        return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
       if(loadAutoScroll()) box.scrollTop = box.scrollHeight;
@@ -748,7 +728,7 @@
     }
 
     function createChat(){ var empty=chats.find(function(c){ return !c.messages || !c.messages.length; }); if(empty){ activeId=empty.id; }else{ var id=uid(); chats.unshift({id:id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; } safeClearAttachments(); sidebarOpen=false; renderAll(); }
-    function startNewChat(){ createChat(); }
+    function startNewChat(){ if(activeAbortController){ try{activeAbortController.abort();}catch(e){} activeAbortController=null; generatingChatId=null; } sending=false; createChat(); }
     function deleteChat(id){
       const idx = chats.findIndex(c=>c.id===id); if(idx<0) return;
       chats.splice(idx,1);
@@ -861,7 +841,9 @@
       }
     }
     async function sendMessage(){
-      if(sending) return; var input=$('#input'); var text=(input.value||'').trim();
+      if(sending) return;
+      if(generatingChatId && generatingChatId !== activeId){ activeAbortController = null; generatingChatId = null; }
+      var input=$('#input'); var text=(input.value||'').trim();
       var hasAttachments = _attachments && _attachments.length > 0;
       if(!text && !hasAttachments) return;
       if(!hasUsableModelConfig()){ toast('请先添加模型'); openSettings(); return; }
@@ -933,30 +915,8 @@
       renderAll();
       var memoryNoticeTimer = null;
 
-      /* Inject thinking depth as system prompt (works for both direct API and /chat proxy) */
-      if(thinkingDepth !== 'off'){
-        var tdMap = {
-          low:'【思考深度：低】请快速判断，直接回答，减少展开。',
-          medium:'【思考深度：中】请在准确性和简洁性之间平衡。',
-          high:'【思考深度：高】请更仔细地分析问题，检查关键条件，避免遗漏。',
-          extreme:'【思考深度：极限】请在回答前充分分析任务、约束、边界情况和潜在错误，给出更稳妥的结果。'
-        };
-        var tdPrompt = tdMap[thinkingDepth] || '';
-        if(tdPrompt){
-          var sysIdx = -1;
-          for(var si=0; si<requestMessages.length; si++){
-            if(requestMessages[si].role === 'system'){ sysIdx = si; break; }
-          }
-          if(sysIdx >= 0){
-            requestMessages[sysIdx] = {role:'system', content: requestMessages[sysIdx].content + '\n\n' + tdPrompt};
-          }else{
-            requestMessages.unshift({role:'system', content: tdPrompt});
-          }
-        }
-      }
-
       /* Build request body — include upstream when going through /chat */
-      var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true},thinkingDepth:thinkingDepth};
+      var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true}};
       exportModelParamsBody(cfg.id, body);
       if(searchOn || hasAttachments){
         if(searchOn){ body.webSearch = true; body.search = true; }
@@ -996,22 +956,27 @@
         if(!assistant.content.trim()) assistant.content=result.content || '没有返回内容';
         assistant.usage = result.usage || null;
       }catch(err){
+        if(err&&err.message==='ABORTED'){
+          assistant.role='system'; assistant.content=''; assistant.thinking=false;
+        }else{
+          _attachments = [];
+          safeShowAttachPreview();
+          assistant.role='error';
+          var errMsg = err&&err.message?err.message:String(err);
+          if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
+          else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供方配置';
+          else if(errMsg.indexOf('rate_limit')>=0||errMsg.indexOf('429')>=0) errMsg = '请求太频繁，请稍后再试';
+          else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0) errMsg = '网络连接失败，请检查网络后重试';
+          else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
+          assistant.content = errMsg;
+        }
         _attachments = [];
         safeShowAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
-        assistant.role='error';
-        var errMsg = err&&err.message?err.message:String(err);
-        /* Humanize common errors */
-        if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
-        else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供方配置';
-        else if(errMsg.indexOf('rate_limit')>=0||errMsg.indexOf('429')>=0) errMsg = '请求太频繁，请稍后再试';
-        else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0) errMsg = '网络连接失败，请检查网络后重试';
-        else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
-        assistant.content = errMsg;
       }
-      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
+      sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); activeAbortController=null; generatingChatId=null; renderAll();
       if(willExtract){
         try{
           var _extracted = quickExtract(text);
@@ -1026,6 +991,8 @@
     }
 
     async function callModelWithBody(requestMessages, body, cfg, onDelta){
+      activeAbortController = new AbortController();
+      generatingChatId = activeId;
       var hasFiles = _attachments && _attachments.length > 0;
       var fetchBody, fetchHeaders, targetUrl;
 
@@ -1048,7 +1015,7 @@
         targetUrl = buildOpenAIURL(cfg);
       }
 
-      var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody});
+      var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody,signal:activeAbortController?activeAbortController.signal:undefined}).catch(function(e){ if(e.name==='AbortError'){ throw new Error('ABORTED'); } throw e; });
       if(!res.ok){ var txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
 
       if(!res.body){
@@ -3947,34 +3914,6 @@
         if(!isNaN(idx) && idx >= 0 && idx < _attachments.length){
           _attachments.splice(idx, 1);
           showAttachPreview();
-        }
-        return;
-      }
-      /* Thinking depth pills */
-      var tdPill = e.target.closest('.td-pill');
-      if(tdPill){
-        var depth = tdPill.getAttribute('data-depth');
-        if(depth){
-          thinkingDepth = depth;
-          saveThinkingDepth(depth);
-          var depthLabels = {off:'关',low:'低',medium:'中',high:'高',extreme:'极限'};
-          var valEl = $('#thinkingDepthVal');
-          if(valEl) valEl.textContent = depthLabels[depth] || '中';
-          var pills = document.querySelectorAll('.td-pill');
-          pills.forEach(function(p){ p.classList.toggle('active', p.getAttribute('data-depth') === depth); });
-        }
-        return;
-      }
-      /* Thinking depth row toggle */
-      var tdRow = e.target.closest('.thinking-depth-row');
-      if(tdRow){
-        var pillsBox = $('#thinkingDepthPills');
-        if(pillsBox){
-          var show = pillsBox.style.display === 'none';
-          pillsBox.style.display = show ? 'flex' : 'none';
-          if(show){
-            pillsBox.querySelectorAll('.td-pill').forEach(function(p){ p.classList.toggle('active', p.getAttribute('data-depth') === thinkingDepth); });
-          }
         }
         return;
       }
