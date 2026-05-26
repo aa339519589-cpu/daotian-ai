@@ -40,7 +40,8 @@
       autoExtract:'daotian.autoExtract.v1',
       memoryGlobal:'daotian.memoryGlobal.v1',
       tokenDisplay:'daotian.tokenDisplay.v1',
-      autoScroll:'daotian.autoScroll.v1'
+      autoScroll:'daotian.autoScroll.v1',
+      themeMode:'daotian.themeMode.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -100,6 +101,18 @@
     }
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
+    }
+    function loadThemeMode(){
+      var v = safeGet(KEYS.themeMode);
+      if(v === 'light' || v === 'dark' || v === 'system') return v;
+      return 'system';
+    }
+    function saveThemeMode(m){ setItem(KEYS.themeMode, m); }
+    function resolveTheme(){
+      var mode = loadThemeMode();
+      if(mode === 'light') return 'light';
+      if(mode === 'dark') return 'dark';
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
     function loadMemoryCandidates(){
       const arr = readJSON(KEYS.memoryCandidates, []);
@@ -284,7 +297,7 @@
       return [{id, title:'新对话', createdAt:Date.now(), updatedAt:Date.now(), messages:[]}];
     }
 
-    let theme = safeGet(KEYS.theme) || 'dark';
+    let theme = resolveTheme();
     let settings = ensureSettingsShape(Object.assign({}, defaultSettings, readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {}));
     let chats = loadChats();
     let activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
@@ -312,7 +325,7 @@
       settings.model = p.model;
       settings.path = p.path;
     }
-    function persist(){ syncLegacySettings(); saveJSON(KEYS.chats,chats); setItem(KEYS.active,activeId); saveJSON(KEYS.settings,settings); setItem(KEYS.theme,theme); }
+    function persist(){ syncLegacySettings(); saveJSON(KEYS.chats,chats); setItem(KEYS.active,activeId); saveJSON(KEYS.settings,settings); }
 
     const app = $('#app');
     if(!app) throw new Error('#app not found');
@@ -328,9 +341,23 @@
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
-            <div class="search-toggle model-toolbar"><button class="pill" id="searchBtn">○ 联网搜索</button><div class="model-switcher"><button class="pill model-pill" id="modelBtn" title="切换模型">模型 ▾</button><div class="model-menu" id="modelMenu"></div></div><button class="pill theme-pill" id="themeBtn" title="切换主题">◑</button></div>
-            <div class="composer"><textarea id="input" placeholder="输入消息...（Enter 发送，Shift + Enter 换行）"></textarea><button class="send" id="sendBtn">›</button></div>
+            <div class="composer">
+              <button class="plus-btn" id="plusBtn" title="添加附件">+</button>
+              <div class="model-btn-wrap"><button class="model-btn-short" id="modelBtnShort" title="切换模型">...</button><div class="model-menu" id="modelMenu"></div></div>
+              <textarea id="input" placeholder="输入消息..."></textarea>
+              <button class="search-globe" id="searchGlobe" title="联网搜索">🌐</button>
+              <button class="send" id="sendBtn">›</button>
+            </div>
+            <div class="attach-preview" id="attachPreview" style="display:none"></div>
           </div>
+          <div class="plus-menu" id="plusMenu" style="display:none">
+            <button class="plus-menu-item" data-action="camera">📷 拍照</button>
+            <button class="plus-menu-item" data-action="image">🖼 添加图片</button>
+            <button class="plus-menu-item" data-action="file">📎 添加文件</button>
+          </div>
+          <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="imageInput" accept="image/*" style="display:none">
+          <input type="file" id="fileInput" style="display:none">
         </main>
       </div>
       <div class="modal-backdrop" id="providerModal"><div class="modal">
@@ -495,7 +522,7 @@
       style.id='daotianModelStyle';
       style.textContent = `
         .model-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-        .model-switcher{position:relative;display:inline-flex}
+        .model-btn-wrap{position:relative;display:inline-flex}
         .model-pill{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .model-menu{display:none;position:absolute;left:0;bottom:calc(100% + 8px);z-index:80;width:min(280px,calc(100vw - 42px));padding:8px;border-radius:18px;background:var(--panel,#15171a);border:1px solid var(--border,rgba(255,255,255,.10));box-shadow:0 18px 50px rgba(0,0,0,.28)}
         .model-menu.show{display:block}
@@ -512,7 +539,7 @@
         .preset-del{border:0;background:transparent;color:var(--muted);font:inherit;cursor:pointer;padding:4px 8px;border-radius:10px}
         .preset-del:hover{background:rgba(127,127,127,.12);color:var(--text)}
         textarea.provider-models{min-height:82px;resize:vertical;line-height:1.45;font-family:inherit}
-        @media (max-width:760px){.model-toolbar{gap:7px}.model-pill{max-width:142px}.model-menu{width:min(260px,calc(100vw - 36px))}#providerModal .modal{max-height:88vh}#providerModal .modal-body{max-height:calc(88vh - 112px);overflow:auto;-webkit-overflow-scrolling:touch}.preset-card .row{display:block}.preset-card .field{margin-bottom:10px}}
+        @media (max-width:760px){.model-menu{width:min(260px,calc(100vw - 36px))}#providerModal .modal{max-height:88vh}#providerModal .modal-body{max-height:calc(88vh - 112px);overflow:auto;-webkit-overflow-scrolling:touch}.preset-card .row{display:block}.preset-card .field{margin-bottom:10px}}
       `;
       document.head.appendChild(style);
     }
@@ -529,7 +556,6 @@
           body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
           body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:14px 18px 10px!important;scroll-padding-bottom:18px!important;}
           body.keyboard-open .composer-wrap{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;flex:0 0 auto!important;width:100vw!important;z-index:100!important;transform:none!important;padding:8px 14px calc(8px + env(safe-area-inset-bottom))!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;}
-          body.keyboard-open .search-toggle{display:none!important;}
           body.keyboard-open .empty{display:none!important;}
           body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}
           body.keyboard-open .sidebar:not(.closed){transform:translateX(-105%)!important;opacity:0!important;pointer-events:none!important;}
@@ -608,12 +634,17 @@
       scheduleEnhanceRender();
       if(loadAutoScroll()) box.scrollTop = box.scrollHeight;
     }
+    function shortModelName(name){
+      if(!name) return '...';
+      if(name.length <= 4) return name;
+      return name.slice(0,4) + '...';
+    }
     function renderModelSwitcher(){
       ensureModelStyle();
-      const btn = $('#modelBtn');
+      const btn = $('#modelBtnShort');
       const menu = $('#modelMenu');
       const current = activePreset();
-      if(btn) btn.textContent = ((current && current.label) || (current && current.model) || '模型') + ' ▾';
+      if(btn){ btn.textContent = shortModelName((current && current.model) || ''); btn.title = (current && current.label) || (current && current.model) || '切换模型'; }
       if(menu){
         const presets = modelPresets();
         menu.innerHTML = presets.map(function(p){
@@ -626,9 +657,9 @@
     function closeModelMenu(){ const menu=$('#modelMenu'); if(menu) menu.classList.remove('show'); }
 
     function renderAll(){
+      theme = resolveTheme();
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
-      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = '◑';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -2755,6 +2786,22 @@
         <div class="hint" style="margin-bottom:14px">每个板块都可以折叠展开。修改后自动保存。</div>
 
         <div class="adv-section">
+          <button class="adv-section-head" data-adv-toggle="section-theme">
+            <span>外观与主题</span>
+            <span class="adv-arrow">▾</span>
+          </button>
+          <div class="adv-section-body" id="section-theme">
+            <div class="field"><label>主题模式</label>
+              <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                <button class="pill theme-mode-pill${loadThemeMode()==='system'?' active':''}" data-theme-mode="system">跟随系统</button>
+                <button class="pill theme-mode-pill${loadThemeMode()==='light'?' active':''}" data-theme-mode="light">浅色</button>
+                <button class="pill theme-mode-pill${loadThemeMode()==='dark'?' active':''}" data-theme-mode="dark">深色</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="adv-section">
           <button class="adv-section-head" data-adv-toggle="section-params">
             <span>模型参数设置</span>
             <span class="adv-arrow">▾</span>
@@ -3096,6 +3143,17 @@
         renderMessages();
         return;
       }
+      /* 主题模式 */
+      if(e.target.closest('.theme-mode-pill')){
+        var mode = e.target.getAttribute('data-theme-mode');
+        if(!mode) return;
+        saveThemeMode(mode);
+        theme = resolveTheme();
+        renderAll();
+        document.querySelectorAll('.theme-mode-pill').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-theme-mode') === mode); });
+        toast(mode==='system'?'已切换为跟随系统':mode==='light'?'已切换为浅色':'已切换为深色');
+        return;
+      }
       /* 自动滚动 */
       if(e.target.closest('#toggle-auto-scroll')){
         var btnS = $('#toggle-auto-scroll');
@@ -3125,8 +3183,8 @@
       if(presetBtn){ settings.activePresetId = presetBtn.getAttribute('data-model-preset'); syncLegacySettings(); persist(); renderModelSwitcher(); closeModelMenu(); toast('已切换模型'); return; }
       const manage = e.target.closest('#manageModels');
       if(manage){ closeModelMenu(); openSettings(); return; }
-      if(e.target.closest('#modelBtn')){ var anyOpen = document.querySelector('.modal-backdrop.show'); if(anyOpen){ anyOpen.classList.remove('show'); } const menu=$('#modelMenu'); if(menu){ renderModelSwitcher(); menu.classList.toggle('show'); } return; }
-      if(!e.target.closest('.model-switcher')) closeModelMenu();
+      if(e.target.closest('#modelBtnShort')){ var anyOpen = document.querySelector('.modal-backdrop.show'); if(anyOpen){ anyOpen.classList.remove('show'); } clearTimeout(_modelHoverTimer); const menu=$('#modelMenu'); if(menu){ renderModelSwitcher(); menu.classList.toggle('show'); } return; }
+      if(!e.target.closest('.model-btn-wrap')) closeModelMenu();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
       const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
       const providerDel=e.target.closest('[data-provider-delete]');
@@ -3140,10 +3198,10 @@
         renderProviderEditor();
       }
     });
-    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
-    $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#sendBtn').onclick=sendMessage;
+    $('#searchGlobe').onclick=()=>{searchOn=!searchOn; $('#searchGlobe').classList.toggle('active',searchOn);}; $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
     /* ── 模态框：点击遮罩关闭 ── */
@@ -3323,6 +3381,95 @@
     setupMobileViewport();
     /* 预初始化记忆引擎（后台加载向量模型） */
     initMemoryEngine();
+
+    /* ── 主题：跟随系统 ── */
+    if(window.matchMedia){
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+        if(loadThemeMode() === 'system'){ theme = resolveTheme(); renderAll(); }
+      });
+    }
+
+    /* ── 加号附件菜单 ── */
+    var _attachments = [];
+    var _plusOpen = false;
+
+    function openPlusMenu(){
+      _plusOpen = true;
+      var menu = $('#plusMenu'); if(!menu) return;
+      var btn = $('#plusBtn'); if(btn) btn.textContent = '×';
+      menu.style.display = 'flex';
+      menu.style.opacity = '0';
+      menu.style.transform = 'translateY(8px)';
+      requestAnimationFrame(function(){
+        menu.style.transition = 'opacity 180ms ease-out, transform 180ms ease-out';
+        menu.style.opacity = '1';
+        menu.style.transform = 'translateY(0)';
+      });
+    }
+
+    function closePlusMenu(){
+      _plusOpen = false;
+      var menu = $('#plusMenu'); if(!menu) return;
+      var btn = $('#plusBtn'); if(btn) btn.textContent = '+';
+      menu.style.opacity = '0';
+      menu.style.transform = 'translateY(8px)';
+      setTimeout(function(){ menu.style.display = 'none'; }, 180);
+    }
+
+    function togglePlusMenu(){
+      if(_plusOpen) closePlusMenu(); else openPlusMenu();
+    }
+
+    $('#plusBtn').onclick = togglePlusMenu;
+
+    function showAttachPreview(){
+      var el = $('#attachPreview'); if(!el) return;
+      if(!_attachments.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+      el.style.display = 'flex';
+      el.innerHTML = _attachments.map(function(a,i){
+        return '<span class="attach-chip">'+escapeHTML(a.name)+'<button class="attach-chip-remove" data-attach-idx="'+i+'">×</button></span>';
+      }).join('');
+    }
+
+    function addAttachment(file){
+      if(_attachments.length >= 5){ toast('最多添加5个附件'); return; }
+      _attachments.push(file);
+      showAttachPreview();
+      closePlusMenu();
+    }
+
+    document.addEventListener('click', function(e){
+      var chipDel = e.target.closest('.attach-chip-remove');
+      if(chipDel){
+        var idx = parseInt(chipDel.getAttribute('data-attach-idx'));
+        if(!isNaN(idx) && idx >= 0 && idx < _attachments.length){
+          _attachments.splice(idx, 1);
+          showAttachPreview();
+        }
+        return;
+      }
+      /* 加号菜单项点击 */
+      var item = e.target.closest('.plus-menu-item');
+      if(item){
+        var action = item.getAttribute('data-action');
+        if(action === 'camera'){ var ci = document.getElementById('cameraInput'); if(ci) ci.click(); }
+        else if(action === 'image'){ var ii = document.getElementById('imageInput'); if(ii) ii.click(); }
+        else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
+        return;
+      }
+      /* 点菜单外部关闭 */
+      if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){
+        closePlusMenu();
+      }
+    });
+
+    /* 文件选择处理 */
+    var _ci = document.getElementById('cameraInput');
+    var _ii = document.getElementById('imageInput');
+    var _fi = document.getElementById('fileInput');
+    if(_ci) _ci.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
+    if(_ii) _ii.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
+    if(_fi) _fi.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
   }catch(err){
     emergency(err && err.stack ? err.stack : err);
   }
