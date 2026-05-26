@@ -362,7 +362,7 @@
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span style="font-size:14px;color:var(--muted)">历史对话</span></div>
           <div class="chat-list" id="chatList"></div>
-          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
+          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
@@ -413,10 +413,13 @@
         </div>
         <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
       </div></div>
-      <div class="modal-backdrop" id="advancedModal"><div class="modal" style="max-width:780px">
-        <div class="modal-head"><span>高级设置</span><button class="icon-btn" id="closeAdvanced">×</button></div>
-        <div class="modal-body" id="advancedBody"></div>
-        <div class="modal-foot"><button class="btn" id="closeAdvancedBtn">关闭</button></div>
+      <div class="modal-backdrop" id="settingsModal"><div class="settings-shell" id="settingsShell">
+        <div class="settings-header">
+          <button class="settings-back-btn" id="settingsBackBtn" style="display:none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="settings-title" id="settingsTitle">设置</span>
+          <button class="settings-close-btn" id="settingsCloseBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div class="settings-body" id="settingsBody"></div>
       </div></div>
       <div class="modal-backdrop" id="memoryEditModal"><div class="modal" style="max-width:520px">
         <div class="modal-head"><span id="memoryEditTitle">编辑记忆</span><button class="icon-btn" id="closeMemoryEdit">×</button></div>
@@ -589,7 +592,7 @@
           body.keyboard-open .app-shell{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;}
           body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
           body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:14px 18px 10px!important;scroll-padding-bottom:18px!important;}
-          body.keyboard-open .composer-wrap{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;flex:0 0 auto!important;width:100vw!important;z-index:100!important;transform:none!important;padding:8px 14px calc(8px + env(safe-area-inset-bottom))!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;}
+          body.keyboard-open .composer-wrap{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;flex:0 0 auto!important;width:100vw!important;z-index:100!important;transform:none!important;padding:4px 14px 4px!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;}
           body.keyboard-open .empty{display:none!important;}
           body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}
           body.keyboard-open .sidebar:not(.closed){transform:translateX(-105%)!important;opacity:0!important;pointer-events:none!important;}
@@ -3088,95 +3091,157 @@
     function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
     function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
 
-    /* ── 高级设置 ── */
-    function openAdvanced(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); renderAdvancedSettings(); $('#advancedModal').classList.add('show'); document.body.classList.add('modal-open'); }
-    function closeAdvanced(){ $('#advancedModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
+    /* ── 统一设置系统 ── */
+    var settingsPage = 'home';
+    var settingsPageStack = ['home'];
 
-    function renderAdvancedSettings(){
-      const box = $('#advancedBody');
-      if(!box) return;
-      const personalization = loadPersonalization();
-      const presets = modelPresets();
-      const currentPreset = activePreset();
-      const params = getModelParams(currentPreset.id);
-      const memories = loadMemories();
-      const autoExtract = loadAutoExtract();
-      const memoryGlobalOn = loadMemoryGlobal();
-      const tokenDisplay = loadTokenDisplay();
-      box.innerHTML = `
-        <div class="hint" style="margin-bottom:14px">每个板块都可以折叠展开。修改后自动保存。</div>
+    function openSettingsModal(){
+      closeModelPopover();
+      if(window.innerWidth<760) sidebarOpen=false;
+      renderSidebar();
+      settingsPage = 'home';
+      settingsPageStack = ['home'];
+      renderSettingsPage();
+      $('#settingsModal').classList.add('show');
+      document.body.classList.add('modal-open');
+    }
+    function closeSettingsModal(){
+      $('#settingsModal').classList.remove('show');
+      document.body.classList.remove('modal-open');
+    }
+    function settingsGoTo(page){
+      settingsPage = page;
+      settingsPageStack.push(page);
+      renderSettingsPage();
+    }
+    function settingsGoBack(){
+      if(settingsPageStack.length > 1){
+        settingsPageStack.pop();
+        settingsPage = settingsPageStack[settingsPageStack.length-1];
+      }else{
+        settingsPage = 'home';
+      }
+      renderSettingsPage();
+    }
 
-        <div class="adv-section">
-          <button class="adv-section-head" data-adv-toggle="section-theme">
-            <span>外观与主题</span>
-            <span class="adv-arrow">▾</span>
-          </button>
-          <div class="adv-section-body" id="section-theme">
-            <div class="field"><label>主题模式</label>
-              <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-                <button class="pill theme-mode-pill${loadThemeMode()==='system'?' active':''}" data-theme-mode="system">跟随系统</button>
-                <button class="pill theme-mode-pill${loadThemeMode()==='light'?' active':''}" data-theme-mode="light">浅色</button>
-                <button class="pill theme-mode-pill${loadThemeMode()==='dark'?' active':''}" data-theme-mode="dark">深色</button>
-              </div>
-            </div>
-          </div>
-        </div>
+    function renderSettingsPage(){
+      var body = $('#settingsBody');
+      var title = $('#settingsTitle');
+      var backBtn = $('#settingsBackBtn');
+      if(!body) return;
 
-        <div class="adv-section">
-          <button class="adv-section-head" data-adv-toggle="section-params">
-            <span>模型参数设置</span>
-            <span class="adv-arrow">▾</span>
-          </button>
-          <div class="adv-section-body" id="section-params">
-            <div class="field">
-              <label>选择模型</label>
-              <select id="adv-model-select" style="height:46px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:0 14px;outline:0;font:inherit;width:100%">${
-                presets.map(function(p){ return '<option value="'+escapeHTML(p.id)+'"'+(p.id===currentPreset.id?' selected':'')+'>'+escapeHTML(p.label||p.model)+'</option>'; }).join('')
-              }</select>
-            </div>
-            <div id="adv-params-panel">
-              <div class="row"><div class="field"><label>Temperature <span class="param-val" id="pv-temperature">${params.temperature}</span></label><input type="range" class="param-slider" data-param="temperature" min="0" max="2" step="0.05" value="${params.temperature}"></div>
-              <div class="field"><label>Top P <span class="param-val" id="pv-top_p">${params.top_p}</span></label><input type="range" class="param-slider" data-param="top_p" min="0" max="1" step="0.05" value="${params.top_p}"></div></div>
-              <div class="row"><div class="field"><label>Max Tokens <span class="param-val" id="pv-max_tokens">${params.max_tokens||'默认'}</span></label><input type="range" class="param-slider" data-param="max_tokens" min="0" max="16384" step="256" value="${params.max_tokens}"></div>
-              <div class="field"><label>Presence Penalty <span class="param-val" id="pv-presence_penalty">${params.presence_penalty}</span></label><input type="range" class="param-slider" data-param="presence_penalty" min="-2" max="2" step="0.1" value="${params.presence_penalty}"></div></div>
-              <div class="row"><div class="field"><label>Frequency Penalty <span class="param-val" id="pv-frequency_penalty">${params.frequency_penalty}</span></label><input type="range" class="param-slider" data-param="frequency_penalty" min="-2" max="2" step="0.1" value="${params.frequency_penalty}"></div>
-              <div class="field"><label>流式输出</label><div style="margin-top:10px"><button class="pill adv-toggle" data-param="stream" data-on="${params.stream?'1':'0'}">${params.stream?'✓ 开启':'关闭'}</button></div></div></div>
-              <div class="field" style="margin-top:6px"><label>自定义系统提示词</label><textarea class="param-textarea" data-param="systemPrompt" placeholder="可选：覆盖默认系统提示词" style="width:100%;min-height:60px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">${escapeHTML(params.systemPrompt||'')}</textarea></div>
-              <div class="field" style="margin-top:6px"><label>记忆注入 <span class="hint" style="margin-left:10px">开启后，跨聊天记忆会注入到此模型的请求中</span></label><div style="margin-top:6px"><button class="pill adv-toggle" data-param="memoryInjection" data-on="${params.memoryInjection?'1':'0'}">${params.memoryInjection?'✓ 开启':'关闭'}</button></div></div>
-              <div class="field" style="margin-top:6px"><label>显示 Token 消耗</label><div style="margin-top:6px"><button class="pill" id="toggle-token-display" data-on="${tokenDisplay?'1':'0'}">${tokenDisplay?'✓ 开启':'关闭'}</button></div></div>
-              <div class="field" style="margin-top:6px"><label>自动滚动跟随</label><div style="margin-top:6px"><button class="pill" id="toggle-auto-scroll" data-on="${loadAutoScroll()?'1':'0'}">${loadAutoScroll()?'✓ 开启':'关闭'}</button></div></div>
-            </div>
-          </div>
-        </div>
+      if(settingsPage === 'home'){
+        if(title) title.textContent = '设置';
+        if(backBtn) backBtn.style.display = 'none';
+        body.innerHTML = renderSettingsHome();
+      }else if(settingsPage === 'appearance'){
+        if(title) title.textContent = '外观与主题';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderAppearancePage();
+      }else if(settingsPage === 'model'){
+        if(title) title.textContent = '模型与参数';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderModelParamsPage();
+      }else if(settingsPage === 'memory'){
+        if(title) title.textContent = '记忆设置';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderMemoryPage();
+      }else if(settingsPage === 'personalization'){
+        if(title) title.textContent = '个性化';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderPersonalizationPage();
+      }else if(settingsPage === 'chatPrefs'){
+        if(title) title.textContent = '聊天偏好';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderChatPrefsPage();
+      }
+    }
 
-        <div class="adv-section">
-          <button class="adv-section-head" data-adv-toggle="section-persona">
-            <span>个性化设置</span>
-            <span class="adv-arrow">▾</span>
-          </button>
-          <div class="adv-section-body" id="section-persona">
-            <div class="field"><label>启用个性化</label><div style="margin-top:6px"><button class="pill" id="toggle-persona" data-on="${personalization.enabled?'1':'0'}">${personalization.enabled?'✓ 开启':'关闭'}</button></div></div>
-            <div class="field" style="margin-top:10px"><label>个性化内容 <span class="hint">开启后自动注入每次请求的系统提示词</span></label>
-              <textarea id="persona-content" placeholder="例如：&#10;· 用轻松自然的语气回复&#10;· 叫我名字&#10;· 技术问题分步骤解释&#10;· 尽量简短&#10;· 保持人味" style="width:100%;min-height:120px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">${escapeHTML(personalization.content)}</textarea></div>
-            <button class="btn" id="clear-persona" type="button" style="margin-top:8px">清空个性化</button>
-          </div>
-        </div>
+    function settingsEntry(label, desc, page, icon){
+      icon = icon || '›';
+      return '<button class="settings-entry" data-settings-go="'+page+'"><span class="settings-entry-icon">'+icon+'</span><span class="settings-entry-text"><span class="settings-entry-title">'+escapeHTML(label)+'</span><span class="settings-entry-desc">'+escapeHTML(desc)+'</span></span><span class="settings-entry-arrow">›</span></button>';
+    }
 
-        <div class="adv-section">
-          <button class="adv-section-head" data-adv-toggle="section-memory">
-            <span>跨聊天记忆 <span class="hint" style="font-weight:400">(${memories.filter(function(m){return m.enabled!==false;}).length} 条启用)</span></span>
-            <span class="adv-arrow">▾</span>
-          </button>
-          <div class="adv-section-body" id="section-memory">
-            <div class="row"><div class="field"><label>启用跨聊天记忆</label><div style="margin-top:6px"><button class="pill" id="toggle-memory-global" data-on="${memoryGlobalOn?'1':'0'}">${memoryGlobalOn?'✓ 开启':'关闭'}</button></div></div>
-            <div class="field"><label>自动提取记忆</label><div style="margin-top:6px"><button class="pill" id="toggle-auto-extract" data-on="${autoExtract?'1':'0'}">${autoExtract?'✓ 开启':'关闭'}</button></div></div></div>
-            <div class="field" style="margin-top:8px"><label>搜索记忆</label><input id="memory-search" placeholder="输入关键词搜索..." style="height:42px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:0 14px;outline:0;font:inherit;width:100%"></div>
-            <div id="memory-list-area" style="margin-top:10px"></div>
-            <button class="btn" id="add-memory-btn" type="button" style="margin-top:10px">＋ 新增记忆</button>
-            <button class="btn danger" id="clear-all-memory" type="button" style="margin-top:8px">清空全部记忆</button>
-          </div>
-        </div>`;
-      renderMemoryList();
+    function renderSettingsHome(){
+      return '<div class="settings-home">'+
+        settingsEntry('外观与主题','跟随系统 / 浅色 / 深色','appearance','☀')+
+        settingsEntry('模型与参数','模型、Temperature、Top P','model','⚙')+
+        settingsEntry('记忆设置','跨聊天记忆与提取','memory','♡')+
+        settingsEntry('个性化','系统提示词与风格','personalization','✎')+
+        settingsEntry('聊天偏好','流式输出、自动滚动','chatPrefs','☰')+
+        settingsEntry('上下文与成本','上下文策略、Token 控制','chatPrefs','◎')+
+        settingsEntry('文件与附件','上传、解析、文件状态','chatPrefs','⬆')+
+      '</div>';
+    }
+
+    function renderAppearancePage(){
+      var mode = loadThemeMode();
+      return '<div class="settings-page">'+
+        '<div class="settings-card"><div class="settings-card-title">主题模式</div>'+
+          '<button class="settings-radio-row'+(mode==='system'?' selected':'')+'" data-theme-mode="system"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">跟随系统</span><span class="settings-radio-desc">根据系统设置自动切换主题</span></span></button>'+
+          '<button class="settings-radio-row'+(mode==='light'?' selected':'')+'" data-theme-mode="light"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">浅色</span><span class="settings-radio-desc">始终使用浅色主题</span></span></button>'+
+          '<button class="settings-radio-row'+(mode==='dark'?' selected':'')+'" data-theme-mode="dark"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">深色</span><span class="settings-radio-desc">始终使用深色主题</span></span></button>'+
+        '</div></div>';
+    }
+    function renderModelParamsPage(){
+      var presets = modelPresets();
+      var currentPreset = activePreset();
+      var params = getModelParams(currentPreset.id);
+      return '<div class="settings-page">'+
+        '<div class="settings-card"><div class="settings-card-title">当前模型</div>'+
+          '<select id="adv-model-select" class="settings-select">'+presets.map(function(p){ return '<option value="'+escapeHTML(p.id)+'"'+(p.id===currentPreset.id?' selected':'')+'>'+escapeHTML(p.label||p.model)+'</option>'; }).join('')+'</select>'+
+        '</div>'+
+        '<div class="settings-card"><div class="settings-card-title">参数</div>'+
+          settingsSlider('Temperature', params.temperature, 0, 2, 0.05) +
+          settingsSlider('Top P', params.top_p, 0, 1, 0.05) +
+          settingsSlider('Max Tokens', params.max_tokens||0, 0, 16384, 256, true) +
+          settingsSlider('Presence Penalty', params.presence_penalty, -2, 2, 0.1) +
+          settingsSlider('Frequency Penalty', params.frequency_penalty, -2, 2, 0.1) +
+        '</div>'+
+        '<div class="settings-card">'+
+          settingsToggle('流式输出', '开启后逐字显示回复', params.stream!==false, 'stream')+
+          settingsToggle('记忆注入', '发送请求时注入相关记忆', params.memoryInjection!==false, 'memoryInjection')+
+          settingsToggle('显示 Token', '在消息下方显示消耗', loadTokenDisplay(), 'tokenDisplay')+
+          settingsToggle('自动滚动', '回复时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
+        '</div>'+
+      '</div>';
+    }
+    function settingsSlider(label, value, min, max, step, isToken){
+      var displayVal = (isToken && (value===0||!value)) ? '默认' : value;
+      var paramName = label.toLowerCase().replace(/\s+/g,'_');
+      var nameMap = {'Temperature':'temperature','Top P':'top_p','Max Tokens':'max_tokens','Presence Penalty':'presence_penalty','Frequency Penalty':'frequency_penalty'};
+      var realName = nameMap[label] || paramName;
+      return '<div class="settings-slider-row"><div class="settings-slider-head"><span>'+escapeHTML(label)+'</span><span class="settings-slider-val" id="pv-'+realName+'">'+displayVal+'</span></div><input type="range" class="param-slider settings-range" data-param="'+realName+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'"><div class="settings-slider-labels"><span>'+min+'</span><span>'+max+'</span></div></div>';
+    }
+    function settingsToggle(label, desc, on, param){
+      return '<button class="settings-toggle-row" data-param="'+param+'" data-on="'+(on?'1':'0')+'"><span class="settings-toggle-text"><span class="settings-toggle-title">'+escapeHTML(label)+'</span><span class="settings-toggle-desc">'+escapeHTML(desc)+'</span></span><span class="settings-toggle-switch'+(on?' on':'')+'"><span class="settings-toggle-knob"></span></span></button>';
+    }
+    function renderMemoryPage(){
+      var memories = loadMemories();
+      var autoExtract = loadAutoExtract();
+      var memoryGlobalOn = loadMemoryGlobal();
+      return '<div class="settings-page">'+
+        settingsToggle('跨聊天记忆', (memories.filter(function(m){return m.enabled!==false;}).length)+' 条启用', memoryGlobalOn, 'memoryGlobal')+
+        settingsToggle('自动提取记忆', '从对话中自动识别长期偏好', autoExtract, 'autoExtract')+
+        '<div class="settings-card"><div class="settings-card-title">搜索记忆</div><input id="memory-search" class="settings-input" placeholder="输入关键词搜索..."><div id="memory-list-area" style="margin-top:10px"></div></div>'+
+        '<div style="display:flex;gap:8px;margin-top:12px"><button class="settings-btn" id="add-memory-btn">＋ 新增记忆</button><button class="settings-btn danger" id="clear-all-memory">清空全部记忆</button></div>'+
+      '</div>';
+    }
+    function renderPersonalizationPage(){
+      var p = loadPersonalization();
+      return '<div class="settings-page">'+
+        settingsToggle('启用个性化', '将你的偏好加入系统提示词', p.enabled, 'persona')+
+        '<div class="settings-card"><div class="settings-card-title">个性化内容</div><textarea id="persona-content" class="settings-textarea" placeholder="例如：&#10;用轻松自然的语气回复&#10;技术问题分步骤解释&#10;回答尽量简洁">'+escapeHTML(p.content)+'</textarea></div>'+
+        '<button class="settings-btn danger" id="clear-persona" style="margin-top:8px">清空个性化</button>'+
+      '</div>';
+    }
+    function renderChatPrefsPage(){
+      return '<div class="settings-page">'+
+        settingsToggle('流式输出', '逐步显示模型回复', true, 'stream')+
+        settingsToggle('自动滚动跟随', '回复生成时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
+        settingsToggle('显示 Token 消耗', '在消息下方显示输入和输出消耗', loadTokenDisplay(), 'tokenDisplay')+
+        settingsToggle('记忆注入', '发送请求时注入相关记忆', loadMemoryGlobal(), 'memoryGlobal')+
+      '</div>';
     }
 
     function renderMemoryList(){
@@ -3332,9 +3397,9 @@
     });
 
     /* ── 高级设置事件绑定 ── */
-    var _el_openAdvanced = $('#openAdvanced'); if(_el_openAdvanced) _el_openAdvanced.onclick = openAdvanced;
-    var _el_closeAdvanced = $('#closeAdvanced'); if(_el_closeAdvanced) _el_closeAdvanced.onclick = closeAdvanced;
-    var _el_closeAdvancedBtn = $('#closeAdvancedBtn'); if(_el_closeAdvancedBtn) _el_closeAdvancedBtn.onclick = closeAdvanced;
+    var _el_openSettings = $('#openSettingsBtn'); if(_el_openSettings) _el_openSettings.onclick = openSettingsModal;
+    $('#settingsBackBtn').onclick = settingsGoBack;
+    $('#settingsCloseBtn').onclick = closeSettingsModal;
 
     /* 个性化 */
     document.addEventListener('click', function(e){
@@ -3495,10 +3560,44 @@
         return;
       }
     });
-    /* 记忆编辑模态框 */
+    /* ── 设置系统事件 ── */
+    document.addEventListener('click', function(e){
+      var entry = e.target.closest('.settings-entry');
+      if(entry){
+        var page = entry.getAttribute('data-settings-go');
+        if(page) settingsGoTo(page);
+        return;
+      }
+      var radio = e.target.closest('.settings-radio-row');
+      if(radio){
+        var mode = radio.getAttribute('data-theme-mode');
+        if(mode){ saveThemeMode(mode); theme = resolveTheme(); renderAll(); renderSettingsPage(); toast(mode==='system'?'已切换为跟随系统':mode==='light'?'已切换为浅色':'已切换为深色'); }
+        return;
+      }
+      var toggle = e.target.closest('.settings-toggle-row');
+      if(toggle){
+        var param = toggle.getAttribute('data-param');
+        var on = toggle.getAttribute('data-on') === '1';
+        var newOn = !on;
+        toggle.setAttribute('data-on', newOn?'1':'0');
+        var sw = toggle.querySelector('.settings-toggle-switch');
+        if(sw) sw.classList.toggle('on', newOn);
+        if(param==='stream'||param==='memoryInjection'){ saveCurrentModelParams(); }
+        else if(param==='tokenDisplay'){ saveTokenDisplay(newOn); renderMessages(); }
+        else if(param==='autoScroll'){ saveAutoScroll(newOn); }
+        else if(param==='memoryGlobal'){ saveMemoryGlobal(newOn); var m=loadMemories(); m=m.map(function(mm){mm.enabled=newOn;return mm;}); saveMemories(m); renderMemoryPage(); }
+        else if(param==='autoExtract'){ saveAutoExtract(newOn); }
+        else if(param==='persona'){ var pp=loadPersonalization(); pp.enabled=newOn; savePersonalization(pp); }
+        return;
+      }
+    });
+    /* ── 记忆编辑模态框（保留） ── */
     var _el_closeMem = $('#closeMemoryEdit'); if(_el_closeMem) _el_closeMem.onclick = closeMemoryEdit;
     var _el_cancelMem = $('#cancelMemoryEdit'); if(_el_cancelMem) _el_cancelMem.onclick = closeMemoryEdit;
     var _el_saveMem = $('#saveMemoryEdit'); if(_el_saveMem) _el_saveMem.onclick = saveMemoryEdit;
+
+    /* ── 记忆搜索渲染（从旧代码保留，在 memory page 中复用） ── */
+    /* memory search is handled by existing handlers */
 
     document.addEventListener('click', e=>{
       const presetBtn = e.target.closest('[data-model-preset]');
@@ -3558,13 +3657,14 @@
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
     /* ── 模态框：点击遮罩关闭 ── */
-    ['providerModal','advancedModal','memoryEditModal'].forEach(function(id){
+    /* ── 模态框：点击遮罩关闭 ── */
+    ['providerModal','settingsModal','memoryEditModal'].forEach(function(id){
       var el = document.getElementById(id);
       if(!el) return;
       el.addEventListener('click', function(e){
         if(e.target === el){
           if(id === 'providerModal') closeSettings();
-          else if(id === 'advancedModal') closeAdvanced();
+          else if(id === 'settingsModal') closeSettingsModal();
           else if(id === 'memoryEditModal') closeMemoryEdit();
         }
       });
@@ -3573,7 +3673,15 @@
     /* ── 模态框：左滑/右滑关闭 ── */
     (function(){
       var swipeStartX = 0, swipeStartY = 0, swipeEl = null;
+      var swipeIgnored = false;
       document.addEventListener('touchstart', function(e){
+        /* Ignore slider/range inputs */
+        if(e.target.closest('input[type="range"]') || e.target.closest('.param-slider')){
+          swipeIgnored = true;
+          swipeEl = null;
+          return;
+        }
+        swipeIgnored = false;
         var modal = e.target.closest('.modal-backdrop.show');
         if(!modal) return;
         var touch = e.touches[0];
@@ -3583,7 +3691,7 @@
       }, {passive:true});
 
       document.addEventListener('touchmove', function(e){
-        if(!swipeEl) return;
+        if(!swipeEl || swipeIgnored) return;
         var touch = e.touches[0];
         var dx = touch.clientX - swipeStartX;
         var dy = touch.clientY - swipeStartY;
@@ -3596,6 +3704,7 @@
       document.addEventListener('touchend', function(e){
         if(!swipeEl){
           swipeEl = null;
+          swipeIgnored = false;
           return;
         }
         var touch = e.changedTouches[0];
@@ -3605,10 +3714,11 @@
         if(Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(touch.clientY - swipeStartY) * 1.2){
           var id = swipeEl.id;
           if(id === 'providerModal') closeSettings();
-          else if(id === 'advancedModal') closeAdvanced();
+          else if(id === 'settingsModal') closeSettingsModal();
           else if(id === 'memoryEditModal') closeMemoryEdit();
         }
         swipeEl = null;
+        swipeIgnored = false;
       }, {passive:true});
     })();
 
@@ -3620,7 +3730,7 @@
       var topModal = modals[modals.length-1];
       var id = topModal.id;
       if(id === 'providerModal') closeSettings();
-      else if(id === 'advancedModal') closeAdvanced();
+      else if(id === 'settingsModal') closeSettingsModal();
       else if(id === 'memoryEditModal') closeMemoryEdit();
     });
 
