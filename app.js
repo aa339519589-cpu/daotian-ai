@@ -647,7 +647,7 @@
     function renderAll(){
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
-      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '◑' : '◐';
+      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -2751,12 +2751,12 @@
       syncLegacySettings();
     }
 
-    function openSettings(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); var _m=$('#providerModal');_m.classList.add('show');requestAnimationFrame(function(){var _s=_m.querySelector('.modal');if(_s)_s.scrollTop=0;}); }
+    function openSettings(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); var _m=$('#providerModal');_m.classList.add('show');_m.scrollTop=0;setTimeout(function(){_m.scrollTop=0;var _s=_m.querySelector('.modal');if(_s)_s.scrollTop=0;var _b=_m.querySelector('.modal-body');if(_b)_b.scrollTop=0;},50); }
     function closeSettings(){ $('#providerModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
     function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
 
     /* ── 高级设置 ── */
-    function openAdvanced(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); renderAdvancedSettings(); var _m2=$('#advancedModal');_m2.classList.add('show');requestAnimationFrame(function(){var _s2=_m2.querySelector('.modal');if(_s2)_s2.scrollTop=0;}); }
+    function openAdvanced(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); renderAdvancedSettings(); var _m=$('#advancedModal');_m.classList.add('show');_m.scrollTop=0;setTimeout(function(){_m.scrollTop=0;var _s=_m.querySelector('.modal');if(_s)_s.scrollTop=0;var _b=_m.querySelector('.modal-body');if(_b)_b.scrollTop=0;},50); }
     function closeAdvanced(){ $('#advancedModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
 
     function renderAdvancedSettings(){
@@ -2865,7 +2865,7 @@
       const tags = $('#memoryEditTags'); if(tags) tags.value = (memory && Array.isArray(memory.tags)) ? memory.tags.join(', ') : '';
       if(content) content._editId = memory ? memory.id : null;
       modal.classList.add('show');
-      requestAnimationFrame(function(){ var _s=modal.querySelector('.modal'); if(_s) _s.scrollTop=0; });
+      modal.scrollTop=0;setTimeout(function(){modal.scrollTop=0;var _s=modal.querySelector('.modal');if(_s)_s.scrollTop=0;var _b=modal.querySelector('.modal-body');if(_b)_b.scrollTop=0;},50);
     }
     function closeMemoryEdit(){ $('#memoryEditModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
     function saveMemoryEdit(){
@@ -3348,9 +3348,10 @@
     emergency(err && err.stack ? err.stack : err);
   }
 
-  /* ── 用户手动滚动检测 ── */
+  /* ── 用户手动滚动检测（仅移动端） ── */
   var _msgBox = document.getElementById('messages');
-  if(_msgBox){
+  var _isMobileDevice = (window.innerWidth||9999) <= 900;
+  if(_msgBox && _isMobileDevice){
     _msgBox.addEventListener('scroll', function(){
       if(!window.__autoScrollActive) return;
       if(isNearBottom(_msgBox)){ window.__autoScrollPaused = false; }
@@ -3366,9 +3367,9 @@
     }, {passive:true});
   }
 
-  /* ── 底部输入框高度动态适配 ── */
+  /* ── 底部输入框高度动态适配（仅移动端） ── */
   var _composer = document.querySelector('.composer-wrap');
-  if(_composer && 'ResizeObserver' in window){
+  if(_composer && _isMobileDevice && 'ResizeObserver' in window){
     var _ro = new ResizeObserver(function(entries){
       var h = entries[0].contentRect.height;
       document.documentElement.style.setProperty('--composer-height', h + 'px');
