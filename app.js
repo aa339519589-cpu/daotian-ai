@@ -832,14 +832,15 @@
     function showMemoryNotice(savedText){
       var box = $('#messages');
       if(!box) return;
+      ensureThinkingStyle();
       var el = document.createElement('div');
-      el.className = 'memory-notice';
-      el.innerHTML = '<span class="memory-notice-dot"></span>记忆已更新';
+      el.className = 'message assistant';
+      el.innerHTML = '<div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">记忆已更新</span></div>';
       el.title = savedText.slice(0, 100);
       box.appendChild(el);
       box.scrollTop = box.scrollHeight;
-      setTimeout(function(){ el.classList.add('fade-out'); }, 2400);
-      setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 3000);
+      setTimeout(function(){ el.style.opacity = '0'; el.style.transition = 'opacity .6s ease'; }, 2200);
+      setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2800);
     }
 
     /*
