@@ -320,7 +320,6 @@
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
         </aside>
         <main class="main">
-          <div class="mobile-topbar"><button class="mobile-topbar-btn" id="mobileMenuBtn" title="菜单">☰</button><button class="mobile-topbar-btn" id="mobileThemeBtn" title="主题">◐</button></div>
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
           <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☀</button></div>
           <div class="messages" id="messages"></div>
@@ -364,8 +363,8 @@
       const style=document.createElement('style');
       style.id='daotianRenderStyle';
       style.textContent = `
-        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.78;font-size:15px;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
-        .assistant-render p{margin:.25em 0 .72em;}
+        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.65;font-size:15px;font-weight:400;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
+        .assistant-render p{margin:.4em 0 .65em;}
         .assistant-render p:last-child{margin-bottom:0;}
         .assistant-render h1,.assistant-render h2,.assistant-render h3{margin:1em 0 .45em;line-height:1.35;font-weight:700;}
         .assistant-render h1{font-size:1.28em}.assistant-render h2{font-size:1.18em}.assistant-render h3{font-size:1.08em}
@@ -620,14 +619,10 @@
 
     function closeModelMenu(){ const menu=$('#modelMenu'); if(menu) menu.classList.remove('show'); }
 
-    function isMobile(){ return (window.innerWidth||9999) <= 900; }
     function renderAll(){
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
-      const mtb = $('#mobileThemeBtn'); if(mtb) mtb.textContent = theme === 'dark' ? '◑' : '◐';
-      var fm = $('#openSide'); if(fm) fm.style.display = isMobile() ? 'none' : '';
-      var ta = document.querySelector('.top-actions'); if(ta) ta.style.display = isMobile() ? 'none' : '';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -3126,8 +3121,6 @@
       }
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
-    var _el_mm = $('#mobileMenuBtn'); if(_el_mm) _el_mm.onclick=()=>{sidebarOpen=true;renderAll();};
-    var _el_mt = $('#mobileThemeBtn'); if(_el_mt) _el_mt.onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#sendBtn').onclick=sendMessage;
