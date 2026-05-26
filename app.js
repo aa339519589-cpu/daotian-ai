@@ -636,14 +636,19 @@
       ensureModelStyle();
       const current = activePreset();
       const label = $('#modelTopLabel');
-      if(label){ label.textContent = friendlyModelName((current && current.model) || ''); label.title = (current && current.label) || (current && current.model) || '切换模型'; }
+      const hasModel = current && current.model;
+      if(label){ label.textContent = hasModel ? friendlyModelName(current.model) : '请先添加模型'; label.title = hasModel ? ((current && current.label) || current.model) : '请先添加模型'; }
       const popover = $('#modelPopover');
       if(popover){
         const presets = modelPresets();
-        popover.innerHTML = presets.map(function(p){
-          const active = p.id === settings.activePresetId;
-          return '<button class="model-option'+(active?' selected':'')+'" data-model-preset="'+escapeHTML(p.id)+'"><span class="model-option-check">'+(active?'✓':'')+'</span><span><div class="model-option-title">'+escapeHTML(p.label||p.model)+'</div><div class="model-option-subtitle">'+escapeHTML((p.providerName||'')+' · '+(p.model||''))+'</div></span></button>';
-        }).join('') + '<div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">一个提供方多个模型</div></span></button>';
+        if(!presets.length){
+          popover.innerHTML = '<div style="padding:16px 12px;text-align:center;font-size:14px;opacity:.56">尚未配置模型，请先在设置中添加模型提供方</div><div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">添加模型提供方</div></span></button>';
+        }else{
+          popover.innerHTML = presets.map(function(p){
+            const active = p.id === settings.activePresetId;
+            return '<button class="model-option'+(active?' selected':'')+'" data-model-preset="'+escapeHTML(p.id)+'"><span class="model-option-check">'+(active?'✓':'')+'</span><span><div class="model-option-title">'+escapeHTML(p.label||p.model)+'</div><div class="model-option-subtitle">'+escapeHTML((p.providerName||'')+' · '+(p.model||''))+'</div></span></button>';
+          }).join('') + '<div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">一个提供方多个模型</div></span></button>';
+        }
       }
     }
 
