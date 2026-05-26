@@ -374,6 +374,7 @@
         .assistant-render code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em;background:rgba(127,127,127,.12);border-radius:6px;padding:.08em .32em;}
         .assistant-render pre{margin:.7em 0;padding:12px 13px;border-radius:14px;background:rgba(127,127,127,.10);border:1px solid rgba(127,127,127,.14);overflow:auto;-webkit-overflow-scrolling:touch;white-space:pre;}
         .assistant-render pre code{background:transparent;padding:0;border-radius:0;white-space:pre;}
+        .assistant-render hr{border:0;height:1px;background:var(--line);margin:1em 0;opacity:.6}
         .assistant-render a{color:inherit;text-decoration:underline;text-underline-offset:3px;}
         .assistant-render table{border-collapse:collapse;margin:.7em 0;display:block;overflow:auto;max-width:100%;}
         .assistant-render th,.assistant-render td{border:1px solid rgba(127,127,127,.22);padding:6px 9px;}
@@ -411,6 +412,7 @@
       function closeList(){ if(list){ out += '</' + list + '>'; list = null; } }
       lines.forEach(function(line){
         if(/^\s*$/.test(line)){ flushPara(); closeList(); return; }
+        if(/^\s{0,3}([-*_])\s*\1\s*\1[\s\1]*$/.test(line)){ flushPara(); closeList(); out += '<hr>'; return; }
         const heading = line.match(/^(#{1,3})\s+(.+)$/);
         if(heading){ flushPara(); closeList(); const level=heading[1].length; out += '<h'+level+'>'+renderInlineMarkdown(heading[2])+'</h'+level+'>'; return; }
         const quote = line.match(/^>\s?(.+)$/);
