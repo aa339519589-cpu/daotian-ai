@@ -323,7 +323,7 @@
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
-            <div class="search-toggle model-toolbar"><button class="pill" id="searchBtn">○ 联网搜索</button><div class="model-switcher"><button class="pill model-pill" id="modelBtn" title="切换模型">模型 ▾</button><div class="model-menu" id="modelMenu"></div></div><button class="pill theme-pill" id="themeBtn" title="切换主题">☀</button></div>
+            <div class="search-toggle model-toolbar"><button class="pill" id="searchBtn">○ 联网搜索</button><div class="model-switcher"><button class="pill model-pill" id="modelBtn" title="切换模型">模型 ▾</button><div class="model-menu" id="modelMenu"></div></div><button class="pill theme-pill" id="themeBtn" title="切换主题">◑</button></div>
             <div class="composer"><textarea id="input" placeholder="输入消息...（Enter 发送，Shift + Enter 换行）"></textarea><button class="send" id="sendBtn">›</button></div>
           </div>
         </main>
@@ -623,7 +623,7 @@
     function renderAll(){
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
-      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
+      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = '◑';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
