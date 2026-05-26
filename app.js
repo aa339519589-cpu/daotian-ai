@@ -3383,13 +3383,16 @@
     initMemoryEngine();
 
     /* ── 主题：跟随系统 ── */
+    try{
     if(window.matchMedia){
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
         if(loadThemeMode() === 'system'){ theme = resolveTheme(); renderAll(); }
       });
     }
+    }catch(_e1){}
 
     /* ── 加号附件菜单 ── */
+    try{
     var _attachments = [];
     var _plusOpen = false;
 
@@ -3420,7 +3423,7 @@
       if(_plusOpen) closePlusMenu(); else openPlusMenu();
     }
 
-    $('#plusBtn').onclick = togglePlusMenu;
+    var _pb = $('#plusBtn'); if(_pb) _pb.onclick = togglePlusMenu;
 
     function showAttachPreview(){
       var el = $('#attachPreview'); if(!el) return;
@@ -3448,7 +3451,6 @@
         }
         return;
       }
-      /* 加号菜单项点击 */
       var item = e.target.closest('.plus-menu-item');
       if(item){
         var action = item.getAttribute('data-action');
@@ -3457,19 +3459,18 @@
         else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
         return;
       }
-      /* 点菜单外部关闭 */
       if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){
         closePlusMenu();
       }
     });
 
-    /* 文件选择处理 */
     var _ci = document.getElementById('cameraInput');
     var _ii = document.getElementById('imageInput');
     var _fi = document.getElementById('fileInput');
     if(_ci) _ci.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
     if(_ii) _ii.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
     if(_fi) _fi.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
+    }catch(_e2){}
   }catch(err){
     emergency(err && err.stack ? err.stack : err);
   }
