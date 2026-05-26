@@ -16,7 +16,8 @@ const publicChatLimits = new Map();
 const TTS_APP_ID = process.env.VOLCENGINE_TTS_APP_ID || "";
 const TTS_TOKEN = process.env.VOLCENGINE_TTS_ACCESS_TOKEN || "";
 const TTS_CLUSTER = process.env.VOLCENGINE_TTS_CLUSTER || "";
-const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "";
+const TTS_RESOURCE_ID = process.env.VOLCENGINE_TTS_RESOURCE_ID || "seed-tts-2.0";
+const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "zh_female_wenroushunv_uranus_bigtts";
 const TTS_ENABLED = !!(TTS_APP_ID && TTS_TOKEN && TTS_CLUSTER);
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -653,14 +654,14 @@ async function handleTts(req, res){
   const payload = {
     app: { appid: TTS_APP_ID, token: TTS_TOKEN, cluster: TTS_CLUSTER },
     user: { uid: "daotian-user" },
-    audio: { voice_type: voice, encoding: "mp3", speed_ratio: 1.1, volume_ratio: 1.0, pitch_ratio: 1.0 },
+    audio: { voice_type: voice, encoding: "mp3", speed_ratio: 1.08, volume_ratio: 1.0, pitch_ratio: 1.0 },
     request: { reqid, text, text_type: "plain", operation: "query" }
   };
 
   try{
     const ttsRes = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer;" + TTS_TOKEN },
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer;" + TTS_TOKEN, "X-Api-Resource-Id": TTS_RESOURCE_ID },
       body: JSON.stringify(payload)
     });
 
@@ -675,8 +676,11 @@ async function handleTts(req, res){
       const code = data ? data.code : 'no_response';
       const msg = data ? data.message : respText;
       console.error("[TTS] API error", code, String(msg).slice(0,200));
+      if(String(code) === "3001" && (String(msg).includes("seedtts") || String(msg).includes("seed-tts"))){
+        return sendJson(res, 502, { error:"tts_seedtts_denied", message:"当前账号或 APP_ID 没有 seed-tts-2.0 / 温柔淑女2.0 音色权限，请在火山控制台确认该应用是否开通豆包语音合成模型 2.0" });
+      }
       if(String(code) === "3001" && String(msg).includes("not granted")){
-        return sendJson(res, 502, { error:"tts_no_service", message:"火山引擎 TTS 服务未开通" });
+        return sendJson(res, 502, { error:"tts_no_service", message:"火山引擎 TTS 服务未开通或音色无权限" });
       }
       if(String(code) === "3001" && String(msg).includes("invalid auth")){
         return sendJson(res, 502, { error:"tts_auth_fail", message:"Access Token 无效" });
