@@ -16,7 +16,7 @@ const publicChatLimits = new Map();
 const TTS_APP_ID = process.env.VOLCENGINE_TTS_APP_ID || "";
 const TTS_TOKEN = process.env.VOLCENGINE_TTS_ACCESS_TOKEN || "";
 const TTS_CLUSTER = process.env.VOLCENGINE_TTS_CLUSTER || "";
-const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "BV701_streaming";
+const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "";
 const TTS_ENABLED = !!(TTS_APP_ID && TTS_TOKEN && TTS_CLUSTER);
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -635,6 +635,9 @@ async function handleFileParse(req, res){
 async function handleTts(req, res){
   if(!TTS_ENABLED){
     return sendJson(res, 503, { error:"tts_not_configured", message:"TTS 未配置，请设置环境变量" });
+  }
+  if(!TTS_VOICE){
+    return sendJson(res, 503, { error:"tts_no_voice", message:"未设置 TTS 音色。请到火山引擎控制台 → 语音合成 → 音色列表，试听并选择一个明确标注为「女声」的音色，填入环境变量 VOLCENGINE_TTS_DEFAULT_VOICE" });
   }
   let body = {};
   try{ body = JSON.parse((await readBody(req)).toString("utf8") || "{}"); }catch(e){
