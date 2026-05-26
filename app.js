@@ -345,7 +345,7 @@
               <button class="plus-btn" id="plusBtn" title="添加附件">+</button>
               <div class="model-btn-wrap"><button class="model-btn-short" id="modelBtnShort" title="切换模型">...</button><div class="model-menu" id="modelMenu"></div></div>
               <textarea id="input" placeholder="输入消息..."></textarea>
-              <button class="search-globe" id="searchGlobe" title="联网搜索">🌐</button>
+              <button class="search-globe" id="searchGlobe" title="联网搜索"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg></button>
               <button class="send" id="sendBtn">›</button>
             </div>
             <div class="attach-preview" id="attachPreview" style="display:none"></div>
@@ -3183,7 +3183,7 @@
       if(presetBtn){ settings.activePresetId = presetBtn.getAttribute('data-model-preset'); syncLegacySettings(); persist(); renderModelSwitcher(); closeModelMenu(); toast('已切换模型'); return; }
       const manage = e.target.closest('#manageModels');
       if(manage){ closeModelMenu(); openSettings(); return; }
-      if(e.target.closest('#modelBtnShort')){ var anyOpen = document.querySelector('.modal-backdrop.show'); if(anyOpen){ anyOpen.classList.remove('show'); } clearTimeout(_modelHoverTimer); const menu=$('#modelMenu'); if(menu){ renderModelSwitcher(); menu.classList.toggle('show'); } return; }
+      if(e.target.closest('#modelBtnShort')){ var anyOpen = document.querySelector('.modal-backdrop.show'); if(anyOpen){ anyOpen.classList.remove('show'); } const menu=$('#modelMenu'); if(menu){ renderModelSwitcher(); menu.classList.toggle('show'); } return; }
       if(!e.target.closest('.model-btn-wrap')) closeModelMenu();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
       const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
