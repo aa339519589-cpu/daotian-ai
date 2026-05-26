@@ -657,25 +657,32 @@ async function handleTts(req, res){
   try{
     const ttsRes = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer;" + TTS_TOKEN },
       body: JSON.stringify(payload)
     });
 
-    if(!ttsRes.ok){
-      const errText = await ttsRes.text();
-      console.error("[TTS] API error", ttsRes.status, errText.slice(0,200));
-      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 服务异常" });
+    const respText = await ttsRes.text();
+    let data = null;
+    try{ data = JSON.parse(respText); }catch(e){}
+
+    if(!ttsRes.ok || (data && data.code && data.code !== 0)){
+      const code = data ? data.code : ttsRes.status;
+      const msg = data ? data.message : respText;
+      console.error("[TTS] API error", code, String(msg).slice(0,200));
+
+      if(String(code) === "3001" && String(msg).includes("not granted")){
+        return sendJson(res, 502, { error:"tts_no_service", message:"火山引擎 TTS 服务未开通，请在控制台开通语音合成服务" });
+      }
+      if(String(code) === "3001" && String(msg).includes("invalid auth")){
+        return sendJson(res, 502, { error:"tts_auth_fail", message:"Access Token 无效，请检查火山引擎密钥" });
+      }
+      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 服务异常: " + (msg||"未知").slice(0,60) });
     }
 
-    const data = await ttsRes.json();
-    if(data && data.code !== 0 && data.code !== undefined || (data && data.message && data.code !== 0)){
-      console.error("[TTS] business error", JSON.stringify(data).slice(0,300));
-      return sendJson(res, 502, { error:"tts_business_fail", message: data.message || "TTS 合成失败" });
-    }
-
-    /* audio comes as base64 in data.audio */
-    const audioB64 = data && data.audio;
+    /* audio comes as base64 in data.audio or data.data */
+    const audioB64 = data && (data.audio || data.data);
     if(!audioB64){
+      console.error("[TTS] no audio in response, keys:", Object.keys(data||{}).join(','));
       return sendJson(res, 502, { error:"tts_no_audio", message:"TTS 未返回音频数据" });
     }
 
