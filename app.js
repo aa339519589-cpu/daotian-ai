@@ -124,12 +124,9 @@
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
     }
-    function loadFontSize(){ var v = safeGet(KEYS.fontSize); if(v==='small'||v==='medium'||v==='large') return v; return 'medium'; }
-    function saveFontSize(v){ setItem(KEYS.fontSize, v); applyFontSize(v); }
-    function applyFontSize(v){
-      var sizes = {small:'15px',medium:'17px',large:'19px'};
-      document.documentElement.style.setProperty('--font-size', sizes[v]||'17px');
-    }
+    function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=13&&v<=22) return v; return 16; }
+    function saveFontSize(v){ setItem(KEYS.fontSize, String(v)); applyFontSize(v); }
+    function applyFontSize(v){ document.documentElement.style.fontSize = (v||16) + 'px'; }
     function loadThemeMode(){
       var v = safeGet(KEYS.themeMode);
       if(v === 'light' || v === 'dark' || v === 'system') return v;
@@ -430,7 +427,7 @@
       const style=document.createElement('style');
       style.id='daotianRenderStyle';
       style.textContent = `
-        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.65;font-size:15px;font-weight:400;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
+        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.65;font-size:.94rem;font-weight:400;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
         .assistant-render p{margin:.4em 0 .65em;}
         .assistant-render p:last-child{margin-bottom:0;}
         .assistant-render h1,.assistant-render h2,.assistant-render h3{margin:1em 0 .45em;line-height:1.35;font-weight:700;}
@@ -3201,16 +3198,12 @@
         '<button class="settings-btn danger" id="clear-persona" style="margin-top:8px">清空个性化</button>'+
       '</div>';
     }
-    function fontSizePills(current){
-      var sizes = ['小','中','大']; var keys = ['small','medium','large'];
-      return '<div class="font-size-pills">'+keys.map(function(k,i){
-        return '<button class="font-size-pill'+(k===current?' active':'')+'" data-font-size="'+k+'">'+sizes[i]+'</button>';
-      }).join('')+'</div>';
-    }
     function renderChatPrefsPage(){
       var fs = loadFontSize();
+      var fsLabel = fs <= 14 ? '小' : fs <= 17 ? '中' : fs >= 20 ? '大' : fs+'px';
       return '<div class="settings-page">'+
-        '<div class="settings-card"><div class="settings-card-title">字体大小</div>'+fontSizePills(fs)+'</div>'+
+        '<div class="settings-card"><div class="settings-card-title">字体大小 <span class="settings-slider-val" id="fontSizeVal">'+fsLabel+'</span></div>'+
+        '<input type="range" id="fontSizeSlider" class="param-slider settings-range" min="13" max="22" step="1" value="'+fs+'"><div class="settings-slider-labels"><span>小</span><span>大</span></div></div>'+
         settingsToggle('流式输出', '逐步显示模型回复', true, 'stream')+
         settingsToggle('自动滚动跟随', '回复生成时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
         settingsToggle('显示 Token 消耗', '在消息下方显示输入和输出消耗', loadTokenDisplay(), 'tokenDisplay')+
@@ -3351,6 +3344,12 @@
     });
     /* 参数文本域 input 事件 */
     document.addEventListener('input', function(e){
+      if(e.target.closest('#fontSizeSlider')){
+        var v = parseInt(e.target.value); applyFontSize(v); saveFontSize(v);
+        var label = v <= 14 ? '小' : v <= 17 ? '中' : v >= 20 ? '大' : v+'px';
+        var valEl = document.getElementById('fontSizeVal'); if(valEl) valEl.textContent = label;
+        return;
+      }
       if(e.target.closest('.param-slider')){
         e.preventDefault();
         var slider = e.target;
@@ -3540,12 +3539,6 @@
       if(entry){
         var page = entry.getAttribute('data-settings-go');
         if(page) settingsGoTo(page);
-        return;
-      }
-      var fsPill = e.target.closest('.font-size-pill');
-      if(fsPill){
-        var fs = fsPill.getAttribute('data-font-size');
-        if(fs){ saveFontSize(fs); renderSettingsPage(); toast('字体大小已更新'); }
         return;
       }
       var radio = e.target.closest('.settings-radio-row');
