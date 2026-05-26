@@ -39,8 +39,7 @@
       memoryCandidates:'daotian.memoryCandidates.v1',
       autoExtract:'daotian.autoExtract.v1',
       memoryGlobal:'daotian.memoryGlobal.v1',
-      tokenDisplay:'daotian.tokenDisplay.v1',
-      autoScrollFollow:'daotian.autoScrollFollow.v1'
+      tokenDisplay:'daotian.tokenDisplay.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -78,28 +77,24 @@
     function loadMemoryGlobal(){
       var v = readJSON(KEYS.memoryGlobal, null);
       if(v === true || v === false) return v;
-      return true; /* 首次默认开启 */
+      /* 首次：从现有记忆推断 */
+      var memories = loadMemories();
+      return memories.some(function(m){ return m.enabled !== false; });
     }
     function saveMemoryGlobal(v){
       saveJSON(KEYS.memoryGlobal, v === true);
     }
     function loadAutoExtract(){
-      return readJSON(KEYS.autoExtract, true) !== false;
+      return readJSON(KEYS.autoExtract, false) === true;
     }
     function saveAutoExtract(v){
       saveJSON(KEYS.autoExtract, v === true);
     }
     function loadTokenDisplay(){
-      return readJSON(KEYS.tokenDisplay, true) !== false;
+      return readJSON(KEYS.tokenDisplay, false) === true;
     }
     function saveTokenDisplay(v){
       saveJSON(KEYS.tokenDisplay, v === true);
-    }
-    function loadAutoScrollFollow(){
-      return readJSON(KEYS.autoScrollFollow, true) !== false;
-    }
-    function saveAutoScrollFollow(v){
-      saveJSON(KEYS.autoScrollFollow, v === true);
     }
     function loadMemoryCandidates(){
       const arr = readJSON(KEYS.memoryCandidates, []);
@@ -577,24 +572,6 @@
       return '<div class="usage-footer">' + text + '</div>';
     }
 
-    /* ── 智能滚动 ── */
-    window.__autoScrollActive = loadAutoScrollFollow();
-    window.__autoScrollPaused = false;
-
-    function isNearBottom(box){
-      if(!box) return true;
-      return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-    }
-
-    function smartScrollToBottom(box){
-      if(!box) return;
-      if(!window.__autoScrollActive) return;
-      if(window.__autoScrollPaused && !isNearBottom(box)) return;
-      if(isNearBottom(box)) window.__autoScrollPaused = false;
-      if(window.__autoScrollPaused) return;
-      box.scrollTop = box.scrollHeight;
-    }
-
     function formatMsgTime(ts){
       if(!ts) return '';
       var d = new Date(ts);
@@ -625,7 +602,7 @@
         return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+timeHtml+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
-      smartScrollToBottom(box);
+      box.scrollTop = box.scrollHeight;
     }
     function renderModelSwitcher(){
       ensureModelStyle();
@@ -2751,13 +2728,13 @@
       syncLegacySettings();
     }
 
-    function openSettings(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); var _m=$('#providerModal');_m.classList.add('show');_m.scrollTop=0;setTimeout(function(){_m.scrollTop=0;var _s=_m.querySelector('.modal');if(_s)_s.scrollTop=0;var _b=_m.querySelector('.modal-body');if(_b)_b.scrollTop=0;},50); }
-    function closeSettings(){ $('#providerModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
+    function openSettings(){ closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); }
+    function closeSettings(){ $('#providerModal').classList.remove('show'); }
     function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
 
     /* ── 高级设置 ── */
-    function openAdvanced(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); renderAdvancedSettings(); var _m=$('#advancedModal');_m.classList.add('show');_m.scrollTop=0;setTimeout(function(){_m.scrollTop=0;var _s=_m.querySelector('.modal');if(_s)_s.scrollTop=0;var _b=_m.querySelector('.modal-body');if(_b)_b.scrollTop=0;},50); }
-    function closeAdvanced(){ $('#advancedModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
+    function openAdvanced(){ closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); renderAdvancedSettings(); $('#advancedModal').classList.add('show'); }
+    function closeAdvanced(){ $('#advancedModal').classList.remove('show'); }
 
     function renderAdvancedSettings(){
       const box = $('#advancedBody');
@@ -2770,7 +2747,6 @@
       const autoExtract = loadAutoExtract();
       const memoryGlobalOn = loadMemoryGlobal();
       const tokenDisplay = loadTokenDisplay();
-      const autoScrollFollow = loadAutoScrollFollow();
       box.innerHTML = `
         <div class="hint" style="margin-bottom:14px">每个板块都可以折叠展开。修改后自动保存。</div>
 
@@ -2796,7 +2772,6 @@
               <div class="field" style="margin-top:6px"><label>自定义系统提示词</label><textarea class="param-textarea" data-param="systemPrompt" placeholder="可选：覆盖默认系统提示词" style="width:100%;min-height:60px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">${escapeHTML(params.systemPrompt||'')}</textarea></div>
               <div class="field" style="margin-top:6px"><label>记忆注入 <span class="hint" style="margin-left:10px">开启后，跨聊天记忆会注入到此模型的请求中</span></label><div style="margin-top:6px"><button class="pill adv-toggle" data-param="memoryInjection" data-on="${params.memoryInjection?'1':'0'}">${params.memoryInjection?'✓ 开启':'关闭'}</button></div></div>
               <div class="field" style="margin-top:6px"><label>显示 Token 消耗</label><div style="margin-top:6px"><button class="pill" id="toggle-token-display" data-on="${tokenDisplay?'1':'0'}">${tokenDisplay?'✓ 开启':'关闭'}</button></div></div>
-              <div class="field" style="margin-top:6px"><label>自动跟随输出 <span class="hint" style="margin-left:6px">AI 回复时自动滚到底部</span></label><div style="margin-top:6px"><button class="pill" id="toggle-auto-scroll" data-on="${autoScrollFollow?'1':'0'}">${autoScrollFollow?'✓ 开启':'关闭'}</button></div></div>
             </div>
           </div>
         </div>
@@ -2859,15 +2834,14 @@
     function openMemoryEdit(memory){
       const modal = $('#memoryEditModal');
       if(!modal) return;
-      closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar();
+      closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar();
       $('#memoryEditTitle').textContent = memory ? '编辑记忆' : '新增记忆';
       const content = $('#memoryEditContent'); if(content) content.value = memory ? (memory.content||'') : '';
       const tags = $('#memoryEditTags'); if(tags) tags.value = (memory && Array.isArray(memory.tags)) ? memory.tags.join(', ') : '';
       if(content) content._editId = memory ? memory.id : null;
       modal.classList.add('show');
-      modal.scrollTop=0;setTimeout(function(){modal.scrollTop=0;var _s=modal.querySelector('.modal');if(_s)_s.scrollTop=0;var _b=modal.querySelector('.modal-body');if(_b)_b.scrollTop=0;},50);
     }
-    function closeMemoryEdit(){ $('#memoryEditModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
+    function closeMemoryEdit(){ $('#memoryEditModal').classList.remove('show'); }
     function saveMemoryEdit(){
       const modal = $('#memoryEditModal'); if(!modal) return;
       const content = $('#memoryEditContent'); if(!content) return;
@@ -3117,17 +3091,6 @@
         renderMessages();
         return;
       }
-      if(e.target.closest('#toggle-auto-scroll')){
-        var btnS = $('#toggle-auto-scroll');
-        if(!btnS) return;
-        var onS = btnS.getAttribute('data-on') === '1';
-        btnS.setAttribute('data-on', onS ? '0' : '1');
-        btnS.textContent = onS ? '关闭' : '✓ 开启';
-        saveAutoScrollFollow(!onS);
-        window.__autoScrollActive = !onS;
-        toast(onS ? '已关闭自动跟随' : '已开启自动跟随');
-        return;
-      }
     });
     /* 记忆搜索 */
     document.addEventListener('input', function(e){
@@ -3268,10 +3231,10 @@
         }
 
         function scrollLatest(){
-          requestAnimationFrame(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} });
-          setTimeout(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} }, 80);
-          setTimeout(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} }, 260);
-          setTimeout(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} }, 520);
+          requestAnimationFrame(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} });
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 80);
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 260);
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 520);
         }
 
         function applyViewport(){
@@ -3346,34 +3309,5 @@
     initMemoryEngine();
   }catch(err){
     emergency(err && err.stack ? err.stack : err);
-  }
-
-  /* ── 用户手动滚动检测（仅移动端） ── */
-  var _msgBox = document.getElementById('messages');
-  var _isMobileDevice = (window.innerWidth||9999) <= 900;
-  if(_msgBox && _isMobileDevice){
-    _msgBox.addEventListener('scroll', function(){
-      if(!window.__autoScrollActive) return;
-      if(isNearBottom(_msgBox)){ window.__autoScrollPaused = false; }
-      else { window.__autoScrollPaused = true; }
-    }, {passive:true});
-    _msgBox.addEventListener('wheel', function(e){
-      if(!window.__autoScrollActive) return;
-      if(e.deltaY < -5) window.__autoScrollPaused = true;
-    }, {passive:true});
-    _msgBox.addEventListener('touchmove', function(){
-      if(!window.__autoScrollActive) return;
-      if(!isNearBottom(_msgBox)) window.__autoScrollPaused = true;
-    }, {passive:true});
-  }
-
-  /* ── 底部输入框高度动态适配（仅移动端） ── */
-  var _composer = document.querySelector('.composer-wrap');
-  if(_composer && _isMobileDevice && 'ResizeObserver' in window){
-    var _ro = new ResizeObserver(function(entries){
-      var h = entries[0].contentRect.height;
-      document.documentElement.style.setProperty('--composer-height', h + 'px');
-    });
-    _ro.observe(_composer);
   }
 })();
