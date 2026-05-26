@@ -320,7 +320,7 @@
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
         </aside>
         <main class="main">
-          <div class="mobile-topbar"><button class="mobile-topbar-btn" id="mobileMenuBtn" title="菜单">☰</button><span class="mobile-topbar-title">稻田 Ai</span><button class="mobile-topbar-btn" id="mobileThemeBtn" title="主题">◐</button></div>
+          <div class="mobile-topbar"><button class="mobile-topbar-btn" id="mobileMenuBtn" title="菜单">☰</button><button class="mobile-topbar-btn" id="mobileThemeBtn" title="主题">◐</button></div>
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
           <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☀</button></div>
           <div class="messages" id="messages"></div>
@@ -541,7 +541,7 @@
       side.classList.toggle('closed', !sidebarOpen);
       $('#openSide').style.display = sidebarOpen ? 'none' : 'grid';
       const list = $('#chatList');
-      list.innerHTML = chats.map(c=>`<div class="chat-item ${c.id===activeId?'active':''}" data-id="${escapeHTML(c.id)}"><span class="chat-dot"></span><span class="chat-title">${escapeHTML(c.title)}</span><span class="chat-time">${nowTime()}</span><button class="delete-chat" data-del="${escapeHTML(c.id)}" title="删除">×</button></div>`).join('');
+      list.innerHTML = chats.map(c=>`<div class="chat-item ${c.id===activeId?'active':''}" data-id="${escapeHTML(c.id)}"><span class="chat-dot"></span><span class="chat-title">${escapeHTML(c.title)}</span><span class="chat-time">${nowTime()}</span>${(c.messages&&c.messages.length)?'<button class="delete-chat" data-del="'+escapeHTML(c.id)+'" title="删除">×</button>':''}</div>`).join('');
     }
     function pickEmptyPrompt(){
       const seed = chats.length + (activeId ? activeId.length : 0) + new Date().getDate();
@@ -589,7 +589,7 @@
         const content = escapeHTML(m.content);
         var timeHtml = m.time ? '<div class="msg-time">'+formatMsgTime(m.time)+'</div>' : '';
         if(m.role === 'user'){
-          return '<div class="message user"><div>'+timeHtml+'<div class="bubble">'+content+'</div></div></div>';
+          return '<div class="message user"><div class="bubble">'+timeHtml+content+'</div></div>';
         }
         if(m.role === 'error'){
           return '<div class="message assistant"><div style="max-width:min(720px,88%);padding:12px 14px;border-radius:14px;line-height:1.65;white-space:pre-wrap;font-size:14px;color:#c96f66;background:rgba(196,80,70,.10);border:1px solid rgba(196,80,70,.22)">'+content+'</div></div>';
@@ -3235,9 +3235,6 @@
 
         function scrollLatest(){
           requestAnimationFrame(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} });
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 80);
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 260);
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 520);
         }
 
         function applyViewport(){
@@ -3248,32 +3245,26 @@
             root.style.removeProperty('--app-top');
             return;
           }
-
           const focused = document.activeElement === input;
           const m = metrics();
           setVars(m);
-
           document.body.classList.toggle('keyboard-open', focused);
           keyboardActive = focused;
-
           if(focused){
             if(sidebarOpen){ sidebarOpen = false; renderSidebar(); }
-            try{ window.scrollTo(0, 0); }catch(_e){}
             scrollLatest();
           }
         }
 
         function schedule(delay){
           clearTimeout(timer);
-          timer = setTimeout(applyViewport, delay || 30);
+          timer = setTimeout(applyViewport, delay || 16);
         }
 
         input.addEventListener('focus', function(){
           schedule(0);
-          setTimeout(applyViewport, 80);
-          setTimeout(applyViewport, 180);
-          setTimeout(applyViewport, 360);
-          setTimeout(applyViewport, 650);
+          setTimeout(applyViewport, 100);
+          setTimeout(applyViewport, 300);
         });
 
         input.addEventListener('blur', function(){
@@ -3282,23 +3273,17 @@
             document.body.classList.remove('keyboard-open');
             root.style.setProperty('--app-top','0px');
             applyViewport();
-          }, 180);
+          }, 150);
         });
 
-        input.addEventListener('input', function(){ schedule(20); scrollLatest(); });
-        window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
+        input.addEventListener('input', function(){ schedule(16); scrollLatest(); });
+        window.addEventListener('resize', function(){ schedule(30); }, {passive:true});
         window.addEventListener('orientationchange', function(){ setTimeout(applyViewport, 260); }, {passive:true});
 
         if(window.visualViewport){
-          window.visualViewport.addEventListener('resize', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
-          window.visualViewport.addEventListener('scroll', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
+          window.visualViewport.addEventListener('resize', function(){ schedule(keyboardActive ? 4 : 20); }, {passive:true});
+          window.visualViewport.addEventListener('scroll', function(){ schedule(keyboardActive ? 4 : 20); }, {passive:true});
         }
-
-        setInterval(function(){
-          if(!keyboardActive) return;
-          const m = metrics();
-          if(Math.abs(m.height - lastHeight) > 2 || Math.abs(m.top - lastTop) > 2) applyViewport();
-        }, 180);
 
         applyViewport();
       }catch(_err){}
