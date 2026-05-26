@@ -2765,13 +2765,13 @@
       syncLegacySettings();
     }
 
-    function openSettings(){ closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); }
-    function closeSettings(){ $('#providerModal').classList.remove('show'); }
+    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
     function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
 
     /* ── 高级设置 ── */
-    function openAdvanced(){ closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); renderAdvancedSettings(); $('#advancedModal').classList.add('show'); }
-    function closeAdvanced(){ $('#advancedModal').classList.remove('show'); }
+    function openAdvanced(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); renderAdvancedSettings(); $('#advancedModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function closeAdvanced(){ $('#advancedModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
 
     function renderAdvancedSettings(){
       const box = $('#advancedBody');
@@ -2888,14 +2888,15 @@
     function openMemoryEdit(memory){
       const modal = $('#memoryEditModal');
       if(!modal) return;
-      closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar();
+      closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar();
       $('#memoryEditTitle').textContent = memory ? '编辑记忆' : '新增记忆';
+      document.body.classList.add('modal-open');
       const content = $('#memoryEditContent'); if(content) content.value = memory ? (memory.content||'') : '';
       const tags = $('#memoryEditTags'); if(tags) tags.value = (memory && Array.isArray(memory.tags)) ? memory.tags.join(', ') : '';
       if(content) content._editId = memory ? memory.id : null;
       modal.classList.add('show');
     }
-    function closeMemoryEdit(){ $('#memoryEditModal').classList.remove('show'); }
+    function closeMemoryEdit(){ $('#memoryEditModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
     function saveMemoryEdit(){
       const modal = $('#memoryEditModal'); if(!modal) return;
       const content = $('#memoryEditContent'); if(!content) return;
