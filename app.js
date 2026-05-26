@@ -320,12 +320,10 @@
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
         </aside>
         <main class="main">
-          <div class="mobile-topbar"><button class="mobile-topbar-btn" id="mobileMenuBtn" title="菜单">☰</button><button class="mobile-topbar-btn" id="mobileThemeBtn" title="主题">◐</button></div>
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
-          <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☀</button></div>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
-            <div class="search-toggle model-toolbar"><button class="pill" id="searchBtn">○ 联网搜索</button><div class="model-switcher"><button class="pill model-pill" id="modelBtn" title="切换模型">模型 ▾</button><div class="model-menu" id="modelMenu"></div></div></div>
+            <div class="search-toggle model-toolbar"><button class="pill" id="searchBtn">○ 联网搜索</button><div class="model-switcher"><button class="pill model-pill" id="modelBtn" title="切换模型">模型 ▾</button><div class="model-menu" id="modelMenu"></div></div><button class="pill theme-pill" id="themeBtn" title="切换主题">☀</button></div>
             <div class="composer"><textarea id="input" placeholder="输入消息...（Enter 发送，Shift + Enter 换行）"></textarea><button class="send" id="sendBtn">›</button></div>
           </div>
         </main>
@@ -364,8 +362,8 @@
       const style=document.createElement('style');
       style.id='daotianRenderStyle';
       style.textContent = `
-        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.78;font-size:15px;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
-        .assistant-render p{margin:.25em 0 .72em;}
+        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.65;font-size:15px;font-weight:400;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
+        .assistant-render p{margin:.4em 0 .65em;}
         .assistant-render p:last-child{margin-bottom:0;}
         .assistant-render h1,.assistant-render h2,.assistant-render h3{margin:1em 0 .45em;line-height:1.35;font-weight:700;}
         .assistant-render h1{font-size:1.28em}.assistant-render h2{font-size:1.18em}.assistant-render h3{font-size:1.08em}
@@ -375,6 +373,7 @@
         .assistant-render code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em;background:rgba(127,127,127,.12);border-radius:6px;padding:.08em .32em;}
         .assistant-render pre{margin:.7em 0;padding:12px 13px;border-radius:14px;background:rgba(127,127,127,.10);border:1px solid rgba(127,127,127,.14);overflow:auto;-webkit-overflow-scrolling:touch;white-space:pre;}
         .assistant-render pre code{background:transparent;padding:0;border-radius:0;white-space:pre;}
+        .assistant-render hr{border:0;height:1px;background:var(--line);margin:1em 0;opacity:.6}
         .assistant-render a{color:inherit;text-decoration:underline;text-underline-offset:3px;}
         .assistant-render table{border-collapse:collapse;margin:.7em 0;display:block;overflow:auto;max-width:100%;}
         .assistant-render th,.assistant-render td{border:1px solid rgba(127,127,127,.22);padding:6px 9px;}
@@ -412,6 +411,7 @@
       function closeList(){ if(list){ out += '</' + list + '>'; list = null; } }
       lines.forEach(function(line){
         if(/^\s*$/.test(line)){ flushPara(); closeList(); return; }
+        if(/^\s{0,3}([-*_])\s*\1\s*\1[\s\1]*$/.test(line)){ flushPara(); closeList(); out += '<hr>'; return; }
         const heading = line.match(/^(#{1,3})\s+(.+)$/);
         if(heading){ flushPara(); closeList(); const level=heading[1].length; out += '<h'+level+'>'+renderInlineMarkdown(heading[2])+'</h'+level+'>'; return; }
         const quote = line.match(/^>\s?(.+)$/);
@@ -476,10 +476,9 @@
       style.id='daotianThinkingStyle';
       style.textContent = `
         .daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:15px;color:var(--muted,currentColor);opacity:.72;background:transparent;border:0;box-shadow:none}
-        .daotian-thinking-mark{width:18px;height:18px;display:inline-grid;place-items:center;font-size:17px;line-height:1;transform-origin:50% 50%;animation:daotianThinkingSpin 1.25s cubic-bezier(.42,0,.18,1) infinite, daotianThinkingPulse 1.25s ease-in-out infinite}
+        .daotian-thinking-mark{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;animation:daotianDotPulse 1.6s ease-in-out infinite}
         .daotian-thinking-text{font-size:14px;letter-spacing:.02em;animation:daotianThinkingText 1.45s ease-in-out infinite}
-        @keyframes daotianThinkingSpin{0%{transform:rotate(0deg) scale(.94)}55%{transform:rotate(260deg) scale(1.04)}100%{transform:rotate(360deg) scale(.94)}}
-        @keyframes daotianThinkingPulse{0%,100%{opacity:.38}50%{opacity:.95}}
+        @keyframes daotianDotPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:.95;transform:scale(1.25)}}
         @keyframes daotianThinkingText{0%,100%{opacity:.52}50%{opacity:.86}}
       `;
       document.head.appendChild(style);
@@ -596,7 +595,8 @@
         }
         if(m.thinking && !m.content){
           ensureThinkingStyle();
-          return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>';
+          var label = m.memoryNotice ? '记忆已更新' : '想一下';
+          return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
         return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+timeHtml+'</div></div>';
       }).join('');
@@ -620,18 +620,14 @@
 
     function closeModelMenu(){ const menu=$('#modelMenu'); if(menu) menu.classList.remove('show'); }
 
-    function isMobile(){ return (window.innerWidth||9999) <= 900; }
     function renderAll(){
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
-      const mtb = $('#mobileThemeBtn'); if(mtb) mtb.textContent = theme === 'dark' ? '◑' : '◐';
-      var fm = $('#openSide'); if(fm) fm.style.display = isMobile() ? 'none' : '';
-      var ta = document.querySelector('.top-actions'); if(ta) ta.style.display = isMobile() ? 'none' : '';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
-    function createChat(){ const id=uid(); chats.unshift({id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; sidebarOpen=true; renderAll(); }
+    function createChat(){ var empty=chats.find(function(c){ return !c.messages || !c.messages.length; }); if(empty){ activeId=empty.id; }else{ var id=uid(); chats.unshift({id:id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; } sidebarOpen=true; renderAll(); }
     function deleteChat(id){
       const idx = chats.findIndex(c=>c.id===id); if(idx<0) return;
       chats.splice(idx,1);
@@ -778,48 +774,64 @@
       if(systemText.trim()){
         requestMessages.unshift({role:'system', content:systemText});
       }
-      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now()};
+      /* 预检：用户发送的消息是否会触发记忆提取 */
+      var willExtract = loadAutoExtract() && quickExtract(text);
+      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now(),memoryNotice:!!willExtract};
       c.messages.push(assistant);
       renderAll();
+      var memoryNoticeTimer = null;
       try{
         const result=await callModel(requestMessages, function(delta){
-          if(assistant.thinking) assistant.thinking=false;
+          if(assistant.thinking){
+            assistant.thinking=false;
+            if(assistant.memoryNotice){
+              /* 想一下 → 记忆已更新 直接变形，停留 1.8 秒 */
+              renderMessages();
+              memoryNoticeTimer = setTimeout(function(){
+                assistant.memoryNotice = false;
+                renderMessages();
+              }, 1800);
+            }
+          }
           assistant.content += delta;
           c.updatedAt=Date.now();
-          renderMessages();
+          if(!assistant.memoryNotice) renderMessages();
         }, cfg);
+        clearTimeout(memoryNoticeTimer);
+        assistant.memoryNotice = false;
         assistant.thinking=false;
         if(!assistant.content.trim()) assistant.content=result.content || '没有返回内容';
         assistant.usage = result.usage || null;
       }catch(err){
+        clearTimeout(memoryNoticeTimer);
+        assistant.memoryNotice = false;
         assistant.thinking=false;
         assistant.role='error';
         assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
       /* 自动提取记忆 → 直接存入跨聊天记忆 */
-      try{
-        if(loadAutoExtract()){
+      if(willExtract){
+        try{
           var _extracted = quickExtract(text);
           if(_extracted){
             var _mems = loadMemories();
             _mems.unshift({ id: uid(), content: _extracted, tags: [], createdAt: Date.now(), updatedAt: Date.now(), enabled: true });
             if(_mems.length > 200) _mems = _mems.slice(0,200);
             saveMemories(_mems);
-            showMemoryNotice(_extracted);
           }
-        }
-      }catch(_e){}
+        }catch(_e){}
+      }
     }
 
     /* ── 简化记忆提取：分类 → 直接存，不评分、不候选 ── */
     function quickExtract(text){
       var t = String(text||'').trim();
-      if(t.length < 4) return null;
+      if(t.length < 6) return null;
+      if(/[?？]$/.test(t) || /^(?:什么|谁|哪|怎么|为什么|何时|如何)/.test(t)) return null;
       try{
         var cls = MEMORY_V3.classify(t);
         if(cls.is_trash || cls.is_sensitive || cls.is_temporary) return null;
-        if(cls.category === 'casual_chat' && cls.subcategory === '' && !cls.explicit_request) return null;
         if(cls.explicit_request || cls.category === 'explicit_memory_request'){
           var cleaned = t.replace(/^(?:记住[这那我]?[条句话个]?|记[一着]?下[来]?|请[你]?[把]?)[!！。,\s]*/i, '').trim();
           return cleaned || t;
@@ -828,22 +840,8 @@
           var obj = cls.subcategory === 'dislike' ? '用户不喜欢' : cls.subcategory === 'preference' ? '用户喜欢' : '';
           return obj ? obj + '：' + t : t;
         }
-        if(cls.has_reference && t.length >= 10) return t;
-        if(t.length >= 20 && cls.category !== 'trash') return t;
       }catch(_e){}
       return null;
-    }
-
-    function showMemoryNotice(savedText){
-      var box = $('#messages');
-      if(!box) return;
-      var el = document.createElement('div');
-      el.className = 'memory-notice';
-      el.innerHTML = '<span class="memory-notice-dot"></span>记忆已更新';
-      el.title = savedText.slice(0, 100);
-      box.appendChild(el);
-      setTimeout(function(){ el.classList.add('fade-out'); }, 2400);
-      setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 3000);
     }
 
     /*
@@ -3126,8 +3124,6 @@
       }
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
-    var _el_mm = $('#mobileMenuBtn'); if(_el_mm) _el_mm.onclick=()=>{sidebarOpen=true;renderAll();};
-    var _el_mt = $('#mobileThemeBtn'); if(_el_mt) _el_mt.onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#sendBtn').onclick=sendMessage;
