@@ -38,7 +38,8 @@
       memories:'daotian.memories.v1',
       memoryCandidates:'daotian.memoryCandidates.v1',
       autoExtract:'daotian.autoExtract.v1',
-      memoryGlobal:'daotian.memoryGlobal.v1'
+      memoryGlobal:'daotian.memoryGlobal.v1',
+      tokenDisplay:'daotian.tokenDisplay.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -88,6 +89,12 @@
     }
     function saveAutoExtract(v){
       saveJSON(KEYS.autoExtract, v === true);
+    }
+    function loadTokenDisplay(){
+      return readJSON(KEYS.tokenDisplay, false) === true;
+    }
+    function saveTokenDisplay(v){
+      saveJSON(KEYS.tokenDisplay, v === true);
     }
     function loadMemoryCandidates(){
       const arr = readJSON(KEYS.memoryCandidates, []);
@@ -540,6 +547,30 @@
       return emptyPrompts[seed % emptyPrompts.length];
     }
 
+    function formatTokens(n){
+      if(n >= 1000){ var v = (n/1000).toFixed(1); if(v.endsWith('.0')) v = v.slice(0,-2); return v + 'k'; }
+      return String(n);
+    }
+    function renderTokenUsage(m){
+      if(!loadTokenDisplay()) return '';
+      if(m.role !== 'assistant' || !m.content) return '';
+      var usage = m.usage;
+      if(!usage){
+        return '<div class="token-usage">Token：暂无数据</div>';
+      }
+      var parts = [];
+      var input = usage.prompt_tokens || usage.input_tokens || 0;
+      if(input) parts.push('输入 ' + formatTokens(input));
+      var output = usage.completion_tokens || usage.output_tokens || 0;
+      if(output) parts.push('输出 ' + formatTokens(output));
+      var cache = usage.cache_read_input_tokens || usage.cache_creation_input_tokens || usage.cached_tokens || 0;
+      if(cache) parts.push('缓存 ' + formatTokens(cache));
+      var total = usage.total_tokens || (input + output) || 0;
+      if(!parts.length && total) parts.push('总计 ' + formatTokens(total));
+      var text = parts.length ? 'Tokens：' + parts.join('｜') : 'Token：暂无数据';
+      return '<div class="token-usage">' + text + '</div>';
+    }
+
     function renderMessages(){
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
       const msgs = Array.isArray(c.messages) ? c.messages : [];
@@ -559,7 +590,7 @@
           ensureThinkingStyle();
           return `<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>`;
         }
-        return `<div class="message assistant"><div class="assistant-render">${renderAssistantContent(m.content)}</div></div>`;
+        return `<div class="message assistant"><div class="assistant-render">${renderAssistantContent(m.content)}</div>${renderTokenUsage(m)}</div>`;
       }).join('');
       scheduleEnhanceRender();
       box.scrollTop = box.scrollHeight;
@@ -621,7 +652,7 @@
       const cfg = preset || activePreset();
       if((cfg.providerType||'openai') !== 'openai') throw new Error('Gemini / Anthropic 已保存，但还需要后端转发适配。当前先用 OpenAI 兼容接口。');
       const headers={'Content-Type':'application/json'}; if(cfg.apiKey) headers.Authorization='Bearer '+cfg.apiKey;
-      const body={model:cfg.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true};
+      const body={model:cfg.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true,stream_options:{include_usage:true}};
       exportModelParamsBody(cfg.id, body);
       let targetUrl = buildOpenAIURL(cfg);
       if(searchOn){
@@ -644,7 +675,7 @@
 
       if(!res.body){
         const txt=await res.text();
-        try{ const data=JSON.parse(txt); return extractFullContent(data) || JSON.stringify(data).slice(0,1000); }catch(e){ return txt; }
+        try{ const data=JSON.parse(txt); var nc = extractFullContent(data) || JSON.stringify(data).slice(0,1000); return { content: nc, usage: data.usage || null }; }catch(e){ return { content: txt, usage: null }; }
       }
 
       const reader=res.body.getReader();
@@ -653,6 +684,7 @@
       let raw='';
       let full='';
       let streamError='';
+      let capturedUsage = null;
 
       function consumeLine(line){
         const trimmed=line.trim();
@@ -662,6 +694,7 @@
         if(!payload || payload==='[DONE]') return payload==='[DONE]';
         try{
           const data=JSON.parse(payload);
+          if(data.usage) capturedUsage = data.usage;
           const delta=extractDelta(data);
           if(delta){
             full += delta;
@@ -683,19 +716,19 @@
         while((index=buffer.indexOf('\n'))>=0){
           const line=buffer.slice(0,index);
           buffer=buffer.slice(index+1);
-          if(consumeLine(line)) return full;
+          if(consumeLine(line)) return { content: full, usage: capturedUsage };
         }
       }
       buffer += decoder.decode();
       if(buffer.trim()) consumeLine(buffer);
       if(streamError && !full) throw new Error(streamError);
-      if(full) return full;
+      if(full) return { content: full, usage: capturedUsage };
 
       try{
         const data=JSON.parse(raw);
-        return extractFullContent(data) || JSON.stringify(data).slice(0,1000);
+        return { content: extractFullContent(data) || JSON.stringify(data).slice(0,1000), usage: capturedUsage || (data.usage || null) };
       }catch(_e){
-        return raw.replace(/^data:\s*/gm,'').replace(/\[DONE\]/g,'').trim();
+        return { content: raw.replace(/^data:\s*/gm,'').replace(/\[DONE\]/g,'').trim(), usage: capturedUsage };
       }
     }
     async function sendMessage(){
@@ -747,18 +780,19 @@
       if(systemText.trim()){
         requestMessages.unshift({role:'system', content:systemText});
       }
-      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label};
+      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null};
       c.messages.push(assistant);
       renderAll();
       try{
-        const finalText=await callModel(requestMessages, function(delta){
+        const result=await callModel(requestMessages, function(delta){
           if(assistant.thinking) assistant.thinking=false;
           assistant.content += delta;
           c.updatedAt=Date.now();
           renderMessages();
         }, cfg);
         assistant.thinking=false;
-        if(!assistant.content.trim()) assistant.content=finalText || '没有返回内容';
+        if(!assistant.content.trim()) assistant.content=result.content || '没有返回内容';
+        assistant.usage = result.usage || null;
       }catch(err){
         assistant.thinking=false;
         assistant.role='error';
@@ -2671,6 +2705,7 @@
       const candidates = loadMemoryCandidates();
       const autoExtract = loadAutoExtract();
       const memoryGlobalOn = loadMemoryGlobal();
+      const tokenDisplay = loadTokenDisplay();
       box.innerHTML = `
         <div class="hint" style="margin-bottom:14px">每个板块都可以折叠展开。修改后自动保存。</div>
 
@@ -2695,6 +2730,7 @@
               <div class="field"><label>流式输出</label><div style="margin-top:10px"><button class="pill adv-toggle" data-param="stream" data-on="${params.stream?'1':'0'}">${params.stream?'✓ 开启':'关闭'}</button></div></div></div>
               <div class="field" style="margin-top:6px"><label>自定义系统提示词</label><textarea class="param-textarea" data-param="systemPrompt" placeholder="可选：覆盖默认系统提示词" style="width:100%;min-height:60px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">${escapeHTML(params.systemPrompt||'')}</textarea></div>
               <div class="field" style="margin-top:6px"><label>记忆注入 <span class="hint" style="margin-left:10px">开启后，跨聊天记忆会注入到此模型的请求中</span></label><div style="margin-top:6px"><button class="pill adv-toggle" data-param="memoryInjection" data-on="${params.memoryInjection?'1':'0'}">${params.memoryInjection?'✓ 开启':'关闭'}</button></div></div>
+              <div class="field" style="margin-top:6px"><label>显示 Token 消耗</label><div style="margin-top:6px"><button class="pill" id="toggle-token-display" data-on="${tokenDisplay?'1':'0'}">${tokenDisplay?'✓ 开启':'关闭'}</button></div></div>
             </div>
           </div>
         </div>
@@ -3046,6 +3082,17 @@
         btn2.textContent = on2 ? '关闭' : '✓ 开启';
         saveAutoExtract(!on2);
         toast(on2 ? '已关闭自动提取' : '已开启自动提取记忆');
+        return;
+      }
+      if(e.target.closest('#toggle-token-display')){
+        var btnT = $('#toggle-token-display');
+        if(!btnT) return;
+        var onT = btnT.getAttribute('data-on') === '1';
+        btnT.setAttribute('data-on', onT ? '0' : '1');
+        btnT.textContent = onT ? '关闭' : '✓ 开启';
+        saveTokenDisplay(!onT);
+        toast(onT ? '已关闭 Token 显示' : '已开启 Token 显示');
+        renderMessages();
         return;
       }
       /* 候选记忆区 */

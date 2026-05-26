@@ -127,7 +127,7 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
     headers: { "content-type": "application/json", authorization: `Bearer ${upstream.apiKey}` },
     signal: controller.signal,
     body: JSON.stringify(Object.assign(
-      { model, messages, stream: true },
+      { model, messages, stream: true, stream_options: { include_usage: true } },
       typeof body.temperature === "number" ? { temperature: body.temperature } : {},
       typeof body.top_p === "number" ? { top_p: body.top_p } : {},
       typeof body.max_tokens === "number" && body.max_tokens > 0 ? { max_tokens: body.max_tokens } : {},
@@ -147,6 +147,7 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
   sendSse(res, "sources", { sources });
   const decoder = new TextDecoder();
   let buffer = "";
+  let lastUsage = null;
   for await (const chunk of response.body){
     buffer += decoder.decode(chunk, { stream:true });
     const lines = buffer.split(/\r?\n/);
@@ -158,11 +159,12 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
       if(!payload || payload === "[DONE]") continue;
       let data = null;
       try{ data = JSON.parse(payload); }catch{ continue; }
+      if(data.usage) lastUsage = data.usage;
       const content = data?.choices?.[0]?.delta?.content || data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || "";
       if(content) sendSse(res, "content", { content });
     }
   }
-  sendSse(res, "done", { ok:true });
+  sendSse(res, "done", { ok:true, usage: lastUsage || null });
   res.end();
 }
 async function handleChat(req, res){
