@@ -320,6 +320,7 @@
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
         </aside>
         <main class="main">
+          <div class="mobile-topbar"><button class="mobile-topbar-btn" id="mobileMenuBtn" title="菜单">☰</button><span class="mobile-topbar-title">稻田 Ai</span><button class="mobile-topbar-btn" id="mobileThemeBtn" title="主题">◐</button></div>
           <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
           <div class="top-actions"><button class="icon-btn" id="themeBtn" title="主题">☀</button></div>
           <div class="messages" id="messages"></div>
@@ -616,6 +617,7 @@
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
+      const mtb = $('#mobileThemeBtn'); if(mtb) mtb.textContent = theme === 'dark' ? '◑' : '◐';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -748,23 +750,9 @@
       if(params && params.memoryInjection !== false && loadMemoryGlobal()){
         var memories = loadMemories().filter(function(m){ return m.enabled !== false; });
         if(memories.length){
-          var memTexts = null;
-          /* v3 检索（同步，排序后取 Top 15） */
-          try{
-            var v3store = MEMORY_V3.loadStore();
-            if(v3store && v3store.savedMemories && v3store.savedMemories.length){
-              var ranked = MEMORY_V3.retrieve(text, v3store, 15);
-              if(ranked && ranked.length){
-                memTexts = ranked.map(function(r, i){ return (i+1)+'. '+(r.memory.text||'').slice(0,500); });
-              }
-            }
-          }catch(_e){}
-          /* 降级：全部注入（按更新时间排序） */
-          if(!memTexts){
-            var sorted = memories.slice().sort(function(a,b){ return (b.updatedAt||0) - (a.updatedAt||0); });
-            memTexts = sorted.map(function(m, i){ return (i+1)+'. '+(m.content||'').slice(0,500); }).filter(Boolean);
-          }
-          if(memTexts && memTexts.length){
+          var sorted = memories.slice().sort(function(a,b){ return (b.updatedAt||0) - (a.updatedAt||0); });
+          var memTexts = sorted.map(function(m, i){ return (i+1)+'. '+(m.content||'').slice(0,500); }).filter(Boolean);
+          if(memTexts.length){
             var memJoined = memTexts.join('\n');
             if(memJoined.length > 4000) memJoined = memJoined.slice(0,4000) + '\n...（部分记忆因长度限制未注入）';
             sysParts.push('【长期记忆】\n以下是跨聊天保存的长期记忆：\n' + memJoined);
@@ -799,8 +787,53 @@
         assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
-      /* v3 摄取 */
-      try{ var _v3s = MEMORY_V3.loadStore(); MEMORY_V3.extract(text, activeChat().messages, _v3s); }catch(_e){}
+      /* 自动提取记忆 → 直接存入跨聊天记忆 */
+      try{
+        if(loadAutoExtract()){
+          var _extracted = quickExtract(text);
+          if(_extracted){
+            var _mems = loadMemories();
+            _mems.unshift({ id: uid(), content: _extracted, tags: [], createdAt: Date.now(), updatedAt: Date.now(), enabled: true });
+            if(_mems.length > 200) _mems = _mems.slice(0,200);
+            saveMemories(_mems);
+            showMemoryNotice(_extracted);
+          }
+        }
+      }catch(_e){}
+    }
+
+    /* ── 简化记忆提取：分类 → 直接存，不评分、不候选 ── */
+    function quickExtract(text){
+      var t = String(text||'').trim();
+      if(t.length < 4) return null;
+      try{
+        var cls = MEMORY_V3.classify(t);
+        if(cls.is_trash || cls.is_sensitive || cls.is_temporary) return null;
+        if(cls.category === 'casual_chat' && cls.subcategory === '' && !cls.explicit_request) return null;
+        if(cls.explicit_request || cls.category === 'explicit_memory_request'){
+          var cleaned = t.replace(/^(?:记住[这那我]?[条句话个]?|记[一着]?下[来]?|请[你]?[把]?)[!！。,\s]*/i, '').trim();
+          return cleaned || t;
+        }
+        if(cls.category === 'stable_preference' || cls.category === 'instruction' || cls.category === 'boundary' || cls.category === 'project' || cls.category === 'dislike'){
+          var obj = cls.subcategory === 'dislike' ? '用户不喜欢' : cls.subcategory === 'preference' ? '用户喜欢' : '';
+          return obj ? obj + '：' + t : t;
+        }
+        if(cls.has_reference && t.length >= 10) return t;
+        if(t.length >= 20 && cls.category !== 'trash') return t;
+      }catch(_e){}
+      return null;
+    }
+
+    function showMemoryNotice(savedText){
+      var box = $('#messages');
+      if(!box) return;
+      var el = document.createElement('div');
+      el.className = 'memory-notice';
+      el.innerHTML = '<span class="memory-notice-dot"></span>记忆已更新';
+      el.title = savedText.slice(0, 100);
+      box.appendChild(el);
+      setTimeout(function(){ el.classList.add('fade-out'); }, 2400);
+      setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 3000);
     }
 
     /*
@@ -2702,7 +2735,6 @@
       const currentPreset = activePreset();
       const params = getModelParams(currentPreset.id);
       const memories = loadMemories();
-      const candidates = loadMemoryCandidates();
       const autoExtract = loadAutoExtract();
       const memoryGlobalOn = loadMemoryGlobal();
       const tokenDisplay = loadTokenDisplay();
@@ -2761,37 +2793,8 @@
             <button class="btn" id="add-memory-btn" type="button" style="margin-top:10px">＋ 新增记忆</button>
             <button class="btn danger" id="clear-all-memory" type="button" style="margin-top:8px">清空全部记忆</button>
           </div>
-        </div>` +
-        (candidates.length ? `
-        <div class="adv-section">
-          <button class="adv-section-head" data-adv-toggle="section-candidates">
-            <span>候选记忆区 <span class="hint" style="font-weight:400">(${candidates.length} 条待确认)</span></span>
-            <span class="adv-arrow">▾</span>
-          </button>
-          <div class="adv-section-body" id="section-candidates">
-            <div id="candidate-list-area"></div>
-          </div>
-        </div>` : '');
+        </div>`;
       renderMemoryList();
-      renderCandidateList();
-      /* v2 四面板 */
-      try{
-        var _v2s = MEMORY_V3.loadStore() || {};
-        var _v2mem = _v2s.savedMemories || [], _v2c = _v2s.candidateMemories || [], _v2r = _v2s.historyReferences || [], _v2l = _v2s.memoryLogs || [];
-        box.innerHTML +=
-          '<div class="adv-section"><button class="adv-section-head" data-adv-toggle="section-v2mem"><span>v2 正式记忆 <span class="hint" style="font-weight:400">('+_v2mem.length+' 条)</span></span><span class="adv-arrow">▾</span></button><div class="adv-section-body collapsed" id="section-v2mem">'+
-          (_v2mem.length ? _v2mem.map(function(m){ return '<div class="mem-item"><div class="mem-content">'+escapeHTML((m.text||'').slice(0,200))+'</div><div class="mem-tags">类型: '+escapeHTML(m.type||'')+' | 置信度: '+escapeHTML((m.confidence||0).toFixed(2))+'</div></div>'; }).join('') : '<div style="padding:16px 0;color:var(--muted);font-size:14px;text-align:center">暂无 v2 正式记忆</div>')+
-          '</div></div>'+
-          '<div class="adv-section"><button class="adv-section-head" data-adv-toggle="section-v2cand"><span>v2 待确认 <span class="hint" style="font-weight:400">('+_v2c.length+' 条)</span></span><span class="adv-arrow">▾</span></button><div class="adv-section-body collapsed" id="section-v2cand">'+
-          (_v2c.length ? _v2c.map(function(c){ return '<div class="mem-item candidate-item"><div class="mem-content">'+escapeHTML((c.proposed_text||'').slice(0,200))+'</div>'+(c.reason?'<div class="mem-tags" style="font-size:12px;color:var(--muted)">原因: '+escapeHTML(c.reason)+'</div>':'')+'</div>'; }).join('') : '<div style="padding:16px 0;color:var(--muted);font-size:14px;text-align:center">暂无待确认记忆</div>')+
-          '</div></div>'+
-          '<div class="adv-section"><button class="adv-section-head" data-adv-toggle="section-v2ref"><span>历史引用 <span class="hint" style="font-weight:400">('+_v2r.length+' 条)</span></span><span class="adv-arrow">▾</span></button><div class="adv-section-body collapsed" id="section-v2ref">'+
-          (_v2r.length ? _v2r.slice(0,10).map(function(r){ return '<div class="mem-item"><div class="mem-content">'+escapeHTML((r.summary||'').slice(0,150))+'</div>'+(r.topics?'<div class="mem-tags">主题: '+(Array.isArray(r.topics)?escapeHTML(r.topics.join(', ')):escapeHTML(r.topics))+'</div>':'')+'</div>'; }).join('') : '<div style="padding:16px 0;color:var(--muted);font-size:14px;text-align:center">暂无历史引用</div>')+
-          '</div></div>'+
-          '<div class="adv-section"><button class="adv-section-head" data-adv-toggle="section-v2log"><span>记忆日志 <span class="hint" style="font-weight:400">('+_v2l.length+' 条)</span></span><span class="adv-arrow">▾</span></button><div class="adv-section-body collapsed" id="section-v2log">'+
-          (_v2l.length ? _v2l.slice(0,20).map(function(l){ return '<div class="mem-item" style="font-size:12px"><div>【'+escapeHTML(l.action||'')+'】 '+escapeHTML((l.input||'').slice(0,80))+'</div>'+(l.output?'<div style="color:var(--muted)">→ '+escapeHTML((l.output||'').slice(0,80))+'</div>':'')+'</div>'; }).join('') : '<div style="padding:16px 0;color:var(--muted);font-size:14px;text-align:center">暂无记忆日志</div>')+
-          '</div></div>';
-      }catch(_e){}
     }
 
     function renderMemoryList(){
@@ -2818,22 +2821,6 @@
       }).join('');
     }
 
-    function renderCandidateList(){
-      const area = $('#candidate-list-area');
-      if(!area) return;
-      const candidates = loadMemoryCandidates();
-      if(!candidates.length){ area.innerHTML = ''; return; }
-      area.innerHTML = candidates.map(function(c, i){
-        return '<div class="mem-item candidate-item" data-cand-idx="'+i+'">' +
-          '<div class="mem-content">'+escapeHTML((c.content||'').slice(0,300))+'</div>' +
-          (c.source ? '<div class="mem-tags" style="font-size:12px;color:var(--muted)">来源: '+escapeHTML(c.source)+'</div>' : '') +
-          '<div class="mem-actions">' +
-            '<button class="pill" data-cand-action="save" data-cand-idx="'+i+'">保存</button>' +
-            '<button class="pill mem-edit-btn" data-cand-action="edit" data-cand-idx="'+i+'">编辑后保存</button>' +
-            '<button class="pill danger" data-cand-action="ignore" data-cand-idx="'+i+'">忽略</button>' +
-          '</div></div>';
-      }).join('');
-    }
 
     function openMemoryEdit(memory){
       const modal = $('#memoryEditModal');
@@ -3095,46 +3082,6 @@
         renderMessages();
         return;
       }
-      /* 候选记忆区 */
-      var candSave = e.target.closest('[data-cand-action="save"]');
-      if(candSave){
-        var idx = parseInt(candSave.getAttribute('data-cand-idx'), 10);
-        var candidates = loadMemoryCandidates();
-        var cand = candidates[idx];
-        if(cand){
-          var mem = loadMemories();
-          mem.unshift({ id: uid(), content: cand.content, tags: cand.tags || [], createdAt: Date.now(), updatedAt: Date.now(), enabled: true });
-          saveMemories(mem);
-          candidates.splice(idx, 1);
-          saveMemoryCandidates(candidates);
-          renderMemoryList();
-          renderCandidateList();
-          toast('已保存记忆');
-        }
-        return;
-      }
-      var candEdit = e.target.closest('[data-cand-action="edit"]');
-      if(candEdit){
-        var idx2 = parseInt(candEdit.getAttribute('data-cand-idx'), 10);
-        var candidates2 = loadMemoryCandidates();
-        var cand2 = candidates2[idx2];
-        if(cand2){
-          candidates2.splice(idx2, 1);
-          saveMemoryCandidates(candidates2);
-          openMemoryEdit(cand2);
-        }
-        return;
-      }
-      var candIgnore = e.target.closest('[data-cand-action="ignore"]');
-      if(candIgnore){
-        var idx3 = parseInt(candIgnore.getAttribute('data-cand-idx'), 10);
-        var candidates3 = loadMemoryCandidates();
-        candidates3.splice(idx3, 1);
-        saveMemoryCandidates(candidates3);
-        renderCandidateList();
-        toast('已忽略');
-        return;
-      }
     });
     /* 记忆搜索 */
     document.addEventListener('input', function(e){
@@ -3169,6 +3116,8 @@
       }
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#themeBtn').onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
+    var _el_mm = $('#mobileMenuBtn'); if(_el_mm) _el_mm.onclick=()=>{sidebarOpen=true;renderAll();};
+    var _el_mt = $('#mobileThemeBtn'); if(_el_mt) _el_mt.onclick=()=>{theme=theme==='dark'?'light':'dark';renderAll();};
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#searchBtn').onclick=()=>{searchOn=!searchOn; $('#searchBtn').classList.toggle('active',searchOn); $('#searchBtn').textContent=searchOn?'● 联网搜索':'○ 联网搜索';}; $('#sendBtn').onclick=sendMessage;

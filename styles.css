@@ -12,9 +12,9 @@
   --sidebar:260px;
 }
 [data-theme="dark"]{
-  --bg:#151719;
-  --panel:#1d2023;
-  --panel-2:#202428;
+  --bg:#1F1F1F;
+  --panel:#1B1B1B;
+  --panel-2:#2C2C2A;
   --text:#e7e3dc;
   --muted:#9a9288;
   --line:rgba(210,210,210,.10);
@@ -65,6 +65,8 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
 .send{width:46px;height:46px;border-radius:50%;background:var(--accent);color:white;font-size:20px;display:grid;place-items:center}.send:disabled{opacity:.45;cursor:not-allowed}
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.22);display:none;align-items:center;justify-content:center;z-index:100;padding:22px}.modal-backdrop.show{display:flex}.modal{width:min(760px,100%);max-height:86vh;overflow:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}.modal-head{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);font-weight:650}.modal-body{padding:22px;display:grid;gap:14px}.field{display:grid;gap:7px}.field label{font-size:13px;color:var(--muted)}.field input,.field select{height:46px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:0 14px;outline:0}[data-theme="dark"] .field input,[data-theme="dark"] .field select{background:rgba(0,0,0,.16)}.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.hint{font-size:12px;color:var(--muted);line-height:1.6}.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}.btn{height:42px;border-radius:14px;padding:0 18px;background:var(--panel);border:1px solid var(--line)}.btn.primary{background:var(--accent);border-color:var(--accent);color:white}.danger{color:#b84a42}.status{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(30,28,24,.86);color:white;padding:10px 14px;border-radius:999px;font-size:13px;display:none;z-index:30}.status.show{display:block}
 
+.mobile-topbar{display:none}
+
 @media(max-width:900px){
   :root{
     --sidebar:min(82vw,340px);
@@ -106,7 +108,38 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
     position:relative;
   }
 
-  .floating-menu{
+/* ── 移动端顶部栏 ── */
+  .mobile-topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex:0 0 auto;
+    height:44px;
+    padding:env(safe-area-inset-top) 8px 0 8px;
+    background:var(--bg);
+    border-bottom:1px solid var(--line);
+    z-index:19;
+    position:relative;
+  }
+  .mobile-topbar-title{
+    font-size:14px;
+    font-weight:560;
+    color:var(--text);
+    letter-spacing:.02em;
+  }
+  .mobile-topbar-btn{
+    width:38px;height:38px;
+    border-radius:50%;
+    border:0;background:transparent;
+    display:grid;place-items:center;
+    font-size:18px;
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .mobile-topbar-btn:active{background:rgba(127,127,127,.1)}
+
+  .floating-menu{display:none}
+  .top-actions{display:none}
     left:14px;
     top:calc(14px + env(safe-area-inset-top));
     z-index:18;
@@ -135,7 +168,7 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
     min-height:0;
     overflow-y:auto;
     -webkit-overflow-scrolling:touch;
-    padding:calc(78px + env(safe-area-inset-top)) 18px 14px;
+    padding:12px 18px 14px;
     scroll-padding-bottom:24px;
   }
 
@@ -373,4 +406,33 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
 }
 @media(max-width:760px){
   .usage-footer{font-size:10px}
+}
+
+/* ── 记忆更新提示 ── */
+.memory-notice{
+  max-width:min(720px,88%);
+  margin:6px auto 0;
+  padding:4px 0;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:11px;
+  color:var(--muted);
+  opacity:.55;
+  transition:opacity .5s ease;
+}
+.memory-notice.fade-out{opacity:0}
+.memory-notice-dot{
+  width:6px;height:6px;
+  border-radius:50%;
+  background:var(--accent);
+  opacity:.7;
+  animation:memoryDotPulse 1.6s ease-in-out infinite;
+}
+@keyframes memoryDotPulse{
+  0%,100%{opacity:.3;transform:scale(.8)}
+  50%{opacity:.9;transform:scale(1.2)}
+}
+@media(max-width:760px){
+  .memory-notice{max-width:calc(100vw - 36px);font-size:10px}
 }
