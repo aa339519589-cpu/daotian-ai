@@ -338,7 +338,7 @@
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
         </aside>
         <main class="main">
-          <button class="floating-menu" id="openSide" title="展开侧边栏">☰</button>
+          <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
             <div class="composer">
@@ -612,7 +612,7 @@
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
       const msgs = Array.isArray(c.messages) ? c.messages : [];
       if(msgs.length===0){
-        box.innerHTML = `<div class="empty"><div class="empty-center"><svg class="empty-logo" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="3"/><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
+        box.innerHTML = `<div class="empty"><div class="empty-center"><div class="brand-main-row"><svg class="empty-logo" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="3"/><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="brand-name">稻田 AI</div></div><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
         return;
       }
       box.innerHTML = msgs.map(function(m){
