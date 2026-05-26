@@ -777,7 +777,7 @@
     }
     async function sendMessage(){
       if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
-      c.messages.push({role:'user',content:text,time:Date.now()}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; sending=true; $('#sendBtn').disabled=true;
+      c.messages.push({role:'user',content:text,time:Date.now()}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       const cfg = activePreset();
       const params = getModelParams(cfg.id);
@@ -3356,7 +3356,14 @@
           }, 180);
         });
 
-        input.addEventListener('input', function(){ schedule(20); scrollLatest(); });
+        input.addEventListener('input', function(){ schedule(20); scrollLatest(); autoResizeTextarea(this); });
+    function autoResizeTextarea(ta){
+      ta.style.height='44px';
+      var maxH=120;
+      var nh=Math.min(ta.scrollHeight, maxH);
+      ta.style.height=nh+'px';
+      ta.style.overflowY=ta.scrollHeight > maxH ? 'auto' : 'hidden';
+    }
         window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
         window.addEventListener('orientationchange', function(){ setTimeout(applyViewport, 260); }, {passive:true});
 
