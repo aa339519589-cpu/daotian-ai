@@ -27,7 +27,7 @@ html,body,#app{width:100%;height:100%;margin:0}
 body{font-family:"Merriweather Sans",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-weight:400;background:var(--bg);color:var(--text);overflow:hidden}
 button,input,textarea,select{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer}
-.app-shell{height:100%;display:flex;background:radial-gradient(circle at 80% 12%,rgba(181,132,91,.08),transparent 32%),var(--bg)}
+.app-shell{height:100%;display:flex;background:var(--bg)}
 .sidebar{width:var(--sidebar);min-width:var(--sidebar);height:100%;display:flex;flex-direction:column;border-right:1px solid var(--line);background:rgba(255,255,255,.22);backdrop-filter:blur(18px);transition:width .18s ease,min-width .18s ease,opacity .18s ease}
 [data-theme="dark"] .sidebar{background:rgba(27,27,27,.92)}
 .sidebar.closed{width:0;min-width:0;opacity:0;pointer-events:none;overflow:hidden;border-right:0}
