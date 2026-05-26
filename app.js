@@ -39,7 +39,8 @@
       memoryCandidates:'daotian.memoryCandidates.v1',
       autoExtract:'daotian.autoExtract.v1',
       memoryGlobal:'daotian.memoryGlobal.v1',
-      tokenDisplay:'daotian.tokenDisplay.v1'
+      tokenDisplay:'daotian.tokenDisplay.v1',
+      autoScroll:'daotian.autoScroll.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -91,10 +92,16 @@
       saveJSON(KEYS.autoExtract, v === true);
     }
     function loadTokenDisplay(){
-      return readJSON(KEYS.tokenDisplay, false) === true;
+      return readJSON(KEYS.tokenDisplay, true) === true;
     }
     function saveTokenDisplay(v){
       saveJSON(KEYS.tokenDisplay, v === true);
+    }
+    function loadAutoScroll(){
+      return readJSON(KEYS.autoScroll, true) === true;
+    }
+    function saveAutoScroll(v){
+      saveJSON(KEYS.autoScroll, v === true);
     }
     function loadMemoryCandidates(){
       const arr = readJSON(KEYS.memoryCandidates, []);
@@ -601,7 +608,7 @@
         return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+timeHtml+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
-      box.scrollTop = box.scrollHeight;
+      if(loadAutoScroll()) box.scrollTop = box.scrollHeight;
     }
     function renderModelSwitcher(){
       ensureModelStyle();
@@ -2771,6 +2778,7 @@
               <div class="field" style="margin-top:6px"><label>自定义系统提示词</label><textarea class="param-textarea" data-param="systemPrompt" placeholder="可选：覆盖默认系统提示词" style="width:100%;min-height:60px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">${escapeHTML(params.systemPrompt||'')}</textarea></div>
               <div class="field" style="margin-top:6px"><label>记忆注入 <span class="hint" style="margin-left:10px">开启后，跨聊天记忆会注入到此模型的请求中</span></label><div style="margin-top:6px"><button class="pill adv-toggle" data-param="memoryInjection" data-on="${params.memoryInjection?'1':'0'}">${params.memoryInjection?'✓ 开启':'关闭'}</button></div></div>
               <div class="field" style="margin-top:6px"><label>显示 Token 消耗</label><div style="margin-top:6px"><button class="pill" id="toggle-token-display" data-on="${tokenDisplay?'1':'0'}">${tokenDisplay?'✓ 开启':'关闭'}</button></div></div>
+              <div class="field" style="margin-top:6px"><label>自动滚动跟随</label><div style="margin-top:6px"><button class="pill" id="toggle-auto-scroll" data-on="${loadAutoScroll()?'1':'0'}">${loadAutoScroll()?'✓ 开启':'关闭'}</button></div></div>
             </div>
           </div>
         </div>
@@ -3088,6 +3096,17 @@
         saveTokenDisplay(!onT);
         toast(onT ? '已关闭 Token 显示' : '已开启 Token 显示');
         renderMessages();
+        return;
+      }
+      /* 自动滚动 */
+      if(e.target.closest('#toggle-auto-scroll')){
+        var btnS = $('#toggle-auto-scroll');
+        if(!btnS) return;
+        var onS = btnS.getAttribute('data-on') === '1';
+        btnS.setAttribute('data-on', onS ? '0' : '1');
+        btnS.textContent = onS ? '关闭' : '✓ 开启';
+        saveAutoScroll(!onS);
+        toast(onS ? '已关闭自动滚动' : '已开启自动滚动跟随');
         return;
       }
     });
