@@ -3889,15 +3889,14 @@
     var _ttsAudio = null;
     var _ttsPlayingIdx = null;
 
-    function stripHtmlForTts(html){
-      var d = document.createElement('div'); d.innerHTML = html;
-      return (d.textContent || d.innerText || '').replace(/\s+/g,' ').trim();
-    }
-
     async function handleTtsClick(idx, btn){
       if(!btn) return;
-      var content = btn.getAttribute('data-tts-idx');
-      if(!content) return;
+      /* Get message text from parent .assistant-render */
+      var msgEl = btn.closest('.message');
+      var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
+      var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
+      if(!plainText || plainText.length < 3) return;
+      if(plainText.length > 1000) plainText = plainText.slice(0,1000);
 
       /* Already playing this - pause/resume */
       if(_ttsPlayingIdx === idx && _ttsAudio){
@@ -3919,8 +3918,6 @@
 
       /* Fetch TTS */
       btn.classList.add('loading');
-      var plainText = stripHtmlForTts(content);
-      if(plainText.length > 1000) plainText = plainText.slice(0,1000);
 
       try{
         var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:plainText})});
