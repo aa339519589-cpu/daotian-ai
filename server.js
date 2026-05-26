@@ -259,7 +259,16 @@ async function handleChat(req, res){
       return;
     }
     for(const key of Object.keys(parsed.fields)){
-      try{ body[key] = JSON.parse(parsed.fields[key]); }catch{ body[key] = parsed.fields[key]; }
+      try{
+        const val = JSON.parse(parsed.fields[key]);
+        if(key === "body" && val && typeof val === "object"){
+          Object.assign(body, val); // merge body fields to top level
+        }else{
+          body[key] = val;
+        }
+      }catch{
+        body[key] = parsed.fields[key];
+      }
     }
     for(const file of parsed.files){
       rawFiles.push({ filename: file.filename, mimetype: file.mimetype, buffer: file.buffer, size: file.size });
@@ -301,12 +310,14 @@ async function handleChat(req, res){
       parsedFiles.push(result);
       const status = result.parseStatus === "ok" ? "OK" : result.parseStatus;
       const textLen = result.text ? result.text.length : 0;
-      console.log(`[fileParser] ${file.filename} → ${status} (${textLen} chars)` +
-        (result.error ? ` err: ${result.error}` : ""));
+      console.log(`[fileParser] ${file.filename} | type=${result.fileType||'?'} | size=${file.size} | status=${status} | textLen=${textLen}` +
+        (result.error ? ` | error=${result.error}` : "") +
+        (result.warnings && result.warnings.length ? ` | warnings=${result.warnings.join(';')}` : ""));
     }
 
     /* Build file context and inject as system message */
     const fileContext = buildFileContext(parsedFiles, "standard");
+    const ctxLen = fileContext.length;
     if(fileContext){
       const sysIdx = messages.findIndex(m=>m?.role === "system");
       if(sysIdx >= 0){
@@ -315,6 +326,7 @@ async function handleChat(req, res){
         messages.unshift({ role:"system", content: fileContext });
       }
     }
+    console.log(`[fileParser] Injected ${ctxLen} chars of file context into messages`);
 
     /* For images: also add vision content if already in messages */
     const hasImages = parsedFiles.some(f=>f.fileType === "image" || /^image\//.test(f.mimeType||""));

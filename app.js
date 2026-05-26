@@ -952,12 +952,11 @@
         }
       }
 
-      /* Build request body */
+      /* Build request body — include upstream when going through /chat */
       var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true},thinkingDepth:thinkingDepth};
       exportModelParamsBody(cfg.id, body);
-      if(searchOn){
-        body.webSearch = true;
-        body.search = true;
+      if(searchOn || hasAttachments){
+        if(searchOn){ body.webSearch = true; body.search = true; }
         body.frontendUpstream = {
           providerType: cfg.providerType || 'openai',
           providerName: cfg.providerName || cfg.label || '当前模型',
