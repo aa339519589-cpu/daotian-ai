@@ -556,7 +556,7 @@
       if(m.role !== 'assistant' || !m.content) return '';
       var usage = m.usage;
       if(!usage){
-        return '<div class="token-usage">Token：暂无数据</div>';
+        return '<div class="usage-footer">Token：API 未返回</div>';
       }
       var parts = [];
       var input = usage.prompt_tokens || usage.input_tokens || 0;
@@ -567,8 +567,8 @@
       if(cache) parts.push('缓存 ' + formatTokens(cache));
       var total = usage.total_tokens || (input + output) || 0;
       if(!parts.length && total) parts.push('总计 ' + formatTokens(total));
-      var text = parts.length ? 'Tokens：' + parts.join('｜') : 'Token：暂无数据';
-      return '<div class="token-usage">' + text + '</div>';
+      var text = parts.length ? 'Tokens：' + parts.join('｜') : 'Token：API 未返回';
+      return '<div class="usage-footer">' + text + '</div>';
     }
 
     function renderMessages(){
@@ -590,7 +590,7 @@
           ensureThinkingStyle();
           return `<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true">✺</span><span class="daotian-thinking-text">想一下</span></div></div>`;
         }
-        return `<div class="message assistant"><div class="assistant-render">${renderAssistantContent(m.content)}</div>${renderTokenUsage(m)}</div>`;
+        return `<div class="message assistant"><div><div class="assistant-render">${renderAssistantContent(m.content)}</div>${renderTokenUsage(m)}</div></div>`;
       }).join('');
       scheduleEnhanceRender();
       box.scrollTop = box.scrollHeight;
