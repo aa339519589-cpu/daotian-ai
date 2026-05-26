@@ -72,12 +72,12 @@ button{border:0;background:none;cursor:pointer}
 .main{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;position:relative}
 .floating-menu{position:absolute;left:6px;top:6px;z-index:5;width:26px;height:26px;border-radius:999px;background:rgba(255,255,255,.34);border:1px solid var(--line);box-shadow:0 8px 30px rgba(0,0,0,.05);display:grid;place-items:center;color:var(--muted);backdrop-filter:blur(12px);font-size:12px}
 [data-theme="dark"] .floating-menu{background:rgba(31,31,31,.88)}
-.home-menu-button{position:fixed;top:10px;left:12px;width:32px;height:32px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:0;margin:0;border:none;background:transparent;box-shadow:none;outline:none;z-index:1000}
+.home-menu-button{position:fixed;top:16px;left:20px;width:30px;height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:0;margin:0;border:none;background:transparent;box-shadow:none;outline:none;z-index:1000}
 .home-menu-button span{display:block;width:22px;height:3px;border-radius:999px;background:rgba(214,186,164,.82)}
 .home-menu-button span:nth-child(2){width:16px}
 .home-menu-button span:nth-child(3){width:12px}
 .top-actions{position:absolute;right:22px;top:18px;z-index:5;display:flex;gap:10px}
-.messages{flex:1;overflow:auto;padding:92px min(9vw,120px) calc(88px + env(safe-area-inset-bottom) + 24px);min-height:0;scroll-padding-bottom:calc(88px + env(safe-area-inset-bottom) + 24px)}
+.messages{flex:1;overflow:auto;padding:96px min(9vw,120px) calc(88px + env(safe-area-inset-bottom) + 24px);min-height:0;scroll-padding-bottom:calc(88px + env(safe-area-inset-bottom) + 24px)}
 .message{max-width:820px;margin:0 auto 18px;display:flex}.message.user{justify-content:flex-end}.bubble{max-width:min(720px,80%);padding:10px 14px;border-radius:16px;line-height:1.65;white-space:pre-wrap;font-size:15px;font-weight:400;background:var(--panel-2);border:1px solid var(--line)}.message.user .bubble{background:rgba(220,128,98,.16);border-color:rgba(220,128,98,.22)}
 .composer-wrap{position:absolute;left:0;right:0;bottom:0;padding:0 0 28px;background:transparent;z-index:30}
 .pill{height:32px;padding:0 14px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:13px}.pill.active{color:var(--text);border-color:rgba(220,128,98,.4);background:rgba(220,128,98,.12)}
