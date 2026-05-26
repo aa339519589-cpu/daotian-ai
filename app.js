@@ -21,27 +21,28 @@
     };
   }
 
-  var NON_FATAL_PATTERNS = [
-    /showAttachPreview/i, /attachPreview/i, /_attachments/i, /addAttachment/i,
-    /openPlusMenu/i, /closePlusMenu/i, /togglePlusMenu/i, /attach/i,
-    /preview/i, /file preview/i, /image preview/i
+  var FATAL_PATTERNS = [
+    /cannot read propert/i, /is not a function/i, /is not defined/i,
+    /unexpected token/i, /syntaxerror/i
   ];
-  function isNonFatalError(msg){
+  var APP_READY = false;
+  function isFatalError(msg){
     var s = String(msg || '');
-    for(var i=0; i<NON_FATAL_PATTERNS.length; i++){
-      if(NON_FATAL_PATTERNS[i].test(s)) return true;
+    if(!APP_READY) return true;
+    for(var i=0; i<FATAL_PATTERNS.length; i++){
+      if(FATAL_PATTERNS[i].test(s)) return true;
     }
     return false;
   }
   window.addEventListener('error', function(e){
     var msg = e.message || e.error || 'script error';
-    if(isNonFatalError(msg)){ console.warn('[non-fatal]', msg); return; }
-    emergency(msg);
+    if(isFatalError(msg)){ emergency(msg); return; }
+    console.warn('[non-fatal]', msg);
   });
   window.addEventListener('unhandledrejection', function(e){
     var msg = (e.reason && e.reason.message) || e.reason || 'promise error';
-    if(isNonFatalError(msg)){ console.warn('[non-fatal promise]', msg); return; }
-    emergency(msg);
+    if(isFatalError(msg)){ emergency(msg); return; }
+    console.warn('[non-fatal promise]', msg);
   });
 
   try{
@@ -3814,6 +3815,7 @@
 
 
     renderAll();
+    APP_READY = true;
     setupMobileViewport();
     /* 预初始化记忆引擎（后台加载向量模型） */
     initMemoryEngine();
