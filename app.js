@@ -812,11 +812,11 @@
     /* ── 简化记忆提取：分类 → 直接存，不评分、不候选 ── */
     function quickExtract(text){
       var t = String(text||'').trim();
-      if(t.length < 4) return null;
+      if(t.length < 6) return null;
+      if(/[?？]$/.test(t) || /^(?:什么|谁|哪|怎么|为什么|何时|如何)/.test(t)) return null;
       try{
         var cls = MEMORY_V3.classify(t);
         if(cls.is_trash || cls.is_sensitive || cls.is_temporary) return null;
-        if(cls.category === 'casual_chat' && cls.subcategory === '' && !cls.explicit_request) return null;
         if(cls.explicit_request || cls.category === 'explicit_memory_request'){
           var cleaned = t.replace(/^(?:记住[这那我]?[条句话个]?|记[一着]?下[来]?|请[你]?[把]?)[!！。,\s]*/i, '').trim();
           return cleaned || t;
@@ -825,8 +825,6 @@
           var obj = cls.subcategory === 'dislike' ? '用户不喜欢' : cls.subcategory === 'preference' ? '用户喜欢' : '';
           return obj ? obj + '：' + t : t;
         }
-        if(cls.has_reference && t.length >= 10) return t;
-        if(t.length >= 20 && cls.category !== 'trash') return t;
       }catch(_e){}
       return null;
     }
@@ -839,6 +837,7 @@
       el.innerHTML = '<span class="memory-notice-dot"></span>记忆已更新';
       el.title = savedText.slice(0, 100);
       box.appendChild(el);
+      box.scrollTop = box.scrollHeight;
       setTimeout(function(){ el.classList.add('fade-out'); }, 2400);
       setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 3000);
     }
