@@ -3235,6 +3235,9 @@
 
         function scrollLatest(){
           requestAnimationFrame(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} });
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 80);
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 260);
+          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 520);
         }
 
         function applyViewport(){
@@ -3245,26 +3248,32 @@
             root.style.removeProperty('--app-top');
             return;
           }
+
           const focused = document.activeElement === input;
           const m = metrics();
           setVars(m);
+
           document.body.classList.toggle('keyboard-open', focused);
           keyboardActive = focused;
+
           if(focused){
             if(sidebarOpen){ sidebarOpen = false; renderSidebar(); }
+            try{ window.scrollTo(0, 0); }catch(_e){}
             scrollLatest();
           }
         }
 
         function schedule(delay){
           clearTimeout(timer);
-          timer = setTimeout(applyViewport, delay || 16);
+          timer = setTimeout(applyViewport, delay || 30);
         }
 
         input.addEventListener('focus', function(){
           schedule(0);
-          setTimeout(applyViewport, 100);
-          setTimeout(applyViewport, 300);
+          setTimeout(applyViewport, 80);
+          setTimeout(applyViewport, 180);
+          setTimeout(applyViewport, 360);
+          setTimeout(applyViewport, 650);
         });
 
         input.addEventListener('blur', function(){
@@ -3273,17 +3282,23 @@
             document.body.classList.remove('keyboard-open');
             root.style.setProperty('--app-top','0px');
             applyViewport();
-          }, 150);
+          }, 180);
         });
 
-        input.addEventListener('input', function(){ schedule(16); scrollLatest(); });
-        window.addEventListener('resize', function(){ schedule(30); }, {passive:true});
+        input.addEventListener('input', function(){ schedule(20); scrollLatest(); });
+        window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
         window.addEventListener('orientationchange', function(){ setTimeout(applyViewport, 260); }, {passive:true});
 
         if(window.visualViewport){
-          window.visualViewport.addEventListener('resize', function(){ schedule(keyboardActive ? 4 : 20); }, {passive:true});
-          window.visualViewport.addEventListener('scroll', function(){ schedule(keyboardActive ? 4 : 20); }, {passive:true});
+          window.visualViewport.addEventListener('resize', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
+          window.visualViewport.addEventListener('scroll', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
         }
+
+        setInterval(function(){
+          if(!keyboardActive) return;
+          const m = metrics();
+          if(Math.abs(m.height - lastHeight) > 2 || Math.abs(m.top - lastTop) > 2) applyViewport();
+        }, 180);
 
         applyViewport();
       }catch(_err){}
