@@ -78,15 +78,13 @@
     function loadMemoryGlobal(){
       var v = readJSON(KEYS.memoryGlobal, null);
       if(v === true || v === false) return v;
-      /* 首次：从现有记忆推断 */
-      var memories = loadMemories();
-      return memories.some(function(m){ return m.enabled !== false; });
+      return true;
     }
     function saveMemoryGlobal(v){
       saveJSON(KEYS.memoryGlobal, v === true);
     }
     function loadAutoExtract(){
-      return readJSON(KEYS.autoExtract, false) === true;
+      return readJSON(KEYS.autoExtract, true) === true;
     }
     function saveAutoExtract(v){
       saveJSON(KEYS.autoExtract, v === true);
