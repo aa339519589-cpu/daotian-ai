@@ -46,6 +46,65 @@ function readBody(req){
     req.on("error", reject);
   });
 }
+
+/* ── Multipart form parsing (minimal, no external deps) ── */
+async function readMultipartBody(req){
+  const contentType = String(req.headers["content-type"] || "");
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/);
+  if(!boundaryMatch) return null;
+  const boundary = boundaryMatch[1] || boundaryMatch[2];
+  const raw = await readBody(req);
+  const parts = parseMultipart(raw, boundary);
+  if(!parts) return null;
+
+  const fields = {};
+  const files = [];
+
+  for(const part of parts){
+    const headerEnd = part.indexOf("\r\n\r\n");
+    if(headerEnd < 0) continue;
+    const headerText = part.slice(0, headerEnd).toString("utf8");
+    const bodyStart = headerEnd + 4;
+    const body = part.slice(bodyStart, part.length - 2); // strip trailing \r\n
+
+    const nameMatch = headerText.match(/name="([^"]+)"/);
+    const filenameMatch = headerText.match(/filename="([^"]+)"/);
+    const typeMatch = headerText.match(/Content-Type:\s*([^\r\n]+)/i);
+
+    if(filenameMatch){
+      files.push({
+        fieldname: nameMatch ? nameMatch[1] : "file",
+        filename: filenameMatch[1],
+        mimetype: typeMatch ? typeMatch[1].trim() : "application/octet-stream",
+        buffer: Buffer.from(body),
+        size: body.length
+      });
+    }else if(nameMatch){
+      fields[nameMatch[1]] = body.toString("utf8");
+    }
+  }
+
+  return { fields, files };
+}
+
+function parseMultipart(buffer, boundary){
+  const parts = [];
+  const sep = Buffer.from("--" + boundary);
+  const end = Buffer.from("--" + boundary + "--");
+  let start = buffer.indexOf(sep);
+  if(start < 0) return null;
+
+  while(start >= 0){
+    const nextSep = buffer.indexOf(sep, start + sep.length);
+    if(nextSep < 0) break;
+    const part = buffer.slice(start + sep.length + 2, nextSep); // +2 for \r\n after boundary
+    parts.push(part);
+    start = nextSep;
+    if(buffer.slice(start, start + end.length).equals(end)) break;
+  }
+  return parts;
+}
+
 function clientIp(req){
   return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
 }
@@ -92,7 +151,7 @@ function formatSearchContext(query, sources){
     return `你现在可以参考联网搜索结果回答用户。\n\n用户问题：${query}\n\n搜索结果为空。请明确说明没有搜到可靠结果，不要编造来源。`;
   }
   const sourceText = sources.map((item, index)=>`${index+1}.\n标题：${item.title || "无标题"}\n链接：${item.url || ""}\n摘要：${item.content || ""}`).join("\n\n");
-  return `你现在可以参考以下联网搜索结果回答用户。请优先基于搜索结果回答；如果搜索结果不足，请明确说明“不确定”。回答中尽量标注来源链接，不要编造来源。\n\n搜索结果：\n${sourceText}\n\n用户问题：\n${query}`;
+  return `你现在可以参考以下联网搜索结果回答用户。请优先基于搜索结果回答；如果搜索结果不足，请明确说明"不确定"。回答中尽量标注来源链接，不要编造来源。\n\n搜索结果：\n${sourceText}\n\n用户问题：\n${query}`;
 }
 async function searchWeb(query){
   if(!TAVILY_API_KEY){
@@ -119,21 +178,34 @@ async function searchWeb(query){
     .map(item=>({ title:String(item.title || "无标题"), url:String(item.url || ""), content:String(item.content || item.snippet || "").slice(0,800) }))
     .filter(item=>item.title || item.url || item.content);
 }
+
+/* ── Thinking depth system prompt injection ── */
+function thinkDepthPrompt(depth){
+  const map = {
+    low: "请用较低推理强度回答，优先简洁直接，只保留必要推理。",
+    medium: "请用中等推理强度回答，在简洁和可靠之间平衡。",
+    high: "请用较高推理强度回答，先充分分析问题，再给出清晰结论。",
+    extreme: "请用最高可用推理强度处理，优先保证准确性、完整性和复杂问题拆解。"
+  };
+  return map[depth] || "";
+}
+
 async function streamOpenAiResponse({ req, res, upstream, model, messages, body, sources }){
   const controller = new AbortController();
   req.on("close", ()=>controller.abort());
+  const requestBody = Object.assign(
+    { model, messages, stream: true, stream_options: { include_usage: true } },
+    typeof body.temperature === "number" ? { temperature: body.temperature } : {},
+    typeof body.top_p === "number" ? { top_p: body.top_p } : {},
+    typeof body.max_tokens === "number" && body.max_tokens > 0 ? { max_tokens: body.max_tokens } : {},
+    typeof body.presence_penalty === "number" ? { presence_penalty: body.presence_penalty } : {},
+    typeof body.frequency_penalty === "number" ? { frequency_penalty: body.frequency_penalty } : {}
+  );
   const response = await fetch(safeUrl(upstream.baseUrl, upstream.requestPath), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${upstream.apiKey}` },
     signal: controller.signal,
-    body: JSON.stringify(Object.assign(
-      { model, messages, stream: true, stream_options: { include_usage: true } },
-      typeof body.temperature === "number" ? { temperature: body.temperature } : {},
-      typeof body.top_p === "number" ? { top_p: body.top_p } : {},
-      typeof body.max_tokens === "number" && body.max_tokens > 0 ? { max_tokens: body.max_tokens } : {},
-      typeof body.presence_penalty === "number" ? { presence_penalty: body.presence_penalty } : {},
-      typeof body.frequency_penalty === "number" ? { frequency_penalty: body.frequency_penalty } : {}
-    ))
+    body: JSON.stringify(requestBody)
   });
   if(!response.ok){
     const detailText = await response.text();
@@ -167,12 +239,48 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
   sendSse(res, "done", { ok:true, usage: lastUsage || null });
   res.end();
 }
+
 async function handleChat(req, res){
   if(!checkPublicChatLimit(req)){
     sendJson(res, 429, { error:"rate_limited", message:`今天的公开对话次数已用完，每个访问者每天限制 ${PUBLIC_CHAT_DAILY_LIMIT} 次` });
     return;
   }
-  const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+
+  /* Check if multipart */
+  const contentType = String(req.headers["content-type"] || "");
+  let body = {};
+  let uploadedFiles = [];
+
+  if(contentType.includes("multipart/form-data")){
+    const parsed = await readMultipartBody(req);
+    if(!parsed){
+      sendJson(res, 400, { error:"parse_error", message:"无法解析上传的表单数据" });
+      return;
+    }
+    /* Parse JSON fields from multipart */
+    for(const key of Object.keys(parsed.fields)){
+      try{
+        body[key] = JSON.parse(parsed.fields[key]);
+      }catch{
+        body[key] = parsed.fields[key];
+      }
+    }
+    /* Convert file buffers to base64 data URLs for images */
+    for(const file of parsed.files){
+      const b64 = file.buffer.toString("base64");
+      const isImage = /^image\//.test(file.mimetype);
+      uploadedFiles.push({
+        name: file.filename,
+        type: file.mimetype,
+        size: file.size,
+        dataUrl: isImage ? `data:${file.mimetype};base64,${b64}` : null,
+        isImage
+      });
+    }
+  }else{
+    body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+  }
+
   const model = String(body.model || body.frontendUpstream?.model || "").trim();
   const stream = Boolean(body.stream);
   let messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
@@ -194,12 +302,83 @@ async function handleChat(req, res){
   if(!messages.length){ fail(400, { error:"message_required", message:"请先输入要发送的话" }); return; }
   if(!upstream){ fail(400, { error:"frontend_upstream_required", message:"联网搜索需要使用当前模型配置，请先在设置里填 Base URL 和 API Key" }); return; }
 
-  const lastUserMessage = [...messages].reverse().find(m=>m?.role === "user")?.content || "";
-  const wantsWebSearch = shouldUseWebSearch(lastUserMessage, Boolean(body.webSearch || body.search));
+  /* ── Handle uploaded files: inject into user message ── */
+  if(uploadedFiles.length > 0){
+    const lastUserMsg = [...messages].reverse().find(m=>m?.role === "user");
+    const lastUserText = lastUserMsg ? (lastUserMsg.content || "") : "";
+    let fileContext = "";
+    for(const file of uploadedFiles){
+      if(file.isImage && file.dataUrl){
+        fileContext += `\n[图片已发送：${file.name}]`;
+      }else{
+        fileContext += `\n[文件已发送：${file.name}（${file.type}，${file.size} 字节）。当前版本暂不支持解析该文件类型的内容，仅文件名已收到。]`;
+      }
+    }
+    /* For images, convert to vision format if model supports it */
+    const hasImages = uploadedFiles.some(f=>f.isImage);
+    if(hasImages){
+      /* Try vision-compatible format */
+      const imageParts = uploadedFiles.filter(f=>f.isImage).map(f=>({
+        type: "image_url",
+        image_url: { url: f.dataUrl }
+      }));
+      const textPart = lastUserText || "请分析这张图片";
+      /* Replace last user message with vision format */
+      const lastUserIdx = messages.findLastIndex(m=>m?.role === "user");
+      if(lastUserIdx >= 0){
+        messages[lastUserIdx] = {
+          role: "user",
+          content: [
+            { type: "text", text: textPart },
+            ...imageParts
+          ]
+        };
+      }
+      /* Add file names to a system note */
+      const fileNames = uploadedFiles.map(f=>f.name).join(", ");
+      const systemNote = `用户发送了以下文件：${fileNames}。${hasImages ? "图片已转为视觉格式。" : ""}`;
+      messages.unshift({ role: "system", content: systemNote });
+    }else{
+      /* Non-image files: append file info to last user message */
+      const lastUserIdx2 = messages.findLastIndex(m=>m?.role === "user");
+      if(lastUserIdx2 >= 0){
+        messages[lastUserIdx2] = {
+          role: "user",
+          content: (messages[lastUserIdx2].content || "") + fileContext
+        };
+      }
+    }
+  }
+
+  /* ── Thinking depth injection ── */
+  const thinkingDepth = String(body.thinkingDepth || "medium").trim();
+  if(thinkingDepth !== "off"){
+    const depthPrompt = thinkDepthPrompt(thinkingDepth);
+    if(depthPrompt){
+      const sysIdx = messages.findIndex(m=>m?.role === "system");
+      if(sysIdx >= 0){
+        messages[sysIdx] = { role: "system", content: messages[sysIdx].content + "\n\n" + depthPrompt };
+      }else{
+        messages.unshift({ role: "system", content: depthPrompt });
+      }
+    }
+  }
+
+  const lastUserMessage = [...messages].reverse().find(m=>{
+    if(typeof m.content === "string") return m?.role === "user";
+    /* For vision messages, extract text */
+    if(Array.isArray(m.content)){
+      const textPart = m.content.find(p=>p.type === "text");
+      return m?.role === "user" && textPart ? textPart.text : "";
+    }
+    return false;
+  });
+  const userText = typeof lastUserMessage?.content === "string" ? lastUserMessage.content : "";
+  const wantsWebSearch = shouldUseWebSearch(userText, Boolean(body.webSearch || body.search));
   if(wantsWebSearch){
     try{
-      sources = await searchWeb(lastUserMessage);
-      messages = [{ role:"system", content:formatSearchContext(lastUserMessage, sources) }, ...messages];
+      sources = await searchWeb(userText);
+      messages = [{ role:"system", content:formatSearchContext(userText, sources) }, ...messages];
     }catch(error){
       messages = [{ role:"system", content:`本轮尝试联网搜索失败：${error.message}。请不要声称已经完成实时搜索；可以基于已有知识回答，并明确说明实时信息未能获取。` }, ...messages];
       sources = [];
@@ -243,6 +422,109 @@ async function handleChat(req, res){
     }
   }
 }
+
+/* ── buildModelsUrl: universal /models URL builder ── */
+function buildModelsUrl(baseUrl){
+  let url = String(baseUrl || "").trim();
+  if(!url) return "";
+  url = url.replace(/\/+$/, ""); // strip trailing slashes
+  if(url.endsWith("/models")) return url;
+  if(url.endsWith("/v1")) return url + "/models";
+  if(url.endsWith("/v1/")) return url.replace(/\/+$/, "") + "/models";
+  if(!url.includes("/v1")) return url + "/v1/models";
+  // has /v1/ somewhere in path
+  if(url.endsWith("/v1/")) return url.replace(/\/+$/, "") + "/models";
+  return url + "/models";
+}
+
+/* ── handleModelsList: universal model list fetcher ── */
+async function handleModelsList(req, res){
+  let body = {};
+  try{
+    body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+  }catch{
+    return sendJson(res, 400, { ok:false, error:"请求格式错误" });
+  }
+
+  const providerName = String(body.providerName || "").trim();
+  const baseUrl = String(body.baseUrl || "").trim();
+  const apiKey = String(body.apiKey || "").trim();
+
+  if(!baseUrl) return sendJson(res, 400, { ok:false, error:"请先填写 Base URL" });
+  if(!apiKey) return sendJson(res, 400, { ok:false, error:"请先填写 API Key" });
+
+  const modelsUrl = buildModelsUrl(baseUrl);
+  if(!modelsUrl) return sendJson(res, 400, { ok:false, error:"无法构建模型列表请求地址，请检查 Base URL" });
+
+  try{
+    const controller = new AbortController();
+    const timeout = setTimeout(()=>controller.abort(), 15000);
+    const response = await fetch(modelsUrl, {
+      method: "GET",
+      headers: {
+        "authorization": `Bearer ${apiKey}`,
+        "content-type": "application/json"
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    const text = await response.text();
+    let data = null;
+    try{ data = JSON.parse(text); }catch{}
+
+    if(!response.ok){
+      if(response.status === 401 || response.status === 403){
+        return sendJson(res, 200, { ok:false, error:"获取失败，API Key 无效或无权限" });
+      }
+      if(response.status === 404){
+        return sendJson(res, 200, { ok:false, error:"获取失败，该 Base URL 未提供 /models 接口，可使用手动添加模型" });
+      }
+      return sendJson(res, 200, { ok:false, error:`获取失败 (HTTP ${response.status})，请检查 Base URL / API Key / 供应商是否支持 /models` });
+    }
+
+    if(!data){
+      return sendJson(res, 200, { ok:false, error:"获取失败，供应商返回格式异常" });
+    }
+
+    /* Normalize models */
+    let modelList = [];
+
+    /* OpenAI format: { object:"list", data:[{id:"gpt-4o"}] } */
+    if(data.data && Array.isArray(data.data)){
+      modelList = data.data;
+    }else if(Array.isArray(data)){
+      modelList = data;
+    }else if(data.models && Array.isArray(data.models)){
+      modelList = data.models;
+    }
+
+    const models = [];
+    const seen = new Set();
+
+    for(const item of modelList){
+      const modelId = String(item.id || item.name || "").trim();
+      if(!modelId) continue;
+      if(seen.has(modelId)) continue;
+      seen.add(modelId);
+      models.push({
+        id: modelId,
+        name: modelId,
+        owned_by: String(item.owned_by || item.ownedBy || providerName || "").trim() || ""
+      });
+    }
+
+    models.sort((a,b)=>a.id.localeCompare(b.id));
+
+    sendJson(res, 200, { ok:true, models, providerName, baseUrl, modelsUrl });
+  }catch(error){
+    if(error?.name === "AbortError"){
+      return sendJson(res, 200, { ok:false, error:"获取失败，请求超时，网络或供应商接口异常" });
+    }
+    sendJson(res, 200, { ok:false, error:`获取失败，网络或供应商接口异常：${error.message}` });
+  }
+}
+
 function serveStatic(req, res){
   const cleanPath = normalize(decodeURIComponent(req.url.split("?")[0])).replace(/^(\.\.[/\\])+/, "");
   const relativePath = cleanPath === "/" ? "/index.html" : cleanPath;
@@ -260,6 +542,7 @@ const server = http.createServer(async (req, res)=>{
       return sendJson(res, 200, { chatModel:"deepseek-chat", webSearchConfigured:Boolean(TAVILY_API_KEY), providers:[] });
     }
     if(req.method === "POST" && req.url === "/chat") return await handleChat(req, res);
+    if(req.method === "POST" && req.url === "/models/list") return await handleModelsList(req, res);
     if(req.method === "POST" && req.url === "/memories/sync"){
       try{
         const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");

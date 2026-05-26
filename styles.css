@@ -397,6 +397,48 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .param-textarea{font-size:14px}
 .adv-toggle{min-width:72px}
 #advancedModal .modal-body{-webkit-overflow-scrolling:touch}
+
+/* ── Thinking Depth ── */
+.thinking-depth-row{justify-content:flex-start;cursor:pointer}
+.thinking-depth-val{font-size:13px;color:var(--accent);margin-left:auto}
+.thinking-depth-arrow{font-size:11px;opacity:.5;margin-left:2px}
+.thinking-depth-pills{display:flex;gap:6px;padding:6px 14px 10px;flex-wrap:wrap}
+.td-pill{height:28px;padding:0 12px;border-radius:999px;border:1px solid rgba(127,127,127,.2);background:rgba(127,127,127,.06);color:var(--muted);font-size:12px;cursor:pointer;transition:all .12s}
+.td-pill:hover{background:rgba(127,127,127,.14);color:var(--text)}
+.td-pill.active{color:var(--text);border-color:rgba(220,128,98,.5);background:rgba(220,128,98,.16);font-weight:600}
+
+/* ── Top New Chat Button ── */
+.top-new-chat-btn{width:36px;height:36px;min-width:36px;min-height:36px;border-radius:10px;border:1px solid var(--line);background:rgba(127,127,127,.06);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:auto;transition:all .12s;flex:0 0 auto}
+.top-new-chat-btn:hover{background:rgba(127,127,127,.12);color:var(--text)}
+[data-theme="dark"] .top-new-chat-btn{background:rgba(255,255,255,.06)}
+
+/* ── Search Indicator ── */
+.search-indicator{max-width:830px;margin:6px auto 0;text-align:center;font-size:11px;color:var(--accent);opacity:.82;letter-spacing:.04em}
+
+/* ── Fetch Models ── */
+.fetch-models-btn{height:34px;font-size:13px;padding:0 14px}
+.fetch-models-results{background:rgba(127,127,127,.04)}
+.model-search-input{font-size:13px}
+.model-list-row{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:8px;gap:8px}
+.model-list-row:hover{background:rgba(127,127,127,.06)}
+.model-list-name{font-size:13px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.model-add-btn{width:28px;height:28px;min-width:28px;border-radius:50%;border:1px solid var(--line);background:rgba(127,127,127,.06);color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s}
+.model-add-btn.add{color:var(--accent)}
+.model-add-btn.remove{color:#b84a42;border-color:rgba(184,74,66,.3);background:rgba(184,74,66,.08)}
+.model-add-btn:hover{background:rgba(127,127,127,.14)}
+.manual-add-toggle{height:30px;font-size:12px;padding:0 12px}
+
+/* ── Updated Sidebar ── */
+.sidebar-top .brand-logo,.sidebar-top .brand{display:none}
+
+/* ── Model List in Provider ── */
+.provider-models{min-height:60px;resize:vertical;line-height:1.45;font-family:inherit}
+
+/* ── Chat topbar for mobile ── */
+@media(max-width:760px){
+  .top-new-chat-btn{width:34px;height:34px;min-width:34px;min-height:34px;margin-right:4px}
+  .search-indicator{font-size:11px}
+}
 #memoryEditModal .field{margin-bottom:14px}
 @media(max-width:760px){
   .adv-section-head{padding:12px 14px;font-size:14px}

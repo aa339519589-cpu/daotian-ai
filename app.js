@@ -41,7 +41,8 @@
       memoryGlobal:'daotian.memoryGlobal.v1',
       tokenDisplay:'daotian.tokenDisplay.v1',
       autoScroll:'daotian.autoScroll.v1',
-      themeMode:'daotian.themeMode.v1'
+      themeMode:'daotian.themeMode.v1',
+      thinkingDepth:'daotian.thinkingDepth.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -102,6 +103,12 @@
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
     }
+    function loadThinkingDepth(){
+      var v = safeGet(KEYS.thinkingDepth);
+      if(v === 'off' || v === 'low' || v === 'medium' || v === 'high' || v === 'extreme') return v;
+      return 'medium';
+    }
+    function saveThinkingDepth(v){ setItem(KEYS.thinkingDepth, v); }
     function loadThemeMode(){
       var v = safeGet(KEYS.themeMode);
       if(v === 'light' || v === 'dark' || v === 'system') return v;
@@ -304,6 +311,7 @@
     let sidebarOpen = true;
     let searchOn = false;
     let sending = false;
+    let thinkingDepth = loadThinkingDepth();
     if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
 
     function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
@@ -332,7 +340,7 @@
     app.innerHTML = `
       <div class="app-shell" data-theme="${theme}">
         <aside class="sidebar" id="sidebar">
-          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><svg class="brand-logo" viewBox="0 0 120 120"><circle cx="60" cy="60" r="50" fill="none" stroke="currentColor" stroke-width="3"/><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="brand">稻田 Ai</div></div>
+          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span style="font-size:14px;color:var(--muted)">历史对话</span></div>
           <button class="new-chat-btn" id="newChat">＋ 新对话</button>
           <div class="chat-list" id="chatList"></div>
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
@@ -342,6 +350,7 @@
             <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
             <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
             <div class="model-popover" id="modelPopover"></div>
+            <button class="top-new-chat-btn" id="topNewChatBtn" title="新建对话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
           </div>
           <div class="messages" id="messages"></div>
           <div class="composer-wrap">
@@ -351,12 +360,26 @@
               <button class="send" id="sendBtn">›</button>
             </div>
             <div class="attach-preview" id="attachPreview" style="display:none"></div>
+            <div class="search-indicator" id="searchIndicator" style="display:none">联网中</div>
           </div>
           <div class="plus-menu" id="plusMenu" style="display:none">
             <button class="plus-menu-item" data-action="camera"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>拍照</button>
             <button class="plus-menu-item" data-action="image"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>添加图片</button>
             <button class="plus-menu-item" data-action="file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>添加文件</button>
             <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>联网搜索</button>
+            <div class="plus-menu-item thinking-depth-row" data-action="thinking">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span>思考深度</span>
+              <span class="thinking-depth-val" id="thinkingDepthVal">中</span>
+              <span class="thinking-depth-arrow">▾</span>
+            </div>
+            <div class="thinking-depth-pills" id="thinkingDepthPills" style="display:none">
+              <button class="td-pill" data-depth="off">关</button>
+              <button class="td-pill" data-depth="low">低</button>
+              <button class="td-pill active" data-depth="medium">中</button>
+              <button class="td-pill" data-depth="high">高</button>
+              <button class="td-pill" data-depth="extreme">极限</button>
+            </div>
           </div>
           <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
           <input type="file" id="imageInput" accept="image/*" style="display:none">
@@ -632,20 +655,29 @@
       var map={'deepseek-chat':'DeepSeek Chat','deepseek-v4-flash':'DeepSeek Flash','deepseek-reasoner':'DeepSeek Reasoner','gemini-2.5-flash':'Gemini Flash','gemini-2.5-pro':'Gemini Pro','gpt-4o':'GPT-4o','gpt-4o-mini':'GPT-4o Mini','claude-sonnet-4-6':'Claude Sonnet','claude-opus-4-7':'Claude Opus'};
       return map[model] || model;
     }
+    function hasUsableModelConfig(){
+      var current = activePreset();
+      if(!current) return false;
+      if(!current.apiKey || !current.apiKey.trim()) return false;
+      if(!current.baseUrl || !current.baseUrl.trim()) return false;
+      if(!current.model || !current.model.trim()) return false;
+      return true;
+    }
     function renderModelSwitcher(){
       ensureModelStyle();
-      const current = activePreset();
-      const label = $('#modelTopLabel');
-      const hasModel = current && current.model;
-      if(label){ label.textContent = hasModel ? friendlyModelName(current.model) : '请先添加模型'; label.title = hasModel ? ((current && current.label) || current.model) : '请先添加模型'; }
-      const popover = $('#modelPopover');
+      var current = activePreset();
+      var label = $('#modelTopLabel');
+      var usable = hasUsableModelConfig();
+      var hasModel = current && current.model;
+      if(label){ label.textContent = usable ? friendlyModelName(current.model) : '请先添加模型'; label.title = usable ? ((current && current.label) || current.model) : '请先添加模型'; }
+      var popover = $('#modelPopover');
       if(popover){
-        const presets = modelPresets();
-        if(!presets.length){
+        var presets = modelPresets();
+        if(!presets.length || !usable){
           popover.innerHTML = '<div style="padding:16px 12px;text-align:center;font-size:14px;opacity:.56">尚未配置模型，请先在设置中添加模型提供方</div><div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">添加模型提供方</div></span></button>';
         }else{
           popover.innerHTML = presets.map(function(p){
-            const active = p.id === settings.activePresetId;
+            var active = p.id === settings.activePresetId;
             return '<button class="model-option'+(active?' selected':'')+'" data-model-preset="'+escapeHTML(p.id)+'"><span class="model-option-check">'+(active?'✓':'')+'</span><span><div class="model-option-title">'+escapeHTML(p.label||p.model)+'</div><div class="model-option-subtitle">'+escapeHTML((p.providerName||'')+' · '+(p.model||''))+'</div></span></button>';
           }).join('') + '<div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">一个提供方多个模型</div></span></button>';
         }
@@ -654,7 +686,7 @@
 
     function openModelPopover(){ var p=$('#modelPopover'); if(p){ renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
     function closeModelPopover(){ var p=$('#modelPopover'); if(p) p.classList.remove('open'); var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
-    function toggleModelPopover(){ var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
+    function toggleModelPopover(){ if(!hasUsableModelConfig()){ openSettings(); return; } var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
     function closeModelMenu(){ closeModelPopover(); }
 
     function renderAll(){
@@ -778,11 +810,16 @@
       }
     }
     async function sendMessage(){
-      if(sending) return; const input=$('#input'); const text=(input.value||'').trim(); if(!text) return; const c=activeChat();
-      c.messages.push({role:'user',content:text,time:Date.now()}); if(!c.title || c.title==='新对话') c.title=text.slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
+      if(sending) return; var input=$('#input'); var text=(input.value||'').trim();
+      var hasAttachments = _attachments && _attachments.length > 0;
+      if(!text && !hasAttachments) return;
+      if(!hasUsableModelConfig()){ toast('请先添加模型'); openSettings(); return; }
+      var c=activeChat();
+      var displayText = text || (hasAttachments ? '[发送了文件]' : '');
+      c.messages.push({role:'user',content:displayText,time:Date.now(),files:_attachments.length?_attachments.slice():undefined}); if(!c.title || c.title==='新对话') c.title=displayText.slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
-      const cfg = activePreset();
-      const params = getModelParams(cfg.id);
+      var cfg = activePreset();
+      var params = getModelParams(cfg.id);
       var sysParts = [];
       if(params && params.systemPrompt && params.systemPrompt.trim()){
         sysParts.push(params.systemPrompt.trim());
@@ -812,18 +849,61 @@
       if(systemText.trim()){
         requestMessages.unshift({role:'system', content:systemText});
       }
-      /* 预检：用户发送的消息是否会触发记忆提取 */
       var willExtract = loadAutoExtract() && quickExtract(text);
-      const assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now(),memoryNotice:!!willExtract};
+      var assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now(),memoryNotice:!!willExtract};
       c.messages.push(assistant);
       renderAll();
       var memoryNoticeTimer = null;
+
+      /* Build request body with thinkingDepth */
+      var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true},thinkingDepth:thinkingDepth};
+      exportModelParamsBody(cfg.id, body);
+      var targetUrl = buildOpenAIURL(cfg);
+      var useFormData = _attachments && _attachments.length > 0;
+      if(searchOn){
+        targetUrl = '/chat';
+        body.webSearch = true;
+        body.search = true;
+        body.frontendUpstream = {
+          providerType: cfg.providerType || 'openai',
+          providerName: cfg.providerName || cfg.label || '当前模型',
+          baseUrl: cfg.baseUrl || '',
+          apiKey: cfg.apiKey || '',
+          requestPath: cfg.path || '/v1/chat/completions',
+          path: cfg.path || '/v1/chat/completions',
+          model: cfg.model || 'deepseek-chat'
+        };
+        useFormData = true;
+      }
+
+      /* Send with attachments via FormData */
+      var fetchBody, fetchHeaders;
+      if(useFormData){
+        var fd = new FormData();
+        fd.append('body', JSON.stringify(body));
+        if(_attachments && _attachments.length){
+          for(var ai=0; ai<_attachments.length; ai++){
+            fd.append('files', _attachments[ai], _attachments[ai].name);
+          }
+        }
+        fetchBody = fd;
+        fetchHeaders = {};
+        targetUrl = '/chat';
+      }else{
+        fetchBody = JSON.stringify(body);
+        fetchHeaders = searchOn ? {'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+        if(!searchOn){
+          var cfgHeaders = {}; if(cfg.apiKey) cfgHeaders.Authorization='Bearer '+cfg.apiKey;
+        }else{
+          fetchHeaders = {'Content-Type':'application/json'};
+        }
+      }
+
       try{
-        const result=await callModel(requestMessages, function(delta){
+        var result=await callModelWithBody(requestMessages, body, cfg, function(delta){
           if(assistant.thinking){
             assistant.thinking=false;
             if(assistant.memoryNotice){
-              /* 想一下 → 记忆已更新 直接变形，停留 1.8 秒 */
               renderMessages();
               memoryNoticeTimer = setTimeout(function(){
                 assistant.memoryNotice = false;
@@ -834,13 +914,18 @@
           assistant.content += delta;
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
-        }, cfg);
+        });
+        /* Clear attachments after sending */
+        _attachments = [];
+        showAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
         if(!assistant.content.trim()) assistant.content=result.content || '没有返回内容';
         assistant.usage = result.usage || null;
       }catch(err){
+        _attachments = [];
+        showAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
@@ -848,7 +933,6 @@
         assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
-      /* 自动提取记忆 → 直接存入跨聊天记忆 */
       if(willExtract){
         try{
           var _extracted = quickExtract(text);
@@ -859,6 +943,88 @@
             saveMemories(_mems);
           }
         }catch(_e){}
+      }
+    }
+
+    async function callModelWithBody(requestMessages, body, cfg, onDelta){
+      var useFormData = _attachments && _attachments.length > 0;
+      var fetchBody, fetchHeaders;
+      if(useFormData || searchOn){
+        var fd = new FormData();
+        fd.append('body', JSON.stringify(body));
+        if(_attachments && _attachments.length){
+          for(var ai=0; ai<_attachments.length; ai++){
+            fd.append('files', _attachments[ai], _attachments[ai].name);
+          }
+        }
+        fetchBody = fd;
+        fetchHeaders = {};
+      }else{
+        fetchHeaders = {'Content-Type':'application/json'};
+        if(cfg.apiKey) fetchHeaders.Authorization = 'Bearer '+cfg.apiKey;
+        fetchBody = JSON.stringify(body);
+      }
+      var targetUrl = (useFormData || searchOn) ? '/chat' : buildOpenAIURL(cfg);
+
+      var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody});
+      if(!res.ok){ var txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
+
+      if(!res.body){
+        var txt2=await res.text();
+        try{ var data2=JSON.parse(txt2); var nc = extractFullContent(data2) || JSON.stringify(data2).slice(0,1000); return { content: nc, usage: data2.usage || null }; }catch(e){ return { content: txt2, usage: null }; }
+      }
+
+      var reader=res.body.getReader();
+      var decoder=new TextDecoder();
+      var buffer='';
+      var raw='';
+      var full='';
+      var streamError='';
+      var capturedUsage = null;
+
+      function consumeLine(line){
+        var trimmed=line.trim();
+        if(!trimmed) return false;
+        if(!trimmed.startsWith('data:')) return false;
+        var payload=trimmed.replace(/^data:\s*/, '');
+        if(!payload || payload==='[DONE]') return payload==='[DONE]';
+        try{
+          var data=JSON.parse(payload);
+          if(data.usage) capturedUsage = data.usage;
+          var delta=extractDelta(data);
+          if(delta){
+            full += delta;
+            if(onDelta) onDelta(delta, full);
+          }else if(data && (data.error || data.message) && !full){
+            streamError = String(data.message || data.error || '请求失败');
+          }
+        }catch(_e){}
+        return false;
+      }
+
+      while(true){
+        var read=await reader.read();
+        if(read.done) break;
+        var chunk=decoder.decode(read.value,{stream:true});
+        raw += chunk;
+        buffer += chunk;
+        var index;
+        while((index=buffer.indexOf('\n'))>=0){
+          var line=buffer.slice(0,index);
+          buffer=buffer.slice(index+1);
+          if(consumeLine(line)) return { content: full, usage: capturedUsage };
+        }
+      }
+      buffer += decoder.decode();
+      if(buffer.trim()) consumeLine(buffer);
+      if(streamError && !full) throw new Error(streamError);
+      if(full) return { content: full, usage: capturedUsage };
+
+      try{
+        var data3=JSON.parse(raw);
+        return { content: extractFullContent(data3) || JSON.stringify(data3).slice(0,1000), usage: capturedUsage || (data3.usage || null) };
+      }catch(_e2){
+        return { content: raw.replace(/^data:\s*/gm,'').replace(/\[DONE\]/g,'').trim(), usage: capturedUsage };
       }
     }
 
@@ -2736,7 +2902,13 @@
         <div class="field"><label>Base URL</label><input data-provider-field="baseUrl" value="${escapeHTML(provider.baseUrl)}" placeholder="https://api.deepseek.com"></div>
         <div class="field"><label>API Key</label><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key"></div>
         <div class="field"><label>请求路径</label><input data-provider-field="path" value="${escapeHTML(provider.path)}" placeholder="/v1/chat/completions"></div>
+        <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="font-size:12px;margin-left:8px;color:var(--muted)"></span></div>
+        <div class="fetch-models-results" data-fetch-results="${escapeHTML(provider.id)}" style="display:none;margin-top:8px;max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:8px">
+          <input class="model-search-input" data-model-search="${escapeHTML(provider.id)}" placeholder="搜索模型..." style="width:100%;height:36px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.18);padding:0 10px;margin-bottom:8px;font-size:13px;outline:0">
+          <div class="model-list-inner" data-model-list="${escapeHTML(provider.id)}"></div>
+        </div>
         <div class="field"><label>可用模型（一行一个）</label><textarea class="provider-models" data-provider-field="models" placeholder="deepseek-chat\ndeepseek-reasoner">${escapeHTML(provider.models.join('\n'))}</textarea></div>
+        <div style="margin-top:4px"><button class="btn manual-add-toggle" data-manual-toggle="${escapeHTML(provider.id)}" type="button" style="font-size:12px;background:transparent;border:1px dashed var(--line);color:var(--muted)">＋ 手动添加模型</button></div>
       </div>`;
     }
 
@@ -2765,7 +2937,74 @@
       syncLegacySettings();
     }
 
-    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    /* ── 通用获取模型列表 ── */
+    async function fetchModelsForProvider(providerId){
+      var card = document.querySelector('[data-provider-id="'+providerId+'"]');
+      if(!card) return;
+      function val(name){ var el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
+      var baseUrl = val('baseUrl');
+      var apiKey = val('apiKey');
+      if(!baseUrl){ toast('请先填写 Base URL'); return; }
+      if(!apiKey){ toast('请先填写 API Key'); return; }
+
+      var statusEl = card.querySelector('[data-fetch-status="'+providerId+'"]');
+      var resultsEl = card.querySelector('[data-fetch-results="'+providerId+'"]');
+      var btn = card.querySelector('[data-fetch-models="'+providerId+'"]');
+      if(statusEl) statusEl.textContent = '获取中...';
+      if(btn){ btn.textContent = '获取中...'; btn.disabled = true; }
+
+      try{
+        var res = await fetch('/models/list', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ providerName: val('providerName'), baseUrl: baseUrl, apiKey: apiKey })
+        });
+        var data = await res.json();
+        if(data.ok && data.models && data.models.length){
+          if(statusEl) statusEl.textContent = '已获取 ' + data.models.length + ' 个模型';
+          if(btn){ btn.textContent = '已获取'; btn.disabled = false; }
+          var currentModels = splitModels(val('models'));
+          var listHtml = data.models.map(function(m){
+            var added = currentModels.indexOf(m.id) >= 0;
+            return '<div class="model-list-row"><span class="model-list-name">'+escapeHTML(m.id)+'</span><button class="model-add-btn '+(added?'remove':'add')+'" data-model-name="'+escapeHTML(m.id)+'" data-provider-id="'+escapeHTML(providerId)+'">'+(added?'−':'＋')+'</button></div>';
+          }).join('');
+          var listEl = card.querySelector('[data-model-list="'+providerId+'"]');
+          if(listEl) listEl.innerHTML = listHtml;
+          if(resultsEl) resultsEl.style.display = 'block';
+        }else{
+          if(statusEl) statusEl.textContent = data.error || '获取失败，点此重试';
+          if(btn){ btn.textContent = '获取失败，点此重试'; btn.disabled = false; }
+        }
+      }catch(err){
+        if(statusEl) statusEl.textContent = '网络错误，点此重试';
+        if(btn){ btn.textContent = '获取失败，点此重试'; btn.disabled = false; }
+      }
+    }
+
+    function toggleModelInProvider(providerId, modelName){
+      var card = document.querySelector('[data-provider-id="'+providerId+'"]');
+      if(!card) return;
+      var textarea = card.querySelector('[data-provider-field="models"]');
+      if(!textarea) return;
+      var models = splitModels(textarea.value);
+      var idx = models.indexOf(modelName);
+      if(idx >= 0){
+        models.splice(idx, 1);
+      }else{
+        models.push(modelName);
+      }
+      textarea.value = models.join('\n');
+      /* Update button state */
+      var btn = card.querySelector('[data-model-name="'+modelName+'"]');
+      if(btn){
+        if(idx >= 0){ btn.textContent = '＋'; btn.classList.remove('remove'); btn.classList.add('add'); }
+        else{ btn.textContent = '−'; btn.classList.remove('add'); btn.classList.add('remove'); }
+      }
+      /* Save immediately */
+      collectProviderEditor(); persist(); renderModelSwitcher();
+    }
+
+    function openSettings(){ closeModelPopover(); closeAdvanced(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
     function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
 
@@ -3200,8 +3439,39 @@
         if(!settings.modelPresets.some(p=>p.id===settings.activePresetId)) settings.activePresetId=settings.modelPresets[0].id;
         renderProviderEditor();
       }
+      /* Fetch models button */
+      var fetchBtn = e.target.closest('[data-fetch-models]');
+      if(fetchBtn){
+        var pid = fetchBtn.getAttribute('data-fetch-models');
+        if(pid) fetchModelsForProvider(pid);
+        return;
+      }
+      /* Model add/remove button */
+      var modelAddBtn = e.target.closest('.model-add-btn');
+      if(modelAddBtn){
+        var mid = modelAddBtn.getAttribute('data-provider-id');
+        var mname = modelAddBtn.getAttribute('data-model-name');
+        if(mid && mname) toggleModelInProvider(mid, mname);
+        return;
+      }
     });
-    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat;
+    /* Model search */
+    document.addEventListener('input', function(e){
+      var searchInput = e.target.closest('[data-model-search]');
+      if(searchInput){
+        var pid = searchInput.getAttribute('data-model-search');
+        var keyword = searchInput.value.trim().toLowerCase();
+        var listEl = document.querySelector('[data-model-list="'+pid+'"]');
+        if(listEl){
+          listEl.querySelectorAll('.model-list-row').forEach(function(row){
+            var name = (row.querySelector('.model-list-name')||{}).textContent || '';
+            row.style.display = !keyword || name.toLowerCase().indexOf(keyword) >= 0 ? '' : 'none';
+          });
+        }
+        return;
+      }
+    });
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#topNewChatBtn').onclick=createChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
@@ -3461,13 +3731,41 @@
         }
         return;
       }
+      /* Thinking depth pills */
+      var tdPill = e.target.closest('.td-pill');
+      if(tdPill){
+        var depth = tdPill.getAttribute('data-depth');
+        if(depth){
+          thinkingDepth = depth;
+          saveThinkingDepth(depth);
+          var depthLabels = {off:'关',low:'低',medium:'中',high:'高',extreme:'极限'};
+          var valEl = $('#thinkingDepthVal');
+          if(valEl) valEl.textContent = depthLabels[depth] || '中';
+          var pills = document.querySelectorAll('.td-pill');
+          pills.forEach(function(p){ p.classList.toggle('active', p.getAttribute('data-depth') === depth); });
+        }
+        return;
+      }
+      /* Thinking depth row toggle */
+      var tdRow = e.target.closest('.thinking-depth-row');
+      if(tdRow){
+        var pillsBox = $('#thinkingDepthPills');
+        if(pillsBox){
+          var show = pillsBox.style.display === 'none';
+          pillsBox.style.display = show ? 'flex' : 'none';
+          if(show){
+            pillsBox.querySelectorAll('.td-pill').forEach(function(p){ p.classList.toggle('active', p.getAttribute('data-depth') === thinkingDepth); });
+          }
+        }
+        return;
+      }
       var item = e.target.closest('.plus-menu-item');
       if(item){
         var action = item.getAttribute('data-action');
         if(action === 'camera'){ var ci = document.getElementById('cameraInput'); if(ci) ci.click(); }
         else if(action === 'image'){ var ii = document.getElementById('imageInput'); if(ii) ii.click(); }
         else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
-        else if(action === 'search'){ searchOn=!searchOn; closePlusMenu(); toast(searchOn?'已开启联网搜索':'已关闭联网搜索'); }
+        else if(action === 'search'){ searchOn=!searchOn; closePlusMenu(); var si=$('#searchIndicator'); if(si) si.style.display = searchOn ? 'block' : 'none'; toast(searchOn?'已开启联网搜索':'已关闭联网搜索'); }
         return;
       }
       if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){
