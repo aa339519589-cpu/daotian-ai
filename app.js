@@ -39,7 +39,8 @@
       memoryCandidates:'daotian.memoryCandidates.v1',
       autoExtract:'daotian.autoExtract.v1',
       memoryGlobal:'daotian.memoryGlobal.v1',
-      tokenDisplay:'daotian.tokenDisplay.v1'
+      tokenDisplay:'daotian.tokenDisplay.v1',
+      autoScrollFollow:'daotian.autoScrollFollow.v1'
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -95,6 +96,12 @@
     }
     function saveTokenDisplay(v){
       saveJSON(KEYS.tokenDisplay, v === true);
+    }
+    function loadAutoScrollFollow(){
+      return readJSON(KEYS.autoScrollFollow, true) !== false;
+    }
+    function saveAutoScrollFollow(v){
+      saveJSON(KEYS.autoScrollFollow, v === true);
     }
     function loadMemoryCandidates(){
       const arr = readJSON(KEYS.memoryCandidates, []);
@@ -572,6 +579,24 @@
       return '<div class="usage-footer">' + text + '</div>';
     }
 
+    /* ── 智能滚动 ── */
+    window.__autoScrollActive = loadAutoScrollFollow();
+    window.__autoScrollPaused = false;
+
+    function isNearBottom(box){
+      if(!box) return true;
+      return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    }
+
+    function smartScrollToBottom(box){
+      if(!box) return;
+      if(!window.__autoScrollActive) return;
+      if(window.__autoScrollPaused && !isNearBottom(box)) return;
+      if(isNearBottom(box)) window.__autoScrollPaused = false;
+      if(window.__autoScrollPaused) return;
+      box.scrollTop = box.scrollHeight;
+    }
+
     function formatMsgTime(ts){
       if(!ts) return '';
       var d = new Date(ts);
@@ -602,7 +627,7 @@
         return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+timeHtml+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
-      box.scrollTop = box.scrollHeight;
+      smartScrollToBottom(box);
     }
     function renderModelSwitcher(){
       ensureModelStyle();
@@ -624,7 +649,7 @@
     function renderAll(){
       document.documentElement.setAttribute('data-theme', theme);
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
-      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '☾' : '☀';
+      const themeBtn = $('#themeBtn'); if(themeBtn) themeBtn.textContent = theme === 'dark' ? '◑' : '◐';
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -2747,6 +2772,7 @@
       const autoExtract = loadAutoExtract();
       const memoryGlobalOn = loadMemoryGlobal();
       const tokenDisplay = loadTokenDisplay();
+      const autoScrollFollow = loadAutoScrollFollow();
       box.innerHTML = `
         <div class="hint" style="margin-bottom:14px">每个板块都可以折叠展开。修改后自动保存。</div>
 
@@ -2772,6 +2798,7 @@
               <div class="field" style="margin-top:6px"><label>自定义系统提示词</label><textarea class="param-textarea" data-param="systemPrompt" placeholder="可选：覆盖默认系统提示词" style="width:100%;min-height:60px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">${escapeHTML(params.systemPrompt||'')}</textarea></div>
               <div class="field" style="margin-top:6px"><label>记忆注入 <span class="hint" style="margin-left:10px">开启后，跨聊天记忆会注入到此模型的请求中</span></label><div style="margin-top:6px"><button class="pill adv-toggle" data-param="memoryInjection" data-on="${params.memoryInjection?'1':'0'}">${params.memoryInjection?'✓ 开启':'关闭'}</button></div></div>
               <div class="field" style="margin-top:6px"><label>显示 Token 消耗</label><div style="margin-top:6px"><button class="pill" id="toggle-token-display" data-on="${tokenDisplay?'1':'0'}">${tokenDisplay?'✓ 开启':'关闭'}</button></div></div>
+              <div class="field" style="margin-top:6px"><label>自动跟随输出 <span class="hint" style="margin-left:6px">AI 回复时自动滚到底部</span></label><div style="margin-top:6px"><button class="pill" id="toggle-auto-scroll" data-on="${autoScrollFollow?'1':'0'}">${autoScrollFollow?'✓ 开启':'关闭'}</button></div></div>
             </div>
           </div>
         </div>
@@ -3091,6 +3118,17 @@
         renderMessages();
         return;
       }
+      if(e.target.closest('#toggle-auto-scroll')){
+        var btnS = $('#toggle-auto-scroll');
+        if(!btnS) return;
+        var onS = btnS.getAttribute('data-on') === '1';
+        btnS.setAttribute('data-on', onS ? '0' : '1');
+        btnS.textContent = onS ? '关闭' : '✓ 开启';
+        saveAutoScrollFollow(!onS);
+        window.__autoScrollActive = !onS;
+        toast(onS ? '已关闭自动跟随' : '已开启自动跟随');
+        return;
+      }
     });
     /* 记忆搜索 */
     document.addEventListener('input', function(e){
@@ -3231,10 +3269,10 @@
         }
 
         function scrollLatest(){
-          requestAnimationFrame(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} });
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 80);
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 260);
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 520);
+          requestAnimationFrame(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} });
+          setTimeout(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} }, 80);
+          setTimeout(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} }, 260);
+          setTimeout(function(){ try{ smartScrollToBottom(messagesBox); }catch(_e){} }, 520);
         }
 
         function applyViewport(){
@@ -3309,5 +3347,33 @@
     initMemoryEngine();
   }catch(err){
     emergency(err && err.stack ? err.stack : err);
+  }
+
+  /* ── 用户手动滚动检测 ── */
+  var _msgBox = document.getElementById('messages');
+  if(_msgBox){
+    _msgBox.addEventListener('scroll', function(){
+      if(!window.__autoScrollActive) return;
+      if(isNearBottom(_msgBox)){ window.__autoScrollPaused = false; }
+      else { window.__autoScrollPaused = true; }
+    }, {passive:true});
+    _msgBox.addEventListener('wheel', function(e){
+      if(!window.__autoScrollActive) return;
+      if(e.deltaY < -5) window.__autoScrollPaused = true;
+    }, {passive:true});
+    _msgBox.addEventListener('touchmove', function(){
+      if(!window.__autoScrollActive) return;
+      if(!isNearBottom(_msgBox)) window.__autoScrollPaused = true;
+    }, {passive:true});
+  }
+
+  /* ── 底部输入框高度动态适配 ── */
+  var _composer = document.querySelector('.composer-wrap');
+  if(_composer && 'ResizeObserver' in window){
+    var _ro = new ResizeObserver(function(entries){
+      var h = entries[0].contentRect.height;
+      document.documentElement.style.setProperty('--composer-height', h + 'px');
+    });
+    _ro.observe(_composer);
   }
 })();

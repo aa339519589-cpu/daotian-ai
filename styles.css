@@ -133,7 +133,7 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
     min-height:0;
     overflow-y:auto;
     -webkit-overflow-scrolling:touch;
-    padding:12px 18px 14px;
+    padding:12px 18px calc(var(--composer-height, 120px) + env(safe-area-inset-bottom) + 24px);
     scroll-padding-bottom:24px;
   }
 
