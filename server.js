@@ -16,7 +16,7 @@ const publicChatLimits = new Map();
 const TTS_APP_ID = process.env.VOLCENGINE_TTS_APP_ID || "";
 const TTS_TOKEN = process.env.VOLCENGINE_TTS_ACCESS_TOKEN || "";
 const TTS_CLUSTER = process.env.VOLCENGINE_TTS_CLUSTER || "";
-const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "BV705_streaming";
+const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "BV701_streaming";
 const TTS_ENABLED = !!(TTS_APP_ID && TTS_TOKEN && TTS_CLUSTER);
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -650,7 +650,7 @@ async function handleTts(req, res){
   const payload = {
     app: { appid: TTS_APP_ID, token: TTS_TOKEN, cluster: TTS_CLUSTER },
     user: { uid: "daotian-user" },
-    audio: { voice_type: voice, encoding: "mp3", speed_ratio: 1.0, volume_ratio: 1.0, pitch_ratio: 1.0 },
+    audio: { voice_type: voice, encoding: "mp3", speed_ratio: 1.1, volume_ratio: 1.0, pitch_ratio: 1.0 },
     request: { reqid, text, text_type: "plain", operation: "query" }
   };
 
