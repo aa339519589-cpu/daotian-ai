@@ -78,21 +78,19 @@
     function loadMemoryGlobal(){
       var v = readJSON(KEYS.memoryGlobal, null);
       if(v === true || v === false) return v;
-      /* 首次：从现有记忆推断 */
-      var memories = loadMemories();
-      return memories.some(function(m){ return m.enabled !== false; });
+      return true; /* 首次默认开启 */
     }
     function saveMemoryGlobal(v){
       saveJSON(KEYS.memoryGlobal, v === true);
     }
     function loadAutoExtract(){
-      return readJSON(KEYS.autoExtract, false) === true;
+      return readJSON(KEYS.autoExtract, true) !== false;
     }
     function saveAutoExtract(v){
       saveJSON(KEYS.autoExtract, v === true);
     }
     function loadTokenDisplay(){
-      return readJSON(KEYS.tokenDisplay, false) === true;
+      return readJSON(KEYS.tokenDisplay, true) !== false;
     }
     function saveTokenDisplay(v){
       saveJSON(KEYS.tokenDisplay, v === true);
@@ -2753,13 +2751,13 @@
       syncLegacySettings();
     }
 
-    function openSettings(){ closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); }
-    function closeSettings(){ $('#providerModal').classList.remove('show'); }
+    function openSettings(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); var _m=$('#providerModal');_m.classList.add('show');requestAnimationFrame(function(){var _s=_m.querySelector('.modal');if(_s)_s.scrollTop=0;}); }
+    function closeSettings(){ $('#providerModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
     function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); }
 
     /* ── 高级设置 ── */
-    function openAdvanced(){ closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); renderAdvancedSettings(); $('#advancedModal').classList.add('show'); }
-    function closeAdvanced(){ $('#advancedModal').classList.remove('show'); }
+    function openAdvanced(){ closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar(); renderAdvancedSettings(); var _m2=$('#advancedModal');_m2.classList.add('show');requestAnimationFrame(function(){var _s2=_m2.querySelector('.modal');if(_s2)_s2.scrollTop=0;}); }
+    function closeAdvanced(){ $('#advancedModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
 
     function renderAdvancedSettings(){
       const box = $('#advancedBody');
@@ -2861,14 +2859,15 @@
     function openMemoryEdit(memory){
       const modal = $('#memoryEditModal');
       if(!modal) return;
-      closeModelMenu(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar();
+      closeModelMenu(); if(window.innerWidth<760){ sidebarOpen=false; document.body.style.overflow='hidden'; } renderSidebar();
       $('#memoryEditTitle').textContent = memory ? '编辑记忆' : '新增记忆';
       const content = $('#memoryEditContent'); if(content) content.value = memory ? (memory.content||'') : '';
       const tags = $('#memoryEditTags'); if(tags) tags.value = (memory && Array.isArray(memory.tags)) ? memory.tags.join(', ') : '';
       if(content) content._editId = memory ? memory.id : null;
       modal.classList.add('show');
+      requestAnimationFrame(function(){ var _s=modal.querySelector('.modal'); if(_s) _s.scrollTop=0; });
     }
-    function closeMemoryEdit(){ $('#memoryEditModal').classList.remove('show'); }
+    function closeMemoryEdit(){ $('#memoryEditModal').classList.remove('show'); if(window.innerWidth<760) document.body.style.overflow=''; }
     function saveMemoryEdit(){
       const modal = $('#memoryEditModal'); if(!modal) return;
       const content = $('#memoryEditContent'); if(!content) return;
