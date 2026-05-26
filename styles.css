@@ -314,13 +314,13 @@ textarea{flex:1;resize:none;min-height:42px;max-height:160px;border:0;outline:0;
 
 /* V3.2.7 gamma-style empty logo + dynamic prompt */
 .empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--accent)}
-.empty-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding-bottom:8vh}
+.empty-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transform:translateY(6vh)}
 .empty .logo,.empty h1,.empty p{display:none!important}
 .empty-logo{background:none!important;border:0!important;box-shadow:none!important;filter:none!important}
 .empty-logo-gamma{width:64px;height:64px;color:rgba(196,142,92,.72);opacity:.92}
 .empty-prompt{font-size:15px;line-height:1.2;color:var(--muted);letter-spacing:.02em}
 @media (max-width:760px){
-  .empty-center{gap:12px}
+  .empty-center{gap:12px;transform:translateY(5vh)}
   .empty-logo-gamma{width:58px;height:58px;color:rgba(196,142,92,.68);opacity:.88}
   .empty-prompt{font-size:14px}
 }
