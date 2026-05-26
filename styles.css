@@ -41,6 +41,9 @@
 *{box-sizing:border-box}
 html,body,#app{width:100%;height:100%;margin:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;font-weight:400;font-size:17px;line-height:1.5;background:var(--bg);color:var(--text);overflow:hidden}
+.assistant-render{font-family:Georgia,"Times New Roman","Noto Serif SC","Songti SC",serif!important}
+pre,code,.assistant-render code,.assistant-render pre{font-family:"JetBrains Mono","SF Mono","Cascadia Code",Menlo,Consolas,monospace!important}
+.bubble{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"PingFang SC",sans-serif!important}
 button,input,textarea,select{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer}
 .app-shell{height:100%;display:flex;background:var(--bg)}
