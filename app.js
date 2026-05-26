@@ -416,7 +416,7 @@
           <div id="presetList" class="preset-list"></div>
           <button class="btn" id="addPreset" type="button">＋ 添加提供方</button>
         </div>
-        <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
+        <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider" onclick="window.__saveSettings__()">保存</button></div>
       </div></div>
       <div class="modal-backdrop" id="settingsModal"><div class="settings-shell" id="settingsShell">
         <div class="settings-header">
@@ -720,13 +720,20 @@
     var TEXT_EXTENSIONS = ['txt','md','csv','json','js','html','css','py','java','cpp','c','h','rb','go','rs','ts','tsx','jsx','xml','yaml','yml','toml','ini','cfg','log','sh','bash','zsh','sql','r','m','swift','kt','scala','lua','pl','php'];
     var IMAGE_EXTENSIONS = ['png','jpg','jpeg','webp','gif','bmp'];
     var SUPPORTED_BINARY = ['pdf','docx','xlsx'];
+    function getModelStatusText(){
+      var current = activePreset();
+      if(!current || !current.model) return '请先添加模型';
+      if(!current.apiKey || !current.apiKey.trim()) return '请填写 API Key';
+      if(!current.baseUrl || !current.baseUrl.trim()) return '请填写 Base URL';
+      return friendlyModelName(current.model);
+    }
     function renderModelSwitcher(){
       ensureModelStyle();
       var current = activePreset();
       var label = $('#modelTopLabel');
       var usable = hasUsableModelConfig();
-      var hasModel = current && current.model;
-      if(label){ label.textContent = usable ? friendlyModelName(current.model) : '请先添加模型'; label.title = usable ? ((current && current.label) || current.model) : '请先添加模型'; }
+      var displayText = getModelStatusText();
+      if(label){ label.textContent = displayText; label.title = displayText; }
       var popover = $('#modelPopover');
       if(popover){
         var presets = modelPresets();
@@ -3082,7 +3089,8 @@
 
     function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); }
-    function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); toast('已保存'); console.log('[settings] saved, providers:', settings.modelProviders.length, 'presets:', settings.modelPresets.length); }
+    function saveSettings(){ collectProviderEditor(); persist(); renderModelSwitcher(); closeSettings(); if(hasUsableModelConfig()){ toast('配置已保存'); }else{ var p=activePreset(); if(!p||!p.apiKey||!p.apiKey.trim()){ toast('已保存，但缺少 API Key，请填写后主页才会显示模型'); }else{ toast('配置已保存'); } } console.log('[settings] saved providers:', JSON.stringify(settings.modelProviders.map(function(p){return {name:p.providerName,key:p.apiKey?'***':'EMPTY',models:p.models};}))); }
+    window.__saveSettings__ = saveSettings;
 
     /* ── 统一设置系统 ── */
     var settingsPage = 'home';
