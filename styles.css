@@ -40,7 +40,7 @@
 }
 *{box-sizing:border-box}
 html,body,#app{width:100%;height:100%;margin:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;font-weight:400;font-size:17px;line-height:1.5;background:var(--bg);color:var(--text);overflow:hidden}
+:root{--font-size:17px}body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;font-weight:400;font-size:var(--font-size);line-height:1.5;background:var(--bg);color:var(--text);overflow:hidden}
 .assistant-render{font-family:Georgia,"Times New Roman","Noto Serif SC","Songti SC",serif!important}
 pre,code,.assistant-render code,.assistant-render pre{font-family:"JetBrains Mono","SF Mono","Cascadia Code",Menlo,Consolas,monospace!important}
 .bubble{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"PingFang SC",sans-serif!important}
@@ -469,6 +469,10 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .search-capsule.on{background:rgba(220,128,98,.35)}
 .search-capsule-knob{width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .18s;transform:translateX(0)}
 .search-capsule.on .search-capsule-knob{transform:translateX(16px)}
+/* ── Font Size Pills ── */
+.font-size-pills{display:flex;gap:8px;margin-top:8px}
+.font-size-pill{height:32px;padding:0 18px;border-radius:16px;border:1px solid var(--line);background:rgba(127,127,127,.06);color:var(--muted);font-size:14px;cursor:pointer}
+.font-size-pill.active{color:var(--text);border-color:rgba(220,128,98,.4);background:rgba(220,128,98,.12)}
 
 /* ── Fetch Models ── */
 .fetch-models-btn{height:34px;font-size:13px;padding:0 14px}

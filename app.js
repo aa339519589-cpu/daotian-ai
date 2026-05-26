@@ -63,6 +63,7 @@
       tokenDisplay:'daotian.tokenDisplay.v1',
       autoScroll:'daotian.autoScroll.v1',
       themeMode:'daotian.themeMode.v1',
+      fontSize:'daotian.fontSize.v1',
     };
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
@@ -122,6 +123,12 @@
     }
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
+    }
+    function loadFontSize(){ var v = safeGet(KEYS.fontSize); if(v==='small'||v==='medium'||v==='large') return v; return 'medium'; }
+    function saveFontSize(v){ setItem(KEYS.fontSize, v); applyFontSize(v); }
+    function applyFontSize(v){
+      var sizes = {small:'15px',medium:'17px',large:'19px'};
+      document.documentElement.style.setProperty('--font-size', sizes[v]||'17px');
     }
     function loadThemeMode(){
       var v = safeGet(KEYS.themeMode);
@@ -3194,8 +3201,16 @@
         '<button class="settings-btn danger" id="clear-persona" style="margin-top:8px">清空个性化</button>'+
       '</div>';
     }
+    function fontSizePills(current){
+      var sizes = ['小','中','大']; var keys = ['small','medium','large'];
+      return '<div class="font-size-pills">'+keys.map(function(k,i){
+        return '<button class="font-size-pill'+(k===current?' active':'')+'" data-font-size="'+k+'">'+sizes[i]+'</button>';
+      }).join('')+'</div>';
+    }
     function renderChatPrefsPage(){
+      var fs = loadFontSize();
       return '<div class="settings-page">'+
+        '<div class="settings-card"><div class="settings-card-title">字体大小</div>'+fontSizePills(fs)+'</div>'+
         settingsToggle('流式输出', '逐步显示模型回复', true, 'stream')+
         settingsToggle('自动滚动跟随', '回复生成时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
         settingsToggle('显示 Token 消耗', '在消息下方显示输入和输出消耗', loadTokenDisplay(), 'tokenDisplay')+
@@ -3527,6 +3542,12 @@
         if(page) settingsGoTo(page);
         return;
       }
+      var fsPill = e.target.closest('.font-size-pill');
+      if(fsPill){
+        var fs = fsPill.getAttribute('data-font-size');
+        if(fs){ saveFontSize(fs); renderSettingsPage(); toast('字体大小已更新'); }
+        return;
+      }
       var radio = e.target.closest('.settings-radio-row');
       if(radio){
         var mode = radio.getAttribute('data-theme-mode');
@@ -3807,6 +3828,7 @@
 
 
     renderAll();
+    applyFontSize(loadFontSize());
     APP_READY = true;
     updateSearchVisual();
     setupMobileViewport();
