@@ -659,9 +659,11 @@ async function handleTts(req, res){
   };
 
   try{
+    const ttsHeaders = { "Content-Type": "application/json", "Authorization": "Bearer;" + TTS_TOKEN };
+    if(TTS_RESOURCE_ID) ttsHeaders["X-Api-Resource-Id"] = TTS_RESOURCE_ID;
     const ttsRes = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer;" + TTS_TOKEN, "X-Api-Resource-Id": TTS_RESOURCE_ID },
+      headers: ttsHeaders,
       body: JSON.stringify(payload)
     });
 
