@@ -21,8 +21,28 @@
     };
   }
 
-  window.addEventListener('error', function(e){ emergency(e.message || e.error || 'script error'); });
-  window.addEventListener('unhandledrejection', function(e){ emergency((e.reason && e.reason.message) || e.reason || 'promise error'); });
+  var NON_FATAL_PATTERNS = [
+    /showAttachPreview/i, /attachPreview/i, /_attachments/i, /addAttachment/i,
+    /openPlusMenu/i, /closePlusMenu/i, /togglePlusMenu/i, /attach/i,
+    /preview/i, /file preview/i, /image preview/i
+  ];
+  function isNonFatalError(msg){
+    var s = String(msg || '');
+    for(var i=0; i<NON_FATAL_PATTERNS.length; i++){
+      if(NON_FATAL_PATTERNS[i].test(s)) return true;
+    }
+    return false;
+  }
+  window.addEventListener('error', function(e){
+    var msg = e.message || e.error || 'script error';
+    if(isNonFatalError(msg)){ console.warn('[non-fatal]', msg); return; }
+    emergency(msg);
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    var msg = (e.reason && e.reason.message) || e.reason || 'promise error';
+    if(isNonFatalError(msg)){ console.warn('[non-fatal promise]', msg); return; }
+    emergency(msg);
+  });
 
   try{
     const $ = (sel, root=document) => root.querySelector(sel);
@@ -917,7 +937,7 @@
         });
         /* Clear attachments after sending */
         _attachments = [];
-        showAttachPreview();
+        safeShowAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
@@ -925,7 +945,7 @@
         assistant.usage = result.usage || null;
       }catch(err){
         _attachments = [];
-        showAttachPreview();
+        safeShowAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
@@ -3671,8 +3691,7 @@
     }
     }catch(_e1){}
 
-    /* ── 加号附件菜单 ── */
-    try{
+    /* ── 加号附件菜单（函数定义在 try 外，严格模式安全） ── */
     var _attachments = [];
     var _plusOpen = false;
 
@@ -3703,15 +3722,15 @@
       if(_plusOpen) closePlusMenu(); else openPlusMenu();
     }
 
-    var _pb = $('#plusBtn'); if(_pb) _pb.onclick = togglePlusMenu;
-
     function showAttachPreview(){
-      var el = $('#attachPreview'); if(!el) return;
-      if(!_attachments.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
-      el.style.display = 'flex';
-      el.innerHTML = _attachments.map(function(a,i){
-        return '<span class="attach-chip">'+escapeHTML(a.name)+'<button class="attach-chip-remove" data-attach-idx="'+i+'">×</button></span>';
-      }).join('');
+      try{
+        var el = $('#attachPreview'); if(!el) return;
+        if(!_attachments.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+        el.style.display = 'flex';
+        el.innerHTML = _attachments.map(function(a,i){
+          return '<span class="attach-chip">'+escapeHTML(a.name)+'<button class="attach-chip-remove" data-attach-idx="'+i+'">×</button></span>';
+        }).join('');
+      }catch(err){ console.warn('[attach preview] failed:', err); }
     }
 
     function addAttachment(file){
@@ -3720,6 +3739,19 @@
       showAttachPreview();
       closePlusMenu();
     }
+
+    function safeShowAttachPreview(data){
+      try{
+        if(typeof showAttachPreview === 'function'){ showAttachPreview(data); }
+      }catch(e){ console.warn('[attach] safeShowAttachPreview:', e); }
+    }
+
+    function safeClearAttachments(){
+      try{ _attachments = []; showAttachPreview(); }catch(e){ _attachments = []; }
+    }
+
+    try{
+    var _pb = $('#plusBtn'); if(_pb) _pb.onclick = togglePlusMenu;
 
     document.addEventListener('click', function(e){
       var chipDel = e.target.closest('.attach-chip-remove');
