@@ -412,8 +412,11 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .top-new-chat-btn:hover{background:rgba(127,127,127,.12);color:var(--text)}
 [data-theme="dark"] .top-new-chat-btn{background:rgba(255,255,255,.06)}
 
-/* ── Search Indicator ── */
-.search-indicator{max-width:830px;margin:6px auto 0;text-align:center;font-size:11px;color:var(--accent);opacity:.82;letter-spacing:.04em}
+/* ── Web Search Visual States ── */
+.plus-btn.web-active{color:var(--accent);border-color:rgba(220,128,98,.35);background:rgba(220,128,98,.08)}
+.composer.web-on{border-bottom:2px solid rgba(220,128,98,.28)}
+.web-searching .plus-btn{animation:webPulse 1.6s ease-in-out infinite}
+@keyframes webPulse{0%,100%{opacity:.7}50%{opacity:1}}
 
 /* ── Fetch Models ── */
 .fetch-models-btn{height:34px;font-size:13px;padding:0 14px}

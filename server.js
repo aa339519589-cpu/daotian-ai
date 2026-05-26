@@ -350,16 +350,19 @@ async function handleChat(req, res){
     }
   }
 
-  /* ── Thinking depth injection ── */
+  /* ── Thinking depth injection (only if frontend hasn't already injected) ── */
   const thinkingDepth = String(body.thinkingDepth || "medium").trim();
   if(thinkingDepth !== "off"){
     const depthPrompt = thinkDepthPrompt(thinkingDepth);
     if(depthPrompt){
-      const sysIdx = messages.findIndex(m=>m?.role === "system");
-      if(sysIdx >= 0){
-        messages[sysIdx] = { role: "system", content: messages[sysIdx].content + "\n\n" + depthPrompt };
-      }else{
-        messages.unshift({ role: "system", content: depthPrompt });
+      const alreadyInjected = messages.some(m=>m?.role==="system" && m.content && m.content.indexOf(depthPrompt)>=0);
+      if(!alreadyInjected){
+        const sysIdx = messages.findIndex(m=>m?.role === "system");
+        if(sysIdx >= 0){
+          messages[sysIdx] = { role: "system", content: messages[sysIdx].content + "\n\n" + depthPrompt };
+        }else{
+          messages.unshift({ role: "system", content: depthPrompt });
+        }
       }
     }
   }

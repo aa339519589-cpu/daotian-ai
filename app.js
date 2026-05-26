@@ -361,7 +361,6 @@
       <div class="app-shell" data-theme="${theme}">
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span style="font-size:14px;color:var(--muted)">历史对话</span></div>
-          <button class="new-chat-btn" id="newChat">＋ 新对话</button>
           <div class="chat-list" id="chatList"></div>
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openAdvanced">高级设置</button></div>
         </aside>
@@ -380,7 +379,6 @@
               <button class="send" id="sendBtn">›</button>
             </div>
             <div class="attach-preview" id="attachPreview" style="display:none"></div>
-            <div class="search-indicator" id="searchIndicator" style="display:none">联网中</div>
           </div>
           <div class="plus-menu" id="plusMenu" style="display:none">
             <button class="plus-menu-item" data-action="camera"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>拍照</button>
@@ -683,6 +681,35 @@
       if(!current.model || !current.model.trim()) return false;
       return true;
     }
+
+    /* Model capability detection */
+    var VISION_MODEL_PATTERNS = [
+      /gpt-4o/i, /gpt-4\.1/i, /gpt-4-turbo/i, /gpt-4-vision/i,
+      /claude/i, /gemini/i, /vision/i, /vl/i, /multimodal/i,
+      /qwen-vl/i, /glm-4v/i, /yi-vision/i, /llava/i,
+      /pixtral/i, /llama.*vision/i, /bakllava/i, /cogvlm/i
+    ];
+    var TEXT_ONLY_MODEL_PATTERNS = [
+      /deepseek/i, /qwen(?!.*vl)/i, /glm(?!.*4v)/i, /yi(?!.*vision)/i,
+      /llama(?!.*vision)/i, /mistral/i, /mixtral/i, /phi/i,
+      /gemma/i, /command/i, /openchat/i, /zephyr/i
+    ];
+
+    function modelSupportsVision(modelName){
+      if(!modelName) return false;
+      for(var i=0; i<VISION_MODEL_PATTERNS.length; i++){
+        if(VISION_MODEL_PATTERNS[i].test(modelName)) return true;
+      }
+      for(var j=0; j<TEXT_ONLY_MODEL_PATTERNS.length; j++){
+        if(TEXT_ONLY_MODEL_PATTERNS[j].test(modelName)) return false;
+      }
+      return false; // default: no vision
+    }
+
+    /* Text file extensions readable by FileReader */
+    var TEXT_EXTENSIONS = ['txt','md','csv','json','js','html','css','py','java','cpp','c','h','rb','go','rs','ts','tsx','jsx','xml','yaml','yml','toml','ini','cfg','log','sh','bash','zsh','sql','r','m','swift','kt','scala','lua','pl','php'];
+    var IMAGE_EXTENSIONS = ['png','jpg','jpeg','webp','gif','bmp'];
+    var SUPPORTED_BINARY = ['pdf','docx','xlsx'];
     function renderModelSwitcher(){
       ensureModelStyle();
       var current = activePreset();
@@ -717,13 +744,14 @@
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
-    function createChat(){ var empty=chats.find(function(c){ return !c.messages || !c.messages.length; }); if(empty){ activeId=empty.id; }else{ var id=uid(); chats.unshift({id:id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; } sidebarOpen=true; renderAll(); }
+    function createChat(){ var empty=chats.find(function(c){ return !c.messages || !c.messages.length; }); if(empty){ activeId=empty.id; }else{ var id=uid(); chats.unshift({id:id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; } safeClearAttachments(); sidebarOpen=false; renderAll(); }
+    function startNewChat(){ createChat(); }
     function deleteChat(id){
       const idx = chats.findIndex(c=>c.id===id); if(idx<0) return;
       chats.splice(idx,1);
       if(chats.length===0){ const nid=uid(); chats=[{id:nid,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}]; activeId=nid; }
       else if(activeId===id){ activeId = chats[Math.max(0,Math.min(idx,chats.length-1))].id; }
-      renderAll(); toast('已删除');
+      safeClearAttachments(); renderAll(); toast('已删除');
     }
 
     function buildOpenAIURL(preset){ const cfg=preset||activePreset(); const base=(cfg.baseUrl||'').replace(/\/$/,''); const path=cfg.path||'/v1/chat/completions'; if(!base) return '/v1/chat/completions'; if(base.endsWith('/v1') && path.startsWith('/v1/')) return base + path.slice(3); return base + (path.startsWith('/') ? path : '/' + path); }
@@ -834,9 +862,46 @@
       var hasAttachments = _attachments && _attachments.length > 0;
       if(!text && !hasAttachments) return;
       if(!hasUsableModelConfig()){ toast('请先添加模型'); openSettings(); return; }
+      var cfg = activePreset();
+
+      /* Check image attachments vs model capability */
+      if(hasAttachments){
+        var hasImages = false;
+        for(var ai=0; ai<_attachments.length; ai++){
+          if(isImageFile(_attachments[ai].name)){ hasImages = true; break; }
+        }
+        if(hasImages && !modelSupportsVision(cfg.model)){
+          toast('当前模型不支持图片阅读，请切换支持图片的模型');
+          return;
+        }
+      }
+
       var c=activeChat();
-      var displayText = text || (hasAttachments ? '[发送了文件]' : '');
-      c.messages.push({role:'user',content:displayText,time:Date.now(),files:_attachments.length?_attachments.slice():undefined}); if(!c.title || c.title==='新对话') c.title=displayText.slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
+      /* Build display text with file content */
+      var fileContentText = '';
+      var displayText = text || '';
+      if(hasAttachments){
+        var fileNames = [];
+        for(var afi=0; afi<_attachments.length; afi++){
+          var a = _attachments[afi];
+          fileNames.push(a.name);
+          if(a.content && isTextFile(a.name)){
+            var contentPreview = a.content;
+            var maxLen = a.name.match(/\.(csv|json)$/i) ? 4000 : 2000;
+            if(contentPreview.length > maxLen){ contentPreview = contentPreview.slice(0,maxLen) + '\n...（文件较大，已截断）'; }
+            fileContentText += '\n\n--- 附件：' + a.name + ' ---\n' + contentPreview;
+          }else if(a.dataUrl && isImageFile(a.name)){
+            fileContentText += '\n[图片：' + a.name + ']';
+          }else if(isBinaryFile(a.name)){
+            fileContentText += '\n[文件：' + a.name + '（将在服务器端解析）]';
+          }else{
+            fileContentText += '\n[文件：' + a.name + ']';
+          }
+        }
+        if(!displayText) displayText = '请查看以下文件内容';
+        displayText += fileContentText;
+      }
+      c.messages.push({role:'user',content:displayText,time:Date.now(),files:hasAttachments?_attachments.slice():undefined}); if(!c.title || c.title==='新对话') c.title=(text||'文件对话').slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       var cfg = activePreset();
       var params = getModelParams(cfg.id);
@@ -866,6 +931,27 @@
         if(systemText.length > 6000) systemText = systemText.slice(0,6000);
       }
       var requestMessages=c.messages.filter(m=>m.role==='user'||m.role==='assistant'||m.role==='system').map(m=>({role:m.role,content:m.content}));
+
+      /* Handle vision: convert last user message to content array if we have images */
+      if(hasAttachments){
+        var imageAtts = [];
+        for(var ai2=0; ai2<_attachments.length; ai2++){
+          if(_attachments[ai2].dataUrl && isImageFile(_attachments[ai2].name)) imageAtts.push(_attachments[ai2]);
+        }
+        if(imageAtts.length > 0 && modelSupportsVision(cfg.model)){
+          var lastUserIdx = -1;
+          for(var ri=requestMessages.length-1; ri>=0; ri--){
+            if(requestMessages[ri].role === 'user'){ lastUserIdx = ri; break; }
+          }
+          if(lastUserIdx >= 0){
+            var visionContent = [{type:'text', text: text || '请分析以下图片'}];
+            for(var vi=0; vi<imageAtts.length; vi++){
+              visionContent.push({type:'image_url', image_url:{url:imageAtts[vi].dataUrl}});
+            }
+            requestMessages[lastUserIdx] = {role:'user', content:visionContent};
+          }
+        }
+      }
       if(systemText.trim()){
         requestMessages.unshift({role:'system', content:systemText});
       }
@@ -875,13 +961,32 @@
       renderAll();
       var memoryNoticeTimer = null;
 
-      /* Build request body with thinkingDepth */
+      /* Inject thinking depth as system prompt (works for both direct API and /chat proxy) */
+      if(thinkingDepth !== 'off'){
+        var tdMap = {
+          low:'【思考深度：低】请快速判断，直接回答，减少展开。',
+          medium:'【思考深度：中】请在准确性和简洁性之间平衡。',
+          high:'【思考深度：高】请更仔细地分析问题，检查关键条件，避免遗漏。',
+          extreme:'【思考深度：极限】请在回答前充分分析任务、约束、边界情况和潜在错误，给出更稳妥的结果。'
+        };
+        var tdPrompt = tdMap[thinkingDepth] || '';
+        if(tdPrompt){
+          var sysIdx = -1;
+          for(var si=0; si<requestMessages.length; si++){
+            if(requestMessages[si].role === 'system'){ sysIdx = si; break; }
+          }
+          if(sysIdx >= 0){
+            requestMessages[sysIdx] = {role:'system', content: requestMessages[sysIdx].content + '\n\n' + tdPrompt};
+          }else{
+            requestMessages.unshift({role:'system', content: tdPrompt});
+          }
+        }
+      }
+
+      /* Build request body */
       var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true},thinkingDepth:thinkingDepth};
       exportModelParamsBody(cfg.id, body);
-      var targetUrl = buildOpenAIURL(cfg);
-      var useFormData = _attachments && _attachments.length > 0;
       if(searchOn){
-        targetUrl = '/chat';
         body.webSearch = true;
         body.search = true;
         body.frontendUpstream = {
@@ -893,30 +998,6 @@
           path: cfg.path || '/v1/chat/completions',
           model: cfg.model || 'deepseek-chat'
         };
-        useFormData = true;
-      }
-
-      /* Send with attachments via FormData */
-      var fetchBody, fetchHeaders;
-      if(useFormData){
-        var fd = new FormData();
-        fd.append('body', JSON.stringify(body));
-        if(_attachments && _attachments.length){
-          for(var ai=0; ai<_attachments.length; ai++){
-            fd.append('files', _attachments[ai], _attachments[ai].name);
-          }
-        }
-        fetchBody = fd;
-        fetchHeaders = {};
-        targetUrl = '/chat';
-      }else{
-        fetchBody = JSON.stringify(body);
-        fetchHeaders = searchOn ? {'Content-Type':'application/json'} : {'Content-Type':'application/json'};
-        if(!searchOn){
-          var cfgHeaders = {}; if(cfg.apiKey) cfgHeaders.Authorization='Bearer '+cfg.apiKey;
-        }else{
-          fetchHeaders = {'Content-Type':'application/json'};
-        }
       }
 
       try{
@@ -950,7 +1031,14 @@
         assistant.memoryNotice = false;
         assistant.thinking=false;
         assistant.role='error';
-        assistant.content='请求失败：'+(err&&err.message?err.message:String(err));
+        var errMsg = err&&err.message?err.message:String(err);
+        /* Humanize common errors */
+        if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
+        else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供方配置';
+        else if(errMsg.indexOf('rate_limit')>=0||errMsg.indexOf('429')>=0) errMsg = '请求太频繁，请稍后再试';
+        else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0) errMsg = '网络连接失败，请检查网络后重试';
+        else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
+        assistant.content = errMsg;
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); renderAll();
       if(willExtract){
@@ -967,24 +1055,16 @@
     }
 
     async function callModelWithBody(requestMessages, body, cfg, onDelta){
-      var useFormData = _attachments && _attachments.length > 0;
       var fetchBody, fetchHeaders;
-      if(useFormData || searchOn){
-        var fd = new FormData();
-        fd.append('body', JSON.stringify(body));
-        if(_attachments && _attachments.length){
-          for(var ai=0; ai<_attachments.length; ai++){
-            fd.append('files', _attachments[ai], _attachments[ai].name);
-          }
-        }
-        fetchBody = fd;
-        fetchHeaders = {};
+      if(searchOn){
+        fetchBody = JSON.stringify(body);
+        fetchHeaders = {'Content-Type':'application/json'};
       }else{
         fetchHeaders = {'Content-Type':'application/json'};
         if(cfg.apiKey) fetchHeaders.Authorization = 'Bearer '+cfg.apiKey;
         fetchBody = JSON.stringify(body);
       }
-      var targetUrl = (useFormData || searchOn) ? '/chat' : buildOpenAIURL(cfg);
+      var targetUrl = searchOn ? '/chat' : buildOpenAIURL(cfg);
 
       var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody});
       if(!res.ok){ var txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
@@ -3448,7 +3528,7 @@
       if(e.target.closest('#modelTopTrigger')){ toggleModelPopover(); return; }
       if(!e.target.closest('#modelPopover') && !e.target.closest('#modelTopTrigger')) closeModelPopover();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
-      const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
+      const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); safeClearAttachments(); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
       const providerDel=e.target.closest('[data-provider-delete]');
       if(providerDel){
         collectProviderEditor();
@@ -3491,7 +3571,7 @@
         return;
       }
     });
-    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#newChat').onclick=createChat; $('#topNewChatBtn').onclick=createChat;
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
@@ -3722,6 +3802,18 @@
       if(_plusOpen) closePlusMenu(); else openPlusMenu();
     }
 
+    function updateSearchVisual(){
+      var plusBtn = $('#plusBtn');
+      var composer = document.querySelector('.composer');
+      if(searchOn){
+        if(plusBtn) plusBtn.classList.add('web-active');
+        if(composer) composer.classList.add('web-on');
+      }else{
+        if(plusBtn) plusBtn.classList.remove('web-active');
+        if(composer) composer.classList.remove('web-on');
+      }
+    }
+
     function showAttachPreview(){
       try{
         var el = $('#attachPreview'); if(!el) return;
@@ -3733,11 +3825,37 @@
       }catch(err){ console.warn('[attach preview] failed:', err); }
     }
 
+    function getFileExt(name){ var parts=(name||'').split('.'); return parts.length>1?parts.pop().toLowerCase():''; }
+    function isTextFile(name){ return TEXT_EXTENSIONS.indexOf(getFileExt(name)) >= 0; }
+    function isImageFile(name){ return IMAGE_EXTENSIONS.indexOf(getFileExt(name)) >= 0; }
+    function isBinaryFile(name){ return SUPPORTED_BINARY.indexOf(getFileExt(name)) >= 0; }
+
     function addAttachment(file){
       if(_attachments.length >= 5){ toast('最多添加5个附件'); return; }
-      _attachments.push(file);
+      var entry = { file:file, name:file.name, type:file.type, size:file.size, content:null, status:'pending' };
+      _attachments.push(entry);
       showAttachPreview();
       closePlusMenu();
+      /* Read text files immediately */
+      if(isTextFile(file.name)){
+        var reader = new FileReader();
+        reader.onload = function(){
+          entry.content = reader.result;
+          entry.status = 'ready';
+        };
+        reader.onerror = function(){ entry.status = 'error'; };
+        reader.readAsText(file);
+      }else if(isImageFile(file.name)){
+        var imgReader = new FileReader();
+        imgReader.onload = function(){
+          entry.dataUrl = imgReader.result;
+          entry.status = 'ready';
+        };
+        imgReader.onerror = function(){ entry.status = 'error'; };
+        imgReader.readAsDataURL(file);
+      }else{
+        entry.status = 'ready'; // will be sent as binary via FormData
+      }
     }
 
     function safeShowAttachPreview(data){
@@ -3797,7 +3915,7 @@
         if(action === 'camera'){ var ci = document.getElementById('cameraInput'); if(ci) ci.click(); }
         else if(action === 'image'){ var ii = document.getElementById('imageInput'); if(ii) ii.click(); }
         else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
-        else if(action === 'search'){ searchOn=!searchOn; closePlusMenu(); var si=$('#searchIndicator'); if(si) si.style.display = searchOn ? 'block' : 'none'; toast(searchOn?'已开启联网搜索':'已关闭联网搜索'); }
+        else if(action === 'search'){ searchOn=!searchOn; closePlusMenu(); updateSearchVisual(); }
         return;
       }
       if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){
