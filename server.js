@@ -653,7 +653,7 @@ async function handleTts(req, res){
   const payload = {
     app: { appid: TTS_APP_ID, token: TTS_TOKEN, cluster: TTS_CLUSTER },
     user: { uid: "daotian-user" },
-    audio: { voice_type: voice, encoding: "mp3" },
+    audio: { voice_type: voice, encoding: "mp3", speed_ratio: 1.2 },
     request: { reqid, text, text_type: "plain", operation: "query" }
   };
 
