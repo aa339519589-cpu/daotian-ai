@@ -896,9 +896,9 @@
       document.documentElement.setAttribute('data-theme', theme);
       /* 同步 theme-color meta：移除media限制确保手动切换生效 */
       var metas = document.querySelectorAll('meta[name="theme-color"]');
-      metas.forEach(function(m){ m.removeAttribute('media'); m.content = theme === 'dark' ? '#282826' : '#f5f2ea'; });
+      metas.forEach(function(m){ m.removeAttribute('media'); m.content = theme === 'dark' ? '#1F1F1F' : '#f5f2ea'; });
       if(metas.length === 0){
-        var m = document.createElement('meta'); m.name = 'theme-color'; m.content = theme === 'dark' ? '#282826' : '#f5f2ea';
+        var m = document.createElement('meta'); m.name = 'theme-color'; m.content = theme === 'dark' ? '#1F1F1F' : '#f5f2ea';
         document.head.appendChild(m);
       }
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);

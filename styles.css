@@ -31,7 +31,7 @@
   --toast-text:#fff;
 }
 [data-theme="dark"]{
-  --bg:#282826;
+  --bg:#1F1F1F;
   --panel:#1B1B1B;
   --panel-2:#2C2C2A;
   --text:#e7e3dc;
