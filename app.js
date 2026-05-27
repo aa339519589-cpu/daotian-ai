@@ -338,11 +338,7 @@
       return groups.map(normalizeProvider);
     }
     function legacyProviders(base){
-      /* 仅在首次使用时创建默认 provider，从旧版扁平字段或默认值拼装 */
-      var models = [];
-      if(base.model) models = splitModels(base.model);
-      else if(base.models) models = splitModels(base.models);
-      if(!models.length) models = ['deepseek-chat'];
+      /* 仅在首次使用时创建默认 provider，models 必须为空！不允许自动注入模型 */
       var provider = normalizeProvider({
         id:'p_legacy_0',
         providerType: base.providerType || 'openai',
@@ -350,7 +346,7 @@
         baseUrl: base.baseUrl || defaultSettings.baseUrl,
         apiKey: base.apiKey || '',
         path: base.path || '/v1/chat/completions',
-        models: models
+        models: []
       }, 0);
       return [provider];
     }
@@ -416,10 +412,28 @@
 
     let theme = resolveTheme();
     let settings = ensureSettingsShape(Object.assign({}, defaultSettings, readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {}));
-    /* 加载后强制合并去重：清理旧数据中可能存在的重复 provider 和重复模型 */
+    /* 加载后强制合并去重 + 清理自动注入的默认模型 */
     if(Array.isArray(settings.modelProviders) && settings.modelProviders.length){
       var cleaned = normalizeProviders(settings.modelProviders);
-      if(cleaned.length !== settings.modelProviders.length){
+      /* 彻底清除所有自动注入的默认模型：deepseek-chat和deepseek-reasoner如果是系统自动加的，一律删掉 */
+      var dirty = false;
+      for(var ci=0; ci<cleaned.length; ci++){
+        var prov = cleaned[ci];
+        if(!Array.isArray(prov.models)) continue;
+        /* 只保留用户明确添加的模型：过滤掉已知的自动注入模型 */
+        var autoModels = ['deepseek-chat','deepseek-reasoner'];
+        var filtered = [];
+        for(var mi=0; mi<prov.models.length; mi++){
+          /* 如果models数组只有一个模型且是默认模型 → 可能是自动注入的 → 清除 */
+          /* 如果models有多个模型 → 保留所有包括deepseek-chat(用户可能真需要) */
+          if(prov.models.length <= 1 && autoModels.indexOf(prov.models[mi]) >= 0){
+            dirty = true; continue;
+          }
+          filtered.push(prov.models[mi]);
+        }
+        if(filtered.length !== prov.models.length){ prov.models = filtered; dirty = true; }
+      }
+      if(dirty || cleaned.length !== settings.modelProviders.length){
         settings.modelProviders = cleaned;
         settings.modelPresets = providersToPresets(cleaned);
         saveJSON(KEYS.settings, settings);
@@ -3127,7 +3141,7 @@
         <div class="preset-card-head"><div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供方')}</div><button class="preset-del" type="button" data-provider-delete="${escapeHTML(provider.id)}">删除</button></div>
         <div class="row"><div class="field"><label>提供方名称</label><input data-provider-field="providerName" value="${escapeHTML(provider.providerName)}" placeholder="DeepSeek / 小米 / OpenAI"></div><div class="field"><label>提供方类型</label><select data-provider-field="providerType"><option value="openai" ${provider.providerType==='openai'?'selected':''}>OpenAI 兼容</option><option value="gemini" ${provider.providerType==='gemini'?'selected':''}>Gemini</option><option value="anthropic" ${provider.providerType==='anthropic'?'selected':''}>Anthropic</option></select></div></div>
         <div class="field"><label>Base URL</label><input data-provider-field="baseUrl" value="${escapeHTML(provider.baseUrl)}" placeholder="https://api.deepseek.com"></div>
-        <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:16px;padding:4px" title="显示/隐藏">👁</button></div></div>
+        <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;opacity:.5" title="显示/隐藏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
         <div class="field"><label>请求路径</label><input data-provider-field="path" value="${escapeHTML(provider.path)}" placeholder="/v1/chat/completions"></div>
         <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="margin-left:8px;color:var(--muted)"></span></div>
         <div class="fetch-models-results" data-fetch-results="${escapeHTML(provider.id)}" style="display:none;margin-top:8px;max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:8px">
@@ -3244,23 +3258,47 @@
     function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
     function saveSettings(){
-      var saveBtn = $('#saveProviderBtn'); if(!saveBtn) saveBtn = document.getElementById('saveProvider');
+      var saveBtn = document.getElementById('saveProvider');
+      if(!saveBtn) return;
+      var originalText = '保存';
       /* 保存中状态 */
-      if(saveBtn){ saveBtn.textContent = '保存中...'; saveBtn.disabled = true; }
+      saveBtn.textContent = '保存中...'; saveBtn.disabled = true;
       try{
         collectProviderEditor();
         syncModelState();
         persist();
         renderModelSwitcher();
         _providerDraft = null;
-        if(saveBtn){ saveBtn.textContent = '已保存 ✓'; }
-        setTimeout(function(){ if(saveBtn) saveBtn.textContent = '保存'; if(saveBtn) saveBtn.disabled = false; }, 1000);
+        saveBtn.textContent = '已保存 ✓';
+        setTimeout(function(){ saveBtn.textContent = originalText; saveBtn.disabled = false; }, 1000);
         closeSettings();
         if(hasUsableModelConfig()){ toast('配置已保存'); }else{ toast('已保存，但缺少 API Key'); }
       }catch(e){
-        if(saveBtn){ saveBtn.textContent = '保存失败'; saveBtn.disabled = false; }
+        saveBtn.textContent = '保存失败';
+        saveBtn.disabled = false;
+        setTimeout(function(){ saveBtn.textContent = originalText; saveBtn.disabled = false; }, 1500);
         toast('保存失败，请检查配置');
       }
+    }
+    /* 通用保存按钮状态机 */
+    function saveButtonFeedback(btnId, successMsg, errorMsg){
+      var btn = document.getElementById(btnId);
+      if(!btn) return;
+      var original = btn.textContent || '保存设置';
+      btn.textContent = '保存中...'; btn.disabled = true;
+      return {
+        done: function(){
+          btn.textContent = '已保存 ✓';
+          setTimeout(function(){ btn.textContent = original; btn.disabled = false; }, 1000);
+          if(successMsg) toast(successMsg);
+        },
+        fail: function(){
+          btn.textContent = '保存失败';
+          btn.disabled = false;
+          setTimeout(function(){ btn.textContent = original; btn.disabled = false; }, 1500);
+          if(errorMsg) toast(errorMsg);
+        }
+      };
     }
     window.__saveSettings__ = saveSettings;
     function deleteProvider(providerId){
@@ -3462,8 +3500,8 @@
             '<button class="voice-provider-pill'+(vs.rate==='+25%'?' active':'')+'" data-voice-rate="+25%">快一点</button>'+
           '</div>'+
         '</div>'+
-        '<button class=”settings-btn primary” id=”testVoiceBtn” style=”margin-top:8px;width:100%”>测试听音 — “你好，我是稻田 AI”</button>'+
-        '<button class=”settings-btn” id=”saveVoiceBtn” style=”margin-top:12px;width:100%;background:var(--accent);border-color:var(--accent);color:#fff;border-radius:999px;font-weight:600”>保存设置</button>'+
+        '<button class="settings-btn primary" id="testVoiceBtn" style="margin-top:8px;width:100%">测试听音 — 你好，我是稻田 AI</button>'+
+        '<button class="settings-btn" id="saveVoiceBtn" style="margin-top:12px;width:100%;background:var(--accent);border-color:var(--accent);color:#fff;border-radius:999px;font-weight:600">保存设置</button>'+
       '</div>';
     }
 
@@ -3831,7 +3869,20 @@
       /* Voice: save button */
       var saveBtn = e.target.closest('#saveVoiceBtn');
       if(saveBtn){
-        toast('语音设置已保存');
+        var fb = saveButtonFeedback('saveVoiceBtn', '语音设置已保存', '语音保存失败');
+        try{
+          var vs5 = loadVoiceSettings();
+          var fk = document.getElementById('fishApiKey');
+          var fr = document.getElementById('fishRefId');
+          var fv = document.getElementById('fishVoiceName');
+          if(fk) vs5.fishAudioApiKey = fk.value;
+          if(fr) vs5.fishAudioReferenceId = fr.value;
+          if(fv) vs5.fishAudioVoiceName = fv.value;
+          saveVoiceSettings(vs5);
+          if(fb) fb.done();
+        }catch(e){
+          if(fb) fb.fail();
+        }
         return;
       }
       /* Test voice button */
