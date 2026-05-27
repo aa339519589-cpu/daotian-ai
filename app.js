@@ -140,24 +140,24 @@
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
     }
-    function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=13&&v<=22) return v; return 16; }
+    function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=13&&v<=22) return v; return 18; }
     function saveFontSize(v){ setItem(KEYS.fontSize, String(v)); applyFontSize(v); }
     function applyFontSize(v){
-      var s = (v||16)/16;
+      var s = (v||18)/18;
       var id = 'daotianFontScale'; var old = document.getElementById(id); if(old) old.remove();
       var st = document.createElement('style'); st.id = id;
-      st.textContent = 'body{font-size:'+Math.round(17*s)+'px!important}'+
-        '.bubble{font-size:'+Math.round(15*s)+'px!important}'+
-        '.assistant-render{font-size:'+Math.round(15*s)+'px!important}'+
-        'textarea{font-size:'+Math.round(17*s)+'px!important}'+
+      st.textContent = 'body{font-size:'+Math.round(18*s)+'px!important}'+
+        '.bubble{font-size:'+Math.round(18*s)+'px!important}'+
+        '.assistant-render{font-size:'+Math.round(18*s)+'px!important}'+
+        'textarea{font-size:'+Math.round(18*s)+'px!important}'+
         '.model-top-trigger{font-size:'+Math.round(18*s)+'px!important}'+
         '.plus-menu-item{font-size:'+Math.round(14*s)+'px!important}'+
         '.chat-title{font-size:'+Math.round(14*s)+'px!important}'+
         '.settings-entry-title{font-size:'+Math.round(15*s)+'px!important}'+
-        '.settings-card-title{font-size:'+Math.round(15*s)+'px!important}'+
+        '.settings-card-title{font-size:'+Math.round(13*s)+'px!important}'+
         '.settings-radio-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.settings-toggle-title{font-size:'+Math.round(15*s)+'px!important}'+
-        '.hint,.settings-entry-desc,.settings-radio-desc,.settings-toggle-desc,.settings-card-hint{font-size:'+Math.round(12*s)+'px!important}'+
+        '.hint,.settings-entry-desc,.settings-radio-desc,.settings-toggle-desc,.settings-card-hint{font-size:'+Math.round(13*s)+'px!important}'+
         '.side-bottom-btn{font-size:'+Math.round(13*s)+'px!important}'+
         '.btn{font-size:'+Math.round(15*s)+'px!important}';
       document.head.appendChild(st);
@@ -502,15 +502,15 @@
       const style=document.createElement('style');
       style.id='daotianRenderStyle';
       style.textContent = `
-        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.65;font-size:.94rem;font-weight:400;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;}
+        .assistant-render{max-width:min(720px,88%);padding:2px 2px;line-height:1.65;font-size:1rem;font-weight:400;color:var(--text);background:transparent;border:0;box-shadow:none;word-break:break-word;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
         .assistant-render p{margin:.4em 0 .65em;}
         .assistant-render p:last-child{margin-bottom:0;}
-        .assistant-render h1,.assistant-render h2,.assistant-render h3{margin:1em 0 .45em;line-height:1.35;font-weight:700;}
-        .assistant-render h1{font-size:1.28em}.assistant-render h2{font-size:1.18em}.assistant-render h3{font-size:1.08em}
+        .assistant-render h1,.assistant-render h2,.assistant-render h3{margin:1em 0 .45em;line-height:1.25;font-weight:650;letter-spacing:-0.015em;}
+        .assistant-render h1{font-size:1.22em}.assistant-render h2{font-size:1.12em}.assistant-render h3{font-size:1.05em}
         .assistant-render ul,.assistant-render ol{margin:.45em 0 .8em;padding-left:1.35em;}
         .assistant-render li{margin:.18em 0;}
         .assistant-render blockquote{margin:.65em 0;padding:.2em .9em;border-left:3px solid rgba(127,127,127,.32);color:var(--muted);}
-        .assistant-render code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em;background:rgba(127,127,127,.12);border-radius:6px;padding:.08em .32em;}
+        .assistant-render code{font-family:var(--font-mono);font-size:.92em;background:rgba(127,127,127,.12);border-radius:6px;padding:.08em .32em;}
         .assistant-render pre{margin:.7em 0;padding:12px 13px;border-radius:14px;background:rgba(127,127,127,.10);border:1px solid rgba(127,127,127,.14);overflow:auto;-webkit-overflow-scrolling:touch;white-space:pre;}
         .assistant-render pre code{background:transparent;padding:0;border-radius:0;white-space:pre;}
         .assistant-render hr{border:0;height:1px;background:var(--line);margin:1em 0;opacity:.6}
@@ -522,7 +522,7 @@
         .assistant-render details{margin:.55em 0;}
         .assistant-render summary{cursor:pointer;color:var(--muted);font-size:13px;margin-bottom:.35em;}
         .assistant-render .mermaid{background:rgba(255,255,255,.04);border-radius:14px;padding:12px;overflow:auto;}
-        @media (max-width:760px){.assistant-render{max-width:calc(100vw - 36px);font-size:15px}.assistant-render .html-preview-frame{min-height:210px}}
+        @media (max-width:760px){.assistant-render{max-width:calc(100vw - 36px);font-size:1rem}.assistant-render .html-preview-frame{min-height:210px}}
       `;
       document.head.appendChild(style);
     }
@@ -3311,10 +3311,10 @@
     }
     function renderChatPrefsPage(){
       var fs = loadFontSize();
-      var fsLabel = fs <= 14 ? '小' : fs <= 17 ? '中' : fs >= 20 ? '大' : fs+'px';
+      var fsLabel = fs <= 15 ? '小' : fs <= 17 ? '中' : fs >= 21 ? '大' : '中';
       return '<div class="settings-page">'+
-        '<div class="settings-card"><div class="settings-card-title">字体大小 <span class="settings-slider-val" id="fontSizeVal">'+fsLabel+'</span></div>'+
-        '<input type="range" id="fontSizeSlider" class="param-slider settings-range" min="13" max="22" step="1" value="'+fs+'"><div class="settings-slider-labels"><span>小</span><span>大</span></div></div>'+
+        '<div class="settings-card"><div class="settings-card-title">字体大小 <span class="settings-slider-val" id="fontSizeVal">'+fs+'px</span></div>'+
+        '<input type="range" id="fontSizeSlider" class="param-slider settings-range" min="15" max="21" step="1" value="'+fs+'"><div class="settings-slider-labels"><span>15px</span><span>21px</span></div></div>'+
         settingsToggle('流式输出', '逐步显示模型回复', true, 'stream')+
         settingsToggle('自动滚动跟随', '回复生成时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
         settingsToggle('显示 Token 消耗', '在消息下方显示输入和输出消耗', loadTokenDisplay(), 'tokenDisplay')+
@@ -3504,8 +3504,7 @@
       }
       if(e.target.closest('#fontSizeSlider')){
         var v = parseInt(e.target.value); applyFontSize(v); saveFontSize(v);
-        var label = v <= 14 ? '小' : v <= 17 ? '中' : v >= 20 ? '大' : v+'px';
-        var valEl = document.getElementById('fontSizeVal'); if(valEl) valEl.textContent = label;
+        var valEl = document.getElementById('fontSizeVal'); if(valEl) valEl.textContent = v+'px';
         return;
       }
       if(e.target.closest('.param-slider')){
