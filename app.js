@@ -421,7 +421,7 @@
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span style="font-size:14px;color:var(--muted)">历史对话</span></div>
           <div class="chat-list" id="chatList"></div>
-          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">设置 / 模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
+          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
