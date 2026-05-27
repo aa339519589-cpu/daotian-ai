@@ -3303,8 +3303,7 @@
       var rateLabels = {'-10%':'慢一点','+0%':'正常','+10%':'快一点'};
       return '<div class="settings-page">'+
         '<div class="settings-card">'+
-          '<div class="settings-card-title">语音开关</div>'+
-          '<button class="pill voice-enabled-toggle" data-voice-enabled="'+(vs.enabled?'1':'0')+'">'+(vs.enabled?'已开启':'已关闭')+'</button>'+
+          '<button class="settings-toggle-row" id="voiceToggleRow" data-on="'+(vs.enabled?'1':'0')+'"><span class="settings-toggle-text"><span class="settings-toggle-title">语音开关</span><span class="settings-toggle-desc">'+(vs.enabled?'已开启':'已关闭')+'</span></span><span class="settings-toggle-switch'+(vs.enabled?' on':'')+'"><span class="settings-toggle-knob"></span></span></button>'+
         '</div>'+
         '<div class="settings-card">'+
           '<div class="settings-card-title">语音服务</div>'+
@@ -3314,7 +3313,7 @@
           '</div>'+
         '</div>'+
         (isEdge ? '<div class="settings-card"><div class="settings-card-title">声音选择</div>'+
-          EDGE_VOICES.map(function(ev){ return '<div class="ss-radio-row'+(ev.id===vs.edgeVoice?' active':'')+'" data-voice-id="'+escapeHTML(ev.id)+'" data-voice-label="'+escapeHTML(ev.label)+'"><div class="ss-radio-dot"></div><div><div class="ss-radio-label">'+escapeHTML(ev.label)+'</div><div class="ss-radio-hint">'+escapeHTML(ev.desc)+'</div></div></div>'; }).join('')+
+          EDGE_VOICES.map(function(ev){ return '<button class="settings-radio-row'+(ev.id===vs.edgeVoice?' selected':'')+'" data-voice-id="'+escapeHTML(ev.id)+'" data-voice-label="'+escapeHTML(ev.label)+'"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">'+escapeHTML(ev.label)+'</span><span class="settings-radio-desc">'+escapeHTML(ev.desc)+'</span></span></button>'; }).join('')+
         '</div>' : '')+
         (!isEdge ? '<div class="settings-card"><div class="settings-card-title">Fish Audio 设置</div>'+
           '<div class="field"><label>API Key</label><input type="password" class="ss-input" id="fishApiKey" value="'+escapeHTML(vs.fishAudioApiKey)+'" placeholder="请输入 Fish Audio API Key"></div>'+
@@ -3692,30 +3691,13 @@
         }
         return;
       }
-      /* Voice: sound selection radio */
-      var voiceRadio = e.target.closest('[data-voice-id]');
-      if(voiceRadio){
-        var vid = voiceRadio.getAttribute('data-voice-id');
-        var vlbl = voiceRadio.getAttribute('data-voice-label');
-        if(vid){
-          var vs = loadVoiceSettings();
-          vs.edgeVoice = vid;
-          vs.edgeVoiceLabel = vlbl || vid;
-          saveVoiceSettings(vs);
-          renderSettingsPage();
-          toast('已切换为 '+vlbl);
-        }
-        return;
-      }
       /* Voice: enabled toggle */
-      var veToggle = e.target.closest('.voice-enabled-toggle');
-      if(veToggle){
+      var vtr = e.target.closest('#voiceToggleRow');
+      if(vtr){
         var vs = loadVoiceSettings();
         vs.enabled = !vs.enabled;
         saveVoiceSettings(vs);
-        veToggle.setAttribute('data-voice-enabled', vs.enabled?'1':'0');
-        veToggle.textContent = vs.enabled?'已开启':'已关闭';
-        if(vs.enabled){ veToggle.classList.add('active'); }else{ veToggle.classList.remove('active'); }
+        renderSettingsPage();
         return;
       }
       /* Test voice button */
@@ -3765,7 +3747,6 @@
           vs3.edgeVoiceLabel = vlbl2 || vid2;
           saveVoiceSettings(vs3);
           renderSettingsPage();
-          toast('已切换为 '+vlbl2);
         }
         return;
       }
