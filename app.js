@@ -78,7 +78,7 @@
       {id:'zh-TW-HsiaoYuNeural',label:'台湾晓雨',desc:'女声 · 台湾普通话'},
       {id:'zh-TW-YunJheNeural',label:'台湾云哲',desc:'男声 · 台湾普通话'}
     ];
-    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+0%',fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:'湾湾小河'};
+    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+10%',fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:'湾湾小河'};
     function loadVoiceSettings(){ var v = readJSON(KEYS.voiceSettings, null); return v&&typeof v.enabled!=='undefined'?Object.assign({},defaultVoiceSettings,v):Object.assign({},defaultVoiceSettings); }
     function saveVoiceSettings(v){ saveJSON(KEYS.voiceSettings, v); }
 
@@ -3300,7 +3300,7 @@
       var vs = loadVoiceSettings();
       var isEdge = vs.provider === 'edge';
       var currentVoice = EDGE_VOICES.find(function(v){ return v.id === vs.edgeVoice; }) || EDGE_VOICES[0];
-      var rateLabels = {'-10%':'慢一点','+0%':'正常','+10%':'快一点'};
+      var rateLabels = {'+0%':'慢一点','+10%':'正常','+25%':'快一点'};
       return '<div class="settings-page">'+
         '<div class="settings-card">'+
           '<button class="settings-toggle-row" id="voiceToggleRow" data-on="'+(vs.enabled?'1':'0')+'"><span class="settings-toggle-text"><span class="settings-toggle-title">语音开关</span><span class="settings-toggle-desc">'+(vs.enabled?'已开启':'已关闭')+'</span></span><span class="settings-toggle-switch'+(vs.enabled?' on':'')+'"><span class="settings-toggle-knob"></span></span></button>'+
@@ -3323,9 +3323,9 @@
         '<div class="settings-card">'+
           '<div class="settings-card-title">语速</div>'+
           '<div class="voice-provider-pills">'+
-            '<button class="voice-provider-pill'+(vs.rate==='-10%'?' active':'')+'" data-voice-rate="-10%">慢一点</button>'+
-            '<button class="voice-provider-pill'+(vs.rate==='+0%'?' active':'')+'" data-voice-rate="+0%">正常</button>'+
-            '<button class="voice-provider-pill'+(vs.rate==='+10%'?' active':'')+'" data-voice-rate="+10%">快一点</button>'+
+            '<button class="voice-provider-pill'+(vs.rate==='+0%'?' active':'')+'" data-voice-rate="+0%">慢一点</button>'+
+            '<button class="voice-provider-pill'+(vs.rate==='+10%'?' active':'')+'" data-voice-rate="+10%">正常</button>'+
+            '<button class="voice-provider-pill'+(vs.rate==='+25%'?' active':'')+'" data-voice-rate="+25%">快一点</button>'+
           '</div>'+
         '</div>'+
         '<button class="settings-btn primary" id="testVoiceBtn" style="margin-top:8px;width:100%">测试听音 — “你好，我是稻田 AI”</button>'+
