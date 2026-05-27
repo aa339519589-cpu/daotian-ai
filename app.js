@@ -1066,6 +1066,7 @@
       var willExtract = loadAutoExtract() && quickExtract(text);
       var assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now(),memoryNotice:!!willExtract};
       c.messages.push(assistant);
+      assistant._msgIdx = c.messages.length - 1; assistant._chatId = c.id;
       renderAll();
       var memoryNoticeTimer = null;
 
@@ -1136,6 +1137,11 @@
         assistant.thinking=false;
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); activeAbortController=null; generatingChatId=null; renderAll();
+      /* 后台预生成语音缓存 */
+      if(assistant && assistant.content && !assistant.thinking){
+        var _msgId = (assistant._chatId||c.id)+'_tts_'+(assistant._msgIdx||0);
+        preGenerateVoice(_msgId, assistant.content);
+      }
       if(willExtract){
         try{
           var _extracted = quickExtract(text);
@@ -4149,6 +4155,46 @@
 
 
 
+    /* ── Voice Cache & Pre-generation ── */
+    var _voiceCache = {};
+    async function preGenerateVoice(msgId, text){
+      if(!text || text.length < 3) return;
+      var vs = loadVoiceSettings();
+      if(!vs.enabled) return;
+      if(_voiceCache[msgId] && (_voiceCache[msgId].status==='ready'||_voiceCache[msgId].status==='loading')) return;
+      _voiceCache[msgId] = {status:'loading', blob:null, error:null};
+      try{
+        var ttsBody = {text:text, provider:vs.provider, voice:vs.edgeVoice, rate:vs.rate};
+        if(vs.provider==='fish'){ ttsBody.fishAudioApiKey=vs.fishAudioApiKey; ttsBody.fishAudioReferenceId=vs.fishAudioReferenceId; }
+        var chunks = []; var remaining = text;
+        while(remaining.length > 0){
+          if(remaining.length <= 500){ chunks.push(remaining); break; }
+          var slice = remaining.slice(0,500);
+          var brk = Math.max(slice.lastIndexOf('。'), slice.lastIndexOf('！'), slice.lastIndexOf('？'), slice.lastIndexOf('；'), slice.lastIndexOf('\n'), slice.lastIndexOf('，'), slice.lastIndexOf('、'));
+          if(brk < 50) brk = 500;
+          chunks.push(remaining.slice(0, brk+1));
+          remaining = remaining.slice(brk+1);
+        }
+        chunks = chunks.filter(function(c){ return c.trim().length >= 3; });
+        var firstBlob = null;
+        for(var ci=0; ci<chunks.length; ci++){
+          var ttsB = {text:chunks[ci], provider:vs.provider, voice:vs.edgeVoice, rate:vs.rate};
+          if(vs.provider==='fish'){ ttsB.fishAudioApiKey=vs.fishAudioApiKey; ttsB.fishAudioReferenceId=vs.fishAudioReferenceId; }
+          var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ttsB)});
+          if(!res.ok) throw new Error('TTS failed: '+res.status);
+          var blob = await res.blob();
+          if(!firstBlob) firstBlob = blob;
+        }
+        if(firstBlob){
+          _voiceCache[msgId] = {status:'ready', blob:firstBlob, error:null};
+        }else{
+          _voiceCache[msgId] = {status:'error', blob:null, error:'No audio'};
+        }
+      }catch(e){
+        _voiceCache[msgId] = {status:'error', blob:null, error:e.message};
+      }
+    }
+
     /* ── TTS Engine ── */
     var _ttsCache = {};
     var _ttsAudio = null;
@@ -4158,6 +4204,20 @@
       if(!btn) return;
       var vs = loadVoiceSettings();
       if(!vs.enabled){ toast('语音功能已关闭'); return; }
+      /* 检查缓存：如果有预生成的音频，直接播放 */
+      var cached = _voiceCache[idx];
+      if(cached && cached.status === 'ready' && cached.blob){
+        if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
+        _ttsPlayingIdx = idx;
+        btn.classList.add('playing');
+        var a = new Audio(URL.createObjectURL(cached.blob));
+        _ttsAudio = a;
+        a.onended = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing'); };
+        a.onerror = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing'); };
+        a.play().catch(function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing'); });
+        return;
+      }
+      if(cached && cached.status === 'loading'){ toast('语音正在生成中...'); return; }
       var msgEl = btn.closest('.message');
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
