@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.17",
+    "edge-tts": "^1.0.1",
     "mammoth": "^1.12.0",
+    "node-edge-tts": "^1.2.10",
     "pdf-parse": "^2.4.5",
     "ws": "^8.21.0",
     "xlsx": "^0.18.5"
