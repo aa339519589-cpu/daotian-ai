@@ -646,7 +646,6 @@ async function handleTts(req, res){
   }
   let text = String(body.text || "").trim();
   if(!text) return sendJson(res, 400, { error:"text_required" });
-  if(text.length > 1000) text = text.slice(0, 1000);
 
   const reqid = "tts_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,6);
   const voice = TTS_VOICE;

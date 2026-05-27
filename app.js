@@ -3895,7 +3895,12 @@
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
       if(!plainText || plainText.length < 3){ console.warn('[TTS] no text'); return; }
-      if(plainText.length > 1000) plainText = plainText.slice(0,1000);
+      /* Chunk if text exceeds API limit (~300 Chinese chars) */
+      var MAX_CHUNK = 300;
+      var chunks = [];
+      for(var ci=0; ci<plainText.length; ci+=MAX_CHUNK){
+        chunks.push(plainText.slice(ci, ci+MAX_CHUNK));
+      }
 
       if(_ttsPlayingIdx === idx && _ttsAudio && !_ttsAudio.paused){
         _ttsAudio.pause(); btn.classList.remove('playing'); return;
@@ -3918,11 +3923,16 @@
 
       btn.classList.add('loading');
       try{
-        var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:plainText})});
-        var blob = await res.blob();
-        _ttsCache[idx] = blob;
+        var allBlobs = [];
+        for(var ci=0; ci<chunks.length; ci++){
+          var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunks[ci]})});
+          var blob = await res.blob();
+          allBlobs.push(blob);
+        }
+        var finalBlob = new Blob(allBlobs, {type:'audio/mpeg'});
+        _ttsCache[idx] = finalBlob;
         btn.classList.remove('loading');
-        var a2 = new Audio(URL.createObjectURL(blob));
+        var a2 = new Audio(URL.createObjectURL(finalBlob));
         a2.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
         _ttsAudio = a2; _ttsPlayingIdx = idx;
         a2.play(); btn.classList.add('playing');
