@@ -702,7 +702,7 @@ function serveStatic(req, res){
   const filePath = join(PUBLIC_DIR, relativePath);
   const contentTypes = { ".html":"text/html; charset=utf-8", ".css":"text/css; charset=utf-8", ".js":"application/javascript; charset=utf-8", ".json":"application/json; charset=utf-8" };
   const stream = createReadStream(filePath);
-  stream.on("open", ()=>{ res.writeHead(200, { "content-type": contentTypes[extname(filePath)] || "application/octet-stream" }); stream.pipe(res); });
+  stream.on("open", ()=>{ res.writeHead(200, { "content-type": contentTypes[extname(filePath)] || "application/octet-stream", "cache-control": "no-store, no-cache, must-revalidate" }); stream.pipe(res); });
   stream.on("error", ()=>sendJson(res, 404, { error:"not_found" }));
 }
 
