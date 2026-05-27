@@ -861,10 +861,15 @@
         if(!presets.length || !usable){
           popover.innerHTML = '<div style="padding:14px 12px;text-align:center;opacity:.56">请先添加模型</div><div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div></span></button>';
         }else{
-          popover.innerHTML = presets.map(function(p){
+          /* 按model去重 */
+          var seenModels = {};
+          var unique = [];
+          for(var pi=0; pi<presets.length; pi++){
+            if(!seenModels[presets[pi].model]){ seenModels[presets[pi].model]=true; unique.push(presets[pi]); }
+          }
+          popover.innerHTML = unique.map(function(p){
             var active = p.id === settings.activePresetId;
             var shortName = p.model||'';
-            /* 常用模型简称映射 */
             var shortMap = {'deepseek-chat':'Chat','deepseek-v4-pro':'Pro','deepseek-v4-flash':'Flash','deepseek-reasoner':'Reasoner'};
             if(shortMap[shortName]) shortName = shortMap[shortName];
             return '<button class="model-option'+(active?' selected':'')+'" data-model-preset="'+escapeHTML(p.id)+'"><span class="model-option-check">'+(active?'✓':'')+'</span><span><div class="model-option-title">'+escapeHTML(shortName)+'</div></span></button>';
@@ -4012,7 +4017,7 @@
       }
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
-    $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
+    $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings;
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:[]}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
@@ -4252,22 +4257,40 @@
     var _ttsCache = {};
     var _ttsAudio = null;
     var _ttsPlayingIdx = null;
+    var _ttsPausedAt = 0;
 
     async function handleTtsClick(idx, btn){
       if(!btn) return;
       var vs = loadVoiceSettings();
       if(!vs.enabled){ toast('语音功能已关闭'); return; }
-      /* 检查缓存：如果有预生成的音频，直接播放 */
+      /* 同一按钮：播放中 → 暂停；暂停中 → 继续 */
+      if(_ttsPlayingIdx === idx && _ttsAudio){
+        if(!_ttsAudio.paused){
+          _ttsAudio.pause(); _ttsPausedAt = _ttsAudio.currentTime;
+          btn.classList.remove('playing'); btn.classList.add('paused');
+          return;
+        }else{
+          _ttsAudio.currentTime = _ttsPausedAt;
+          _ttsAudio.play();
+          btn.classList.remove('paused'); btn.classList.add('playing');
+          return;
+        }
+      }
+      /* 不同按钮：停止旧的，播新的 */
+      if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
+      _ttsPlayingIdx = null; _ttsPausedAt = 0;
+      var prevBtns = document.querySelectorAll('.tts-play-btn.playing,.tts-play-btn.paused');
+      prevBtns.forEach(function(b){ b.classList.remove('playing','paused'); });
+      /* 检查缓存 */
       var cached = _voiceCache[idx];
       if(cached && cached.status === 'ready' && cached.blob){
-        if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
         _ttsPlayingIdx = idx;
         btn.classList.add('playing');
         var a = new Audio(URL.createObjectURL(cached.blob));
         _ttsAudio = a;
-        a.onended = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing'); };
-        a.onerror = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing'); };
-        a.play().catch(function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing'); });
+        a.onended = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing','paused'); };
+        a.onerror = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing','paused'); };
+        a.play().catch(function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing','paused'); });
         return;
       }
       if(cached && cached.status === 'loading'){ toast('语音正在生成中...'); return; }
