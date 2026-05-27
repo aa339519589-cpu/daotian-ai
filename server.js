@@ -632,43 +632,72 @@ async function handleFileParse(req, res){
 async function handleTts(req, res){
   let body = {};
   try{ body = JSON.parse((await readBody(req)).toString("utf8") || "{}"); }catch(e){
-    return sendJson(res, 400, { error:"parse_error" });
+    return sendJson(res, 400, { ok:false, error:"parse_error" });
   }
   let text = String(body.text || "").trim();
-  if(!text) return sendJson(res, 400, { error:"text_required" });
+  if(!text) return sendJson(res, 400, { ok:false, error:"text_required" });
 
   /* Clean markdown/code for speech */
   text = text.replace(/```[\s\S]*?```/g,' ').replace(/`[^`]+`/g,' ');
   text = text.replace(/https?:\/\/\S+/g,' ').replace(/[#$%&*+<=>@\\^_|~]+/g,' ');
   text = text.replace(/\s+/g,' ').trim();
-  if(!text) return sendJson(res, 400, { error:"text_empty" });
+  if(!text) return sendJson(res, 400, { ok:false, error:"text_empty" });
 
-  /* Use Python edge-tts via child_process */
-  const { spawn } = await import("node:child_process");
-  const py = spawn("python3", ["-m", "edge_tts", "--voice", EDGE_TTS_VOICE, "--text", text, "--write-media", "-", "--rate=+0%"]);
+  const provider = String(body.provider || "edge").trim();
+  const voice = String(body.voice || EDGE_TTS_VOICE).trim();
+  const rate = String(body.rate || "+0%").trim();
 
-  const chunks = [];
-  py.stdout.on("data", c => chunks.push(c));
-  let stderr = "";
-  py.stderr.on("data", c => stderr += c.toString());
-
-  try{
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { py.kill(); reject(new Error("timeout")); }, 20000);
-      py.on("close", code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error("exit "+code)); });
-      py.on("error", e => { clearTimeout(timeout); reject(e); });
-    });
-
-    if(!chunks.length) throw new Error("no audio output");
-    const audioBuf = Buffer.concat(chunks);
-    if(audioBuf.length < 100) throw new Error("audio too small: "+audioBuf.length);
-    console.log(`[EdgeTTS] xiaoxiao: ${text.length} chars → ${audioBuf.length} bytes`);
-    res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(audioBuf.length) });
-    res.end(audioBuf);
-  }catch(err){
-    console.error("[EdgeTTS]", err.message, stderr.slice(0,200));
-    if(!res.headersSent) sendJson(res, 502, { error:"tts_error", message:"语音暂时不可用" });
+  /* Provider: Edge TTS */
+  if(provider === "edge"){
+    try{
+      const { spawn } = await import("node:child_process");
+      const py = spawn("python3", ["-m","edge_tts","--voice",voice,"--text",text,"--write-media","-","--rate="+rate]);
+      const chunks = []; py.stdout.on("data", c => chunks.push(c));
+      let stderr = ""; py.stderr.on("data", c => stderr += c.toString());
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => { py.kill(); reject(new Error("timeout")); }, 25000);
+        py.on("close", code => { clearTimeout(t); code===0?resolve():reject(new Error("exit "+code)); });
+        py.on("error", e => { clearTimeout(t); reject(e); });
+      });
+      if(!chunks.length) throw new Error("no audio");
+      const buf = Buffer.concat(chunks);
+      if(buf.length < 100) throw new Error("audio small: "+buf.length);
+      console.log(`[TTS:edge] ${voice} rate=${rate} ${text.length}c → ${buf.length}b`);
+      res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(buf.length) });
+      return res.end(buf);
+    }catch(e){
+      console.error("[TTS:edge]", e.message);
+      return sendJson(res, 502, { ok:false, error:"语音暂时不可用" });
+    }
   }
+
+  /* Provider: Fish Audio */
+  if(provider === "fish"){
+    const apiKey = String(body.fishAudioApiKey || "").trim();
+    const refId = String(body.fishAudioReferenceId || "").trim();
+    if(!apiKey || !refId) return sendJson(res, 400, { ok:false, error:"Fish Audio 未配置完整" });
+    try{
+      const fishRes = await fetch("https://api.fish.audio/v1/tts", {
+        method:"POST",
+        headers: { "Authorization":"Bearer "+apiKey, "Content-Type":"application/json" },
+        body: JSON.stringify({ text, reference_id: refId, format: "mp3" })
+      });
+      if(!fishRes.ok){
+        const et = await fishRes.text();
+        console.error("[TTS:fish] HTTP", fishRes.status, et.slice(0,200));
+        return sendJson(res, 502, { ok:false, error:"Fish Audio 请求失败" });
+      }
+      const fishBuf = Buffer.from(await fishRes.arrayBuffer());
+      console.log(`[TTS:fish] ref=${refId} ${text.length}c → ${fishBuf.length}b`);
+      res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(fishBuf.length) });
+      return res.end(fishBuf);
+    }catch(e){
+      console.error("[TTS:fish]", e.message);
+      return sendJson(res, 502, { ok:false, error:"语音暂时不可用" });
+    }
+  }
+
+  return sendJson(res, 400, { ok:false, error:"未知语音服务: "+provider });
 }
 
 function serveStatic(req, res){

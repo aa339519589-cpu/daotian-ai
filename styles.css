@@ -567,3 +567,13 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 @media(max-width:760px){
   .memory-notice{max-width:calc(100vw - 36px);font-size:12px}
 }
+
+/* ── Voice Settings ── */
+.voice-provider-pills{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.voice-provider-pill{height:36px;padding:0 16px;border-radius:18px;border:1px solid var(--line);background:rgba(127,127,127,.06);color:var(--muted);font-size:13px;cursor:pointer;transition:all .12s}
+.voice-provider-pill.active{color:var(--text);border-color:rgba(220,128,98,.4);background:rgba(220,128,98,.12)}
+.voice-provider-pill:hover{background:rgba(127,127,127,.1)}
+.ss-input{height:46px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.06);padding:0 14px;color:var(--text);font-size:14px;width:100%;outline:0}
+.ss-input:focus{border-color:rgba(220,128,98,.4)}
+[data-theme="dark"] .ss-input{background:rgba(0,0,0,.16)}
+

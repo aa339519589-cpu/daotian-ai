@@ -64,7 +64,23 @@
       autoScroll:'daotian.autoScroll.v1',
       themeMode:'daotian.themeMode.v1',
       fontSize:'daotian.fontSize.v1',
+      voiceSettings:'daotian.voiceSettings.v1',
     };
+
+    /* Voice data */
+    var EDGE_VOICES = [
+      {id:'zh-CN-XiaoxiaoNeural',label:'小小',desc:'女声 · 普通话'},
+      {id:'zh-CN-XiaoyiNeural',label:'晓伊',desc:'女声 · 普通话'},
+      {id:'zh-CN-YunxiNeural',label:'云希',desc:'男声 · 普通话'},
+      {id:'zh-CN-YunjianNeural',label:'云健',desc:'男声 · 普通话'},
+      {id:'zh-CN-YunyangNeural',label:'云扬',desc:'男声 · 普通话'},
+      {id:'zh-TW-HsiaoChenNeural',label:'台湾晓臻',desc:'女声 · 台湾普通话'},
+      {id:'zh-TW-HsiaoYuNeural',label:'台湾晓雨',desc:'女声 · 台湾普通话'},
+      {id:'zh-TW-YunJheNeural',label:'台湾云哲',desc:'男声 · 台湾普通话'}
+    ];
+    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+0%',fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:'湾湾小河'};
+    function loadVoiceSettings(){ var v = readJSON(KEYS.voiceSettings, null); return v&&typeof v.enabled!=='undefined'?Object.assign({},defaultVoiceSettings,v):Object.assign({},defaultVoiceSettings); }
+    function saveVoiceSettings(v){ saveJSON(KEYS.voiceSettings, v); }
 
     const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
     const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'', memoryInjection:true };
@@ -3189,6 +3205,10 @@
         if(title) title.textContent = '聊天偏好';
         if(backBtn) backBtn.style.display = 'flex';
         body.innerHTML = renderChatPrefsPage();
+      }else if(settingsPage === 'voiceSettings'){
+        if(title) title.textContent = '语音功能';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderVoiceSettingsPage();
       }
     }
 
@@ -3204,6 +3224,7 @@
         settingsEntry('记忆设置','跨聊天记忆与提取','memory','♡')+
         settingsEntry('个性化','系统提示词与风格','personalization','✎')+
         settingsEntry('聊天偏好','流式输出、自动滚动、Token','chatPrefs','☰')+
+        settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','🔊')+
       '</div>';
     }
 
@@ -3272,6 +3293,43 @@
         settingsToggle('自动滚动跟随', '回复生成时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
         settingsToggle('显示 Token 消耗', '在消息下方显示输入和输出消耗', loadTokenDisplay(), 'tokenDisplay')+
         settingsToggle('记忆注入', '发送请求时注入相关记忆', loadMemoryGlobal(), 'memoryGlobal')+
+      '</div>';
+    }
+
+    function renderVoiceSettingsPage(){
+      var vs = loadVoiceSettings();
+      var isEdge = vs.provider === 'edge';
+      var currentVoice = EDGE_VOICES.find(function(v){ return v.id === vs.edgeVoice; }) || EDGE_VOICES[0];
+      var rateLabels = {'-10%':'慢一点','+0%':'正常','+10%':'快一点'};
+      return '<div class="settings-page">'+
+        '<div class="settings-card">'+
+          '<div class="settings-card-title">语音开关</div>'+
+          '<button class="pill voice-enabled-toggle" data-voice-enabled="'+(vs.enabled?'1':'0')+'">'+(vs.enabled?'已开启':'已关闭')+'</button>'+
+        '</div>'+
+        '<div class="settings-card">'+
+          '<div class="settings-card-title">语音服务</div>'+
+          '<div class="voice-provider-pills">'+
+            '<button class="voice-provider-pill'+(isEdge?' active':'')+'" data-voice-provider="edge">Edge TTS（免费）</button>'+
+            '<button class="voice-provider-pill'+(isEdge?'':' active')+'" data-voice-provider="fish">Fish Audio（自填API）</button>'+
+          '</div>'+
+        '</div>'+
+        (isEdge ? '<div class="settings-card"><div class="settings-card-title">声音选择</div>'+
+          EDGE_VOICES.map(function(ev){ return '<div class="ss-radio-row'+(ev.id===vs.edgeVoice?' active':'')+'" data-voice-id="'+escapeHTML(ev.id)+'" data-voice-label="'+escapeHTML(ev.label)+'"><div class="ss-radio-dot"></div><div><div class="ss-radio-label">'+escapeHTML(ev.label)+'</div><div class="ss-radio-hint">'+escapeHTML(ev.desc)+'</div></div></div>'; }).join('')+
+        '</div>' : '')+
+        (!isEdge ? '<div class="settings-card"><div class="settings-card-title">Fish Audio 设置</div>'+
+          '<div class="field"><label>API Key</label><input type="password" class="ss-input" id="fishApiKey" value="'+escapeHTML(vs.fishAudioApiKey)+'" placeholder="请输入 Fish Audio API Key"></div>'+
+          '<div class="field"><label>Reference ID</label><input type="text" class="ss-input" id="fishRefId" value="'+escapeHTML(vs.fishAudioReferenceId)+'" placeholder="请输入声音 reference_id"></div>'+
+          '<div class="field"><label>声音备注名</label><input type="text" class="ss-input" id="fishVoiceName" value="'+escapeHTML(vs.fishAudioVoiceName)+'" placeholder="例如：湾湾小河"></div>'+
+        '</div>' : '')+
+        '<div class="settings-card">'+
+          '<div class="settings-card-title">语速</div>'+
+          '<div class="voice-provider-pills">'+
+            '<button class="voice-provider-pill'+(vs.rate==='-10%'?' active':'')+'" data-voice-rate="-10%">慢一点</button>'+
+            '<button class="voice-provider-pill'+(vs.rate==='+0%'?' active':'')+'" data-voice-rate="+0%">正常</button>'+
+            '<button class="voice-provider-pill'+(vs.rate==='+10%'?' active':'')+'" data-voice-rate="+10%">快一点</button>'+
+          '</div>'+
+        '</div>'+
+        '<button class="settings-btn primary" id="testVoiceBtn" style="margin-top:8px;width:100%">测试听音 — “你好，我是稻田 AI”</button>'+
       '</div>';
     }
 
@@ -3408,6 +3466,16 @@
     });
     /* 参数文本域 input 事件 */
     document.addEventListener('input', function(e){
+      /* Fish Audio input auto-save */
+      if(e.target.closest('#fishApiKey')){
+        var vs = loadVoiceSettings(); vs.fishAudioApiKey = e.target.value; saveVoiceSettings(vs); return;
+      }
+      if(e.target.closest('#fishRefId')){
+        var vs = loadVoiceSettings(); vs.fishAudioReferenceId = e.target.value; saveVoiceSettings(vs); return;
+      }
+      if(e.target.closest('#fishVoiceName')){
+        var vs = loadVoiceSettings(); vs.fishAudioVoiceName = e.target.value; saveVoiceSettings(vs); return;
+      }
       if(e.target.closest('#fontSizeSlider')){
         var v = parseInt(e.target.value); applyFontSize(v); saveFontSize(v);
         var label = v <= 14 ? '小' : v <= 17 ? '中' : v >= 20 ? '大' : v+'px';
@@ -3605,10 +3673,100 @@
         if(page) settingsGoTo(page);
         return;
       }
+      /* Voice: provider pills */
+      var vpPill = e.target.closest('.voice-provider-pill');
+      if(vpPill){
+        var prov = vpPill.getAttribute('data-voice-provider');
+        var rate = vpPill.getAttribute('data-voice-rate');
+        if(prov){
+          var vs = loadVoiceSettings();
+          vs.provider = prov;
+          saveVoiceSettings(vs);
+          renderSettingsPage();
+        }
+        if(rate){
+          var vs2 = loadVoiceSettings();
+          vs2.rate = rate;
+          saveVoiceSettings(vs2);
+          renderSettingsPage();
+        }
+        return;
+      }
+      /* Voice: sound selection radio */
+      var voiceRadio = e.target.closest('[data-voice-id]');
+      if(voiceRadio){
+        var vid = voiceRadio.getAttribute('data-voice-id');
+        var vlbl = voiceRadio.getAttribute('data-voice-label');
+        if(vid){
+          var vs = loadVoiceSettings();
+          vs.edgeVoice = vid;
+          vs.edgeVoiceLabel = vlbl || vid;
+          saveVoiceSettings(vs);
+          renderSettingsPage();
+          toast('已切换为 '+vlbl);
+        }
+        return;
+      }
+      /* Voice: enabled toggle */
+      var veToggle = e.target.closest('.voice-enabled-toggle');
+      if(veToggle){
+        var vs = loadVoiceSettings();
+        vs.enabled = !vs.enabled;
+        saveVoiceSettings(vs);
+        veToggle.setAttribute('data-voice-enabled', vs.enabled?'1':'0');
+        veToggle.textContent = vs.enabled?'已开启':'已关闭';
+        if(vs.enabled){ veToggle.classList.add('active'); }else{ veToggle.classList.remove('active'); }
+        return;
+      }
+      /* Test voice button */
+      var testBtn = e.target.closest('#testVoiceBtn');
+      if(testBtn){
+        var vs = loadVoiceSettings();
+        testBtn.textContent = '正在生成...';
+        testBtn.disabled = true;
+        var ttsBody = {text:'你好，我是稻田 AI。',provider:vs.provider,voice:vs.edgeVoice,rate:vs.rate};
+        if(vs.provider==='fish'){ ttsBody.fishAudioApiKey = vs.fishAudioApiKey; ttsBody.fishAudioReferenceId = vs.fishAudioReferenceId; }
+        if(vs.provider==='fish' && (!vs.fishAudioApiKey||!vs.fishAudioReferenceId)){
+          testBtn.textContent = '测试听音 — "你好，我是稻田 AI"';
+          testBtn.disabled = false;
+          toast('请先填写 Fish Audio API Key 和 Reference ID');
+          return;
+        }
+        (async function(){
+          try{
+            var tres = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ttsBody)});
+            if(!tres.ok){ throw new Error('TTS failed'); }
+            var tblob = await tres.blob();
+            var ta = new Audio(URL.createObjectURL(tblob));
+            ta.play();
+            testBtn.textContent = '测试听音 — "你好，我是稻田 AI"';
+            testBtn.disabled = false;
+          }catch(terr){
+            testBtn.textContent = '测试听音 — "你好，我是稻田 AI"';
+            testBtn.disabled = false;
+            toast('语音暂时不可用');
+          }
+        })();
+        return;
+      }
+      /* Fish Audio input changes */
+      var fishInput = e.target.closest('#fishApiKey,#fishRefId,#fishVoiceName');
+      if(!fishInput && e.target.matches && (e.target.id==='fishApiKey'||e.target.id==='fishRefId'||e.target.id==='fishVoiceName')){ return; }
       var radio = e.target.closest('.settings-radio-row');
       if(radio){
         var mode = radio.getAttribute('data-theme-mode');
         if(mode){ saveThemeMode(mode); theme = resolveTheme(); renderAll(); renderSettingsPage(); toast(mode==='system'?'已切换为跟随系统':mode==='light'?'已切换为浅色':'已切换为深色'); }
+        /* Voice selection via radio */
+        var vid2 = radio.getAttribute('data-voice-id');
+        if(vid2){
+          var vlbl2 = radio.getAttribute('data-voice-label');
+          var vs3 = loadVoiceSettings();
+          vs3.edgeVoice = vid2;
+          vs3.edgeVoiceLabel = vlbl2 || vid2;
+          saveVoiceSettings(vs3);
+          renderSettingsPage();
+          toast('已切换为 '+vlbl2);
+        }
         return;
       }
       var toggle = e.target.closest('.settings-toggle-row');
@@ -3891,6 +4049,8 @@
 
     async function handleTtsClick(idx, btn){
       if(!btn) return;
+      var vs = loadVoiceSettings();
+      if(!vs.enabled){ toast('语音功能已关闭'); return; }
       var msgEl = btn.closest('.message');
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
@@ -3924,6 +4084,10 @@
         var firstBlob = null;
         for(var ci=0; ci<chunks.length && !stopped; ci++){
           var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunks[ci]})});
+            var vs = loadVoiceSettings();
+          var ttsBody = {text:chunks[ci], provider:vs.provider, voice:vs.edgeVoice, rate:vs.rate};
+          if(vs.provider==='fish'){ ttsBody.fishAudioApiKey=vs.fishAudioApiKey; ttsBody.fishAudioReferenceId=vs.fishAudioReferenceId; }
+          var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ttsBody)});
           if(!res.ok){ consecutiveFails++; if(consecutiveFails>=2){ stop(); btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); break; } continue; }
           consecutiveFails = 0;
           var blob = await res.blob();
