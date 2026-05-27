@@ -435,7 +435,7 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .settings-entry-desc{font-size:14px;font-weight:400;color:var(--muted);line-height:1.45;opacity:.58}
 .settings-entry-arrow{font-size:18px;color:var(--muted);flex:0 0 auto}
 .settings-page{display:flex;flex-direction:column;gap:12px}
-.settings-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.05);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.settings-card{background:rgba(127,127,127,.04);border:1px solid rgba(127,127,127,.05);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
 .settings-card-title{font-size:13px;font-weight:650;color:var(--muted);margin-bottom:4px}
 .settings-radio-row,.settings-toggle-row{display:flex;align-items:center;gap:12px;padding:14px 12px;border-radius:14px;background:transparent;border:none;color:var(--text);cursor:pointer;text-align:left;width:100%;transition:background .1s}
 .settings-radio-row:hover,.settings-toggle-row:hover{background:rgba(255,255,255,.03)}

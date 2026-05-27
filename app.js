@@ -153,11 +153,11 @@
         'textarea,.field input,.field select,input[type="text"],input[type="password"]{font-size:'+Math.round(18*s)+'px!important}'+
         '.model-top-trigger{font-size:'+Math.round(18*s)+'px!important}'+
         '.plus-menu-item{font-size:'+Math.round(14*s)+'px!important}'+
-        '.chat-title{font-size:'+Math.round(14*s)+'px!important}'+
-        '.chat-time{font-size:'+Math.round(12*s)+'px!important}'+
-        '.pill{font-size:'+Math.round(13*s)+'px!important}'+
-        '.new-chat-btn{font-size:'+Math.round(14*s)+'px!important}'+
-        '.field label{font-size:'+Math.round(14*s)+'px!important}'+
+        '.chat-title{font-size:'+Math.round(16*s)+'px!important}'+
+        '.chat-time{font-size:'+Math.round(13*s)+'px!important}'+
+        '.pill{font-size:'+Math.round(14*s)+'px!important}'+
+        '.new-chat-btn{font-size:'+Math.round(15*s)+'px!important}'+
+        '.field label{font-size:'+Math.round(15*s)+'px!important}'+
         '.model-option-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.model-option-subtitle{font-size:'+Math.round(12*s)+'px!important}'+
         '.settings-entry-title{font-size:'+Math.round(15*s)+'px!important}'+
@@ -165,8 +165,8 @@
         '.settings-radio-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.settings-toggle-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.hint,.settings-entry-desc,.settings-radio-desc,.settings-toggle-desc,.settings-card-hint{font-size:'+Math.round(13*s)+'px!important}'+
-        '.side-bottom-btn{font-size:'+Math.round(13*s)+'px!important}'+
-        '.sidebar-label{font-size:'+Math.round(14*s)+'px!important}'+
+        '.side-bottom-btn{font-size:'+Math.round(14*s)+'px!important}'+
+        '.sidebar-label{font-size:'+Math.round(15*s)+'px!important}'+
         '.preset-card-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.fetch-models-btn{font-size:'+Math.round(13*s)+'px!important}'+
         '.manual-add-toggle{font-size:'+Math.round(13*s)+'px!important}'+
@@ -235,18 +235,7 @@
       p = p && typeof p === 'object' ? p : {};
       const providerName = String(p.providerName || p.name || p.label || defaultSettings.providerName || 'DeepSeek').trim() || 'DeepSeek';
       const baseUrl = String(p.baseUrl || defaultSettings.baseUrl || '').trim();
-      /* 模型来源：models 数组 > modelList > model 单数字段（兼容旧数据），都不存在则为空 */
-      var rawModels;
-      if(Array.isArray(p.models)) rawModels = p.models;
-      else if(Array.isArray(p.modelList)) rawModels = p.modelList;
-      else if(p.model) rawModels = splitModels(p.model);
-      else rawModels = [];
-      var models = [];
-      var seenM = {};
-      for(var mi=0; mi<rawModels.length; mi++){
-        var m = String(rawModels[mi]||'').trim();
-        if(m && !seenM[m]){ seenM[m]=true; models.push(m); }
-      }
+      const models = splitModels(p.models || p.modelList || p.model || '');
       const id = String(p.id || p.providerId || makeProviderId(providerName, baseUrl, i)).trim();
       return {
         id,
@@ -255,10 +244,10 @@
         baseUrl,
         apiKey: String(p.apiKey || '').trim(),
         path: String(p.path || p.requestPath || defaultSettings.path || '/v1/chat/completions').trim() || '/v1/chat/completions',
-        models: models
+        models: models.length ? Array.from(new Set(models)) : []
       };
     }
-    /* 合并重复 provider：同 name+baseUrl → 合并 models 去重，保留最新的 apiKey */
+    /* 合并重复 provider：同 name+baseUrl → 合并 models 去重 */
     function normalizeProviders(providers){
       if(!Array.isArray(providers)) return [];
       var merged = []; var seen = {};
@@ -338,7 +327,6 @@
       return groups.map(normalizeProvider);
     }
     function legacyProviders(base){
-      /* 仅在首次使用时创建默认 provider，models 必须为空！不允许自动注入模型 */
       var provider = normalizeProvider({
         id:'p_legacy_0',
         providerType: base.providerType || 'openai',
@@ -346,7 +334,7 @@
         baseUrl: base.baseUrl || defaultSettings.baseUrl,
         apiKey: base.apiKey || '',
         path: base.path || '/v1/chat/completions',
-        models: []
+        models: splitModels(base.model || base.models || 'deepseek-chat')
       }, 0);
       return [provider];
     }
@@ -3175,7 +3163,7 @@
           providerType: val('providerType'), providerName: val('providerName'), baseUrl: val('baseUrl'),
           apiKey: val('apiKey'), path: val('path'), models: deduped
         }, i);
-      }).filter(p=>p);
+      }).filter(function(p){ return p && p.models && p.models.length; });
       if(!providers.length) providers.push(normalizeProvider(defaultSettings,0));
       providers = normalizeProviders(providers);
       settings.modelProviders = providers;
@@ -3272,10 +3260,11 @@
         closeSettings();
         if(hasUsableModelConfig()){ toast('配置已保存'); }else{ toast('已保存，但缺少 API Key'); }
       }catch(e){
+        console.error('[saveSettings] 保存失败:', e);
         saveBtn.textContent = '保存失败';
         saveBtn.disabled = false;
         setTimeout(function(){ saveBtn.textContent = originalText; saveBtn.disabled = false; }, 1500);
-        toast('保存失败，请检查配置');
+        toast('保存失败：' + (e.message || '未知错误'));
       }
     }
     /* 通用保存按钮状态机 */
@@ -3984,6 +3973,24 @@
         }
         return;
       }
+      /* Manual add model button */
+      var manAdd = e.target.closest('[data-manual-toggle]');
+      if(manAdd){
+        var pid2 = manAdd.getAttribute('data-manual-toggle');
+        var card2 = document.querySelector('[data-provider-id="'+pid2+'"]');
+        if(card2){
+          var modelName = prompt('输入模型名称（如 deepseek-v4-pro）：');
+          if(modelName && modelName.trim()){
+            var ta = card2.querySelector('[data-provider-field="models"]');
+            if(ta){
+              var currentModels = ta.value.trim();
+              ta.value = currentModels ? currentModels + '\n' + modelName.trim() : modelName.trim();
+              toast('已添加 ' + modelName.trim());
+            }
+          }
+        }
+        return;
+      }
       /* Fetch models button */
       var fetchBtn = e.target.closest('[data-fetch-models]');
       if(fetchBtn){
@@ -4018,7 +4025,7 @@
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings;
-    $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:[]}, n)); renderProviderEditor(); };
+    $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
