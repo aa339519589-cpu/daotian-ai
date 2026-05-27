@@ -845,12 +845,16 @@
       if(popover){
         var presets = modelPresets();
         if(!presets.length || !usable){
-          popover.innerHTML = '<div style="padding:16px 12px;text-align:center;font-size:14px;opacity:.56">尚未配置模型，请先在设置中添加模型提供方</div><div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">添加模型提供方</div></span></button>';
+          popover.innerHTML = '<div style="padding:14px 12px;text-align:center;opacity:.56">请先添加模型</div><div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div></span></button>';
         }else{
           popover.innerHTML = presets.map(function(p){
             var active = p.id === settings.activePresetId;
-            return '<button class="model-option'+(active?' selected':'')+'" data-model-preset="'+escapeHTML(p.id)+'"><span class="model-option-check">'+(active?'✓':'')+'</span><span><div class="model-option-title">'+escapeHTML(p.label||p.model)+'</div><div class="model-option-subtitle">'+escapeHTML((p.providerName||'')+' · '+(p.model||''))+'</div></span></button>';
-          }).join('') + '<div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div><div class="model-option-subtitle">一个提供方多个模型</div></span></button>';
+            var shortName = p.model||'';
+            /* 常用模型简称映射 */
+            var shortMap = {'deepseek-chat':'Chat','deepseek-v4-pro':'Pro','deepseek-v4-flash':'Flash','deepseek-reasoner':'Reasoner'};
+            if(shortMap[shortName]) shortName = shortMap[shortName];
+            return '<button class="model-option'+(active?' selected':'')+'" data-model-preset="'+escapeHTML(p.id)+'"><span class="model-option-check">'+(active?'✓':'')+'</span><span><div class="model-option-title">'+escapeHTML(shortName)+'</div></span></button>';
+          }).join('') + '<div class="model-popover-divider"></div><button class="model-option" id="manageModels"><span class="model-option-check">›</span><span><div class="model-option-title">管理模型配置</div></span></button>';
         }
       }
     }
@@ -1028,6 +1032,8 @@
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       var params = getModelParams(cfg.id);
       var sysParts = [];
+      /* 全局规则：禁止 emoji，除非用户明确要求 */
+      sysParts.push('【全局规则】禁止使用 emoji、表情符号、emoji pictograms。回复中不要出现任何 emoji 字符，包括但不限于笑脸、手势、爱心、符号表情等。除非用户在当前对话中明确要求使用 emoji，否则一律不生成。');
       if(params && params.systemPrompt && params.systemPrompt.trim()){
         sysParts.push(params.systemPrompt.trim());
       }
@@ -3300,12 +3306,12 @@
 
     function renderSettingsHome(){
       return '<div class="settings-home">'+
-        settingsEntry('外观与主题','跟随系统 / 浅色 / 深色','appearance','☀')+
-        settingsEntry('模型与参数','模型、Temperature、Top P','model','⚙')+
-        settingsEntry('记忆设置','跨聊天记忆与提取','memory','♡')+
-        settingsEntry('个性化','系统提示词与风格','personalization','✎')+
-        settingsEntry('聊天偏好','流式输出、自动滚动、Token','chatPrefs','☰')+
-        settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','🔊')+
+        settingsEntry('外观与主题','跟随系统 / 浅色 / 深色','appearance','○')+
+        settingsEntry('模型与参数','模型、Temperature、Top P','model','◇')+
+        settingsEntry('记忆设置','跨聊天记忆与提取','memory','□')+
+        settingsEntry('个性化','系统提示词与风格','personalization','▽')+
+        settingsEntry('聊天偏好','流式输出、自动滚动、Token','chatPrefs','≡')+
+        settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','♪')+
       '</div>';
     }
 
@@ -4295,7 +4301,7 @@
         if(action === 'camera'){ var ci = document.getElementById('cameraInput'); if(ci) ci.click(); }
         else if(action === 'image'){ var ii = document.getElementById('imageInput'); if(ii) ii.click(); }
         else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
-        else if(action === 'search'){ searchOn=!searchOn; closePlusMenu(); updateSearchVisual(); }
+        else if(action === 'search'){ searchOn=!searchOn; updateSearchVisual(); }
         return;
       }
       if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){
