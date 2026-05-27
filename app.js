@@ -3333,7 +3333,7 @@
           '</div>'+
         '</div>'+
         '<button class=”settings-btn primary” id=”testVoiceBtn” style=”margin-top:8px;width:100%”>测试听音 — “你好，我是稻田 AI”</button>'+
-        '<button class=”settings-btn primary” id=”saveVoiceBtn” style=”margin-top:8px;width:100%;background:var(--accent);border-color:var(--accent);color:#fff”>保存设置</button>'+
+        '<button class=”settings-btn” id=”saveVoiceBtn” style=”margin-top:12px;width:100%;background:var(--accent);border-color:var(--accent);color:#fff;border-radius:999px;font-weight:600”>保存设置</button>'+
       '</div>';
     }
 
@@ -3472,13 +3472,13 @@
     document.addEventListener('input', function(e){
       /* Fish Audio input — update draft */
       if(e.target.closest('#fishApiKey')){
-        initVoiceDraft(); if(_voiceDraft) _voiceDraft.fishAudioApiKey = e.target.value; return;
+        if(_voiceDraft) _voiceDraft.fishAudioApiKey = e.target.value; return;
       }
       if(e.target.closest('#fishRefId')){
-        initVoiceDraft(); if(_voiceDraft) _voiceDraft.fishAudioReferenceId = e.target.value; return;
+        if(_voiceDraft) _voiceDraft.fishAudioReferenceId = e.target.value; return;
       }
       if(e.target.closest('#fishVoiceName')){
-        initVoiceDraft(); if(_voiceDraft) _voiceDraft.fishAudioVoiceName = e.target.value; return;
+        if(_voiceDraft) _voiceDraft.fishAudioVoiceName = e.target.value; return;
       }
       if(e.target.closest('#fontSizeSlider')){
         var v = parseInt(e.target.value); applyFontSize(v); saveFontSize(v);
@@ -3682,20 +3682,14 @@
       if(vpPill){
         var prov = vpPill.getAttribute('data-voice-provider');
         var rate = vpPill.getAttribute('data-voice-rate');
-        if(prov){
-          initVoiceDraft(); if(_voiceDraft) _voiceDraft.provider = prov;
-          renderSettingsPage();
-        }
-        if(rate){
-          if(_voiceDraft) _voiceDraft.rate = rate;
-          renderSettingsPage();
-        }
+        if(prov && _voiceDraft){ _voiceDraft.provider = prov; renderSettingsPage(); }
+        if(rate && _voiceDraft){ _voiceDraft.rate = rate; renderSettingsPage(); }
         return;
       }
       /* Voice: enabled toggle */
       var vtr = e.target.closest('#voiceToggleRow');
-      if(vtr){
-        initVoiceDraft(); if(_voiceDraft) _voiceDraft.enabled = !_voiceDraft.enabled;
+      if(vtr && _voiceDraft){
+        _voiceDraft.enabled = !_voiceDraft.enabled;
         renderSettingsPage();
         return;
       }
@@ -3745,9 +3739,10 @@
         if(mode){ saveThemeMode(mode); theme = resolveTheme(); renderAll(); renderSettingsPage(); toast(mode==='system'?'已切换为跟随系统':mode==='light'?'已切换为浅色':'已切换为深色'); }
         /* Voice selection via radio */
         var vid2 = radio.getAttribute('data-voice-id');
-        if(vid2){
+        if(vid2 && _voiceDraft){
           var vlbl2 = radio.getAttribute('data-voice-label');
-          initVoiceDraft(); if(_voiceDraft){ _voiceDraft.edgeVoice = vid2; _voiceDraft.edgeVoiceLabel = vlbl2 || vid2; }
+          _voiceDraft.edgeVoice = vid2;
+          _voiceDraft.edgeVoiceLabel = vlbl2 || vid2;
           renderSettingsPage();
         }
         return;
