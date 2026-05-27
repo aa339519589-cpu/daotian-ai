@@ -910,7 +910,7 @@
       }
     }
 
-    function openModelPopover(){ if(sidebarOpen) return; var p=$('#modelPopover'); if(p){ p.style.display=''; renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
+    function openModelPopover(){ var p=$('#modelPopover'); if(p){ p.style.display=''; renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
     function closeModelPopover(){ var p=$('#modelPopover'); if(p){ p.classList.remove('open'); p.style.display=''; } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
     function hideModelPopover(){ var p=$('#modelPopover'); if(p){ p.classList.remove('open'); p.style.display='none'; } }
     function toggleModelPopover(){ if(!hasUsableModelConfig()){ openSettings(); return; } var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
