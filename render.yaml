@@ -3,7 +3,7 @@ services:
     name: daotian-ai
     runtime: node
     plan: free
-    buildCommand: npm install && pip3 install edge-tts
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
     envVars:
