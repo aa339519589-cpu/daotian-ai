@@ -3112,7 +3112,7 @@
         <div class="preset-card-head"><div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供方')}</div><button class="preset-del" type="button" data-provider-delete="${escapeHTML(provider.id)}">删除</button></div>
         <div class="row"><div class="field"><label>提供方名称</label><input data-provider-field="providerName" value="${escapeHTML(provider.providerName)}" placeholder="DeepSeek / 小米 / OpenAI"></div><div class="field"><label>提供方类型</label><select data-provider-field="providerType"><option value="openai" ${provider.providerType==='openai'?'selected':''}>OpenAI 兼容</option><option value="gemini" ${provider.providerType==='gemini'?'selected':''}>Gemini</option><option value="anthropic" ${provider.providerType==='anthropic'?'selected':''}>Anthropic</option></select></div></div>
         <div class="field"><label>Base URL</label><input data-provider-field="baseUrl" value="${escapeHTML(provider.baseUrl)}" placeholder="https://api.deepseek.com"></div>
-        <div class="field"><label>API Key</label><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key"></div>
+        <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:16px;padding:4px" title="显示/隐藏">👁</button></div></div>
         <div class="field"><label>请求路径</label><input data-provider-field="path" value="${escapeHTML(provider.path)}" placeholder="/v1/chat/completions"></div>
         <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="margin-left:8px;color:var(--muted)"></span></div>
         <div class="fetch-models-results" data-fetch-results="${escapeHTML(provider.id)}" style="display:none;margin-top:8px;max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:8px">
@@ -3224,10 +3224,42 @@
       collectProviderEditor(); persist(); renderModelSwitcher();
     }
 
-    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
-    function closeSettings(){ $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
-    function saveSettings(){ collectProviderEditor(); syncModelState(); persist(); renderModelSwitcher(); closeSettings(); if(hasUsableModelConfig()){ toast('配置已保存'); }else{ toast('已保存，但缺少 API Key，请填写后主页才会显示模型'); } console.log('[settings] saved, usable:', hasUsableModelConfig(), 'providers:', JSON.stringify(settings.modelProviders.map(function(p){return {name:p.providerName,key:p.apiKey?'***':'EMPTY',models:p.models};}))); }
+    /* ── 模型提供方草稿管理 ── */
+    var _providerDraft = null;
+    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
+    function saveSettings(){
+      var saveBtn = $('#saveProviderBtn'); if(!saveBtn) saveBtn = document.getElementById('saveProvider');
+      /* 保存中状态 */
+      if(saveBtn){ saveBtn.textContent = '保存中...'; saveBtn.disabled = true; }
+      try{
+        collectProviderEditor();
+        syncModelState();
+        persist();
+        renderModelSwitcher();
+        _providerDraft = null;
+        if(saveBtn){ saveBtn.textContent = '已保存 ✓'; }
+        setTimeout(function(){ if(saveBtn) saveBtn.textContent = '保存'; if(saveBtn) saveBtn.disabled = false; }, 1000);
+        closeSettings();
+        if(hasUsableModelConfig()){ toast('配置已保存'); }else{ toast('已保存，但缺少 API Key'); }
+      }catch(e){
+        if(saveBtn){ saveBtn.textContent = '保存失败'; saveBtn.disabled = false; }
+        toast('保存失败，请检查配置');
+      }
+    }
     window.__saveSettings__ = saveSettings;
+    function deleteProvider(providerId){
+      var prov = settings.modelProviders.find(function(p){return p.id===providerId;});
+      if(!prov) return;
+      var name = prov.providerName || '模型提供方';
+      if(!confirm('确认删除 '+name+'？\n\n删除后该供应商下的所有模型都会从模型列表中移除。')) return;
+      settings.modelProviders = settings.modelProviders.filter(function(p){return p.id!==providerId;});
+      if(!settings.modelProviders.length){ settings.modelProviders = []; }
+      settings.modelPresets = providersToPresets(settings.modelProviders);
+      _providerDraft = null;
+      persist(); renderProviderEditor(); renderModelSwitcher();
+      toast('已删除 '+name);
+    }
 
     /* ── 统一设置系统 ── */
     var settingsPage = 'home';
@@ -3873,13 +3905,20 @@
       const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); safeClearAttachments(); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
       const providerDel=e.target.closest('[data-provider-delete]');
       if(providerDel){
-        collectProviderEditor();
-        const id=providerDel.getAttribute('data-provider-delete');
-        settings.modelProviders=settings.modelProviders.filter(p=>p.id!==id);
-        if(!settings.modelProviders.length) settings.modelProviders=[normalizeProvider(defaultSettings,0)];
-        settings.modelPresets=providersToPresets(settings.modelProviders);
-        if(!settings.modelPresets.some(p=>p.id===settings.activePresetId)) settings.activePresetId=settings.modelPresets[0].id;
-        renderProviderEditor();
+        e.stopPropagation();
+        var id=providerDel.getAttribute('data-provider-delete');
+        deleteProvider(id);
+      }
+      /* API Key 眼睛切换 */
+      var eyeBtn = e.target.closest('.api-key-eye');
+      if(eyeBtn){
+        e.stopPropagation();
+        var card = eyeBtn.closest('[data-provider-id]');
+        if(card){
+          var inp = card.querySelector('[data-provider-field="apiKey"]');
+          if(inp){ inp.type = inp.type === 'password' ? 'text' : 'password'; }
+        }
+        return;
       }
       /* Fetch models button */
       var fetchBtn = e.target.closest('[data-fetch-models]');
