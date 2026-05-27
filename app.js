@@ -471,6 +471,10 @@
       setItem(KEYS.active,activeId);
       saveJSON(KEYS.settings,settings);
     }
+    function persistModelSettingsStrict(){
+      syncLegacySettings();
+      saveJSONStrict(KEYS.settings, settings);
+    }
 
     /* ── Model state sync ── */
     function findFirstUsableProvider(){
@@ -3160,6 +3164,7 @@
       const box = $('#presetList');
       if(!box) return;
       settings = ensureSettingsShape(settings);
+      if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
       box.innerHTML = settings.modelProviders.map(providerTemplate).join('');
     }
 
@@ -3191,7 +3196,7 @@
 
     function collectProviderEditor(){
       const cards = Array.from(document.querySelectorAll('[data-provider-id]'));
-      const providers = cards.map(function(card, i){
+      var providers = cards.map(function(card, i){
         function val(name){ const el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
         var rawModels = splitModels(val('models'));
         /* 强制去重：去掉空白，用 Set 去重，保持顺序 */
@@ -3215,6 +3220,28 @@
         settings.activePresetId = settings.modelPresets[0].id;
       }
       syncLegacySettings();
+    }
+
+    function addProviderEditorCard(){
+      try{
+        collectProviderEditor();
+        if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
+        var n = settings.modelProviders.length + 1;
+        settings.modelProviders.push(normalizeProvider({
+          id:'p_custom_' + Date.now(),
+          providerType:'openai',
+          providerName:'新提供方 ' + n,
+          baseUrl:'',
+          apiKey:'',
+          path:'/v1/chat/completions',
+          models:[]
+        }, n));
+        renderProviderEditor();
+        setSaveProviderButtonState('idle');
+      }catch(err){
+        console.error('[provider] add failed:', err);
+        toast('添加提供方失败：' + (err.message || '未知错误'));
+      }
     }
 
     /* ── 通用获取模型列表 ── */
@@ -3303,7 +3330,7 @@
         await new Promise(function(resolve){ setTimeout(resolve, 250); });
         collectProviderEditor();
         syncModelState();
-        persist({strict:true});
+        persistModelSettingsStrict();
         renderModelSwitcher();
         _providerDraft = null;
         setSaveProviderButtonState('saved');
@@ -4034,10 +4061,18 @@
             if(ta){
               var currentModels = ta.value.trim();
               ta.value = currentModels ? currentModels + '\n' + modelName.trim() : modelName.trim();
+              collectProviderEditor();
+              renderModelSwitcher();
               toast('已添加 ' + modelName.trim());
             }
           }
         }
+        return;
+      }
+      var addProviderBtn = e.target.closest('#addPreset');
+      if(addProviderBtn){
+        e.preventDefault();
+        addProviderEditorCard();
         return;
       }
       /* Fetch models button */
@@ -4074,7 +4109,6 @@
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
-    $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
