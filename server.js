@@ -16,8 +16,8 @@ const publicChatLimits = new Map();
 const TTS_APP_ID = process.env.VOLCENGINE_TTS_APP_ID || "";
 const TTS_TOKEN = process.env.VOLCENGINE_TTS_ACCESS_TOKEN || "";
 const TTS_CLUSTER = process.env.VOLCENGINE_TTS_CLUSTER || "";
-const TTS_RESOURCE_ID = process.env.VOLCENGINE_TTS_RESOURCE_ID || "seed-tts-2.0";
-const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "zh_female_wenroushunv_uranus_bigtts";
+const TTS_RESOURCE_ID = process.env.VOLCENGINE_TTS_RESOURCE_ID || "";
+const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "BV705_streaming";
 const TTS_ENABLED = !!(TTS_APP_ID && TTS_TOKEN && TTS_CLUSTER);
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
