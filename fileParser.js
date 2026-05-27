@@ -9,6 +9,76 @@ const MAX_ZIP_FILES = 80;
 const MAX_ZIP_DEPTH = 4;
 const MAX_ZIP_TOTAL_SIZE = 40 * 1024 * 1024; // 40MB uncompressed total
 
+/* ── OCR lazy-load ── */
+let _tesseractWorker = null;
+async function _getTesseractWorker(){
+  if(_tesseractWorker === undefined){
+    try{
+      const Tesseract = (await import("tesseract.js")).default;
+      _tesseractWorker = await Tesseract.createWorker("chi_sim+eng");
+      console.log("[fileParser] Tesseract OCR worker ready (chi_sim+eng)");
+    }catch(e){
+      console.warn("[fileParser] Tesseract OCR unavailable:", e.message);
+      _tesseractWorker = null;
+    }
+  }
+  return _tesseractWorker;
+}
+
+let _pdf2img = undefined;
+async function _getPdf2img(){
+  if(_pdf2img === undefined){
+    try{
+      const mod = await import("pdf-to-img");
+      _pdf2img = mod.default || mod;
+    }catch(e){
+      _pdf2img = null;
+    }
+  }
+  return _pdf2img;
+}
+
+async function ocrPdf(buf, fileName){
+  const worker = await _getTesseractWorker();
+  if(!worker) return { text: "", error: "OCR 引擎未安装，请联系管理员安装 tesseract.js" };
+  const pdf2img = await _getPdf2img();
+  if(!pdf2img) return { text: "", error: "PDF 转图片引擎未安装" };
+
+  try{
+    const results = [];
+    const maxPages = 10; // limit OCR to first 10 pages for performance
+
+    // Convert PDF buffer to image pages
+    const converter = pdf2img(buf, { scale: 2 }); // 2x scale for better OCR
+    let pageNum = 0;
+
+    for await (const page of converter) {
+      pageNum++;
+      if(pageNum > maxPages) break;
+
+      try{
+        const imageBuffer = page.toBuffer ? page.toBuffer() : (Buffer.isBuffer(page) ? page : null);
+        if(!imageBuffer) continue;
+
+        const { data } = await worker.recognize(imageBuffer);
+        if(data && data.text && data.text.trim()){
+          results.push(data.text.trim());
+        }
+      }catch(e){
+        console.warn(`[fileParser] OCR page ${pageNum} failed:`, e.message);
+      }
+    }
+
+    const text = results.join("\n\n");
+    if(text.replace(/\s/g, "").length > 20){
+      return { text: textTruncate(text), pages: pageNum, status: "ocr_ok" };
+    }
+    return { text: "", pages: pageNum, status: "ocr_empty", error: "OCR 未能识别出有效文字，PDF 可能为纯图片、手写体或质量过低" };
+  }catch(e){
+    return { text: "", error: "OCR 处理失败：" + (e.message || "未知错误").slice(0,100) };
+  }
+}
+
 // ---- lazy parser loaders ----
 let _pdfParse = undefined;
 async function _getPdfParse() {
@@ -139,12 +209,31 @@ async function parsePdf(buf, fileName) {
     const hasText = text.replace(/\s/g, "").length > 20;
 
     if (!hasText) {
+      /* 尝试 OCR 兜底 */
+      console.log(`[fileParser] PDF "${fileName}" has no extractable text, attempting OCR...`);
+      const ocrResult = await ocrPdf(buf, fileName);
+      if(ocrResult.text && ocrResult.text.replace(/\s/g,"").length > 20){
+        console.log(`[fileParser] OCR success for "${fileName}": ${ocrResult.text.length} chars, ${ocrResult.pages} pages`);
+        return {
+          fileType: "pdf",
+          parseStatus: "ok",
+          text: textTruncate(ocrResult.text, MAX_TEXT_OUTPUT),
+          metadata: {
+            pages: ocrResult.pages || numpages || 0,
+            textLength: ocrResult.text.length,
+            ocr: true,
+            info: info && info.Title ? { title: info.Title, author: info.Author } : {}
+          },
+          warnings: ["该 PDF 为扫描件，已通过 OCR 识别文字"]
+        };
+      }
+      console.log(`[fileParser] OCR failed for "${fileName}": ${ocrResult.error || "no text"}`);
       return {
         fileType: "pdf",
         parseStatus: "empty",
         text: "",
         metadata: { pages: numpages || 0, hasText: false },
-        warnings: ["未提取到有效文本，可能是扫描件或图片型 PDF，需要 OCR 才能读取文字内容"]
+        warnings: ["该 PDF 是扫描版，OCR 识别失败。请换清晰版本或上传图片页。原因：" + (ocrResult.error || "无法提取文字")]
       };
     }
 
