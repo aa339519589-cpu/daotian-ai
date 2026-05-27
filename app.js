@@ -1106,9 +1106,9 @@
           if(!assistant.memoryNotice) renderMessages();
         });
         clearTimeout(timeoutId);
-        /* Clear attachments after sending */
+        /* Clear attachments after sending — must happen before renderAll */
         _attachments = [];
-        safeShowAttachPreview();
+        if(typeof showAttachPreview === 'function') showAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
@@ -1120,7 +1120,7 @@
           assistant.role='system'; assistant.content=''; assistant.thinking=false;
         }else{
           _attachments = [];
-          safeShowAttachPreview();
+          if(typeof showAttachPreview === 'function') showAttachPreview();
           assistant.role='error';
           var errMsg = err&&err.message?err.message:String(err);
           if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
@@ -1131,12 +1131,16 @@
           assistant.content = errMsg;
         }
         _attachments = [];
-        safeShowAttachPreview();
+        if(typeof showAttachPreview === 'function') showAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
       }
+      /* 确保附件区域已清空 + 滚动到底部 */
+      if(typeof showAttachPreview === 'function') showAttachPreview();
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); activeAbortController=null; generatingChatId=null; renderAll();
+      /* 发送后强制滚动到底部（多次延迟确保DOM更新后执行） */
+      if(typeof scrollLatest === 'function'){ scrollLatest(); }
       /* 后台预生成语音缓存 */
       if(assistant && assistant.content && !assistant.thinking){
         var _msgId = (assistant._chatId||c.id)+'_tts_'+(assistant._msgIdx||0);
