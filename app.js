@@ -1043,6 +1043,8 @@
         }
       }
       c.messages.push({role:'user',content:displayText,time:Date.now(),files:hasAttachments?_attachments.map(function(a){return{name:a.name,type:a.type,size:a.size};}):undefined}); if(!c.title || c.title==='新对话') c.title=(text||'文件对话').slice(0,28); c.updatedAt=Date.now(); input.value=''; input.style.height='44px'; input.style.overflowY='hidden'; sending=true; $('#sendBtn').disabled=true;
+      /* 立即清除附件预览，不等模型返回 */
+      if(hasAttachments){ _attachments = []; if(typeof showAttachPreview === 'function') showAttachPreview(); }
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       var params = getModelParams(cfg.id);
       var sysParts = [];
@@ -1120,9 +1122,6 @@
           if(!assistant.memoryNotice) renderMessages();
         });
         clearTimeout(timeoutId);
-        /* Clear attachments after sending — must happen before renderAll */
-        _attachments = [];
-        if(typeof showAttachPreview === 'function') showAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
@@ -1133,8 +1132,6 @@
         if(err&&err.message==='ABORTED'){
           assistant.role='system'; assistant.content=''; assistant.thinking=false;
         }else{
-          _attachments = [];
-          if(typeof showAttachPreview === 'function') showAttachPreview();
           assistant.role='error';
           var errMsg = err&&err.message?err.message:String(err);
           if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
@@ -1144,14 +1141,10 @@
           else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
           assistant.content = errMsg;
         }
-        _attachments = [];
-        if(typeof showAttachPreview === 'function') showAttachPreview();
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
       }
-      /* 确保附件区域已清空 */
-      if(typeof showAttachPreview === 'function') showAttachPreview();
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); activeAbortController=null; generatingChatId=null; renderAll();
       /* 发送后强制滚动到底部（多次延迟确保DOM更新+附件清空后重新计算高度） */
       var _msgBox = document.getElementById('messages');
