@@ -523,7 +523,7 @@
           <div class="composer-wrap">
             <div class="composer">
               <button class="plus-btn" id="plusBtn" title="添加附件">+</button>
-              <textarea id="input" placeholder="输入消息"></textarea>
+              <textarea id="input" placeholder=""></textarea>
               <button class="send" id="sendBtn">›</button>
             </div>
             <div class="attach-preview" id="attachPreview" style="display:none"></div>
@@ -910,8 +910,9 @@
       }
     }
 
-    function openModelPopover(){ var p=$('#modelPopover'); if(p){ renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
-    function closeModelPopover(){ var p=$('#modelPopover'); if(p) p.classList.remove('open'); var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
+    function openModelPopover(){ if(sidebarOpen) return; var p=$('#modelPopover'); if(p){ p.style.display=''; renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
+    function closeModelPopover(){ var p=$('#modelPopover'); if(p){ p.classList.remove('open'); p.style.display=''; } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
+    function hideModelPopover(){ var p=$('#modelPopover'); if(p){ p.classList.remove('open'); p.style.display='none'; } }
     function toggleModelPopover(){ if(!hasUsableModelConfig()){ openSettings(); return; } var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
     function closeModelMenu(){ closeModelPopover(); }
 
@@ -926,7 +927,7 @@
         document.head.appendChild(m);
       }
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
-      if(sidebarOpen) closeModelPopover();
+      if(sidebarOpen) hideModelPopover();
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
@@ -4186,7 +4187,7 @@
         return;
       }
     });
-    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat; $('#sidebarNewChat').onclick=startNewChat;
+    $('#closeSide').onclick=()=>{hideModelPopover(); sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{hideModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat; $('#sidebarNewChat').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
