@@ -223,7 +223,18 @@
       p = p && typeof p === 'object' ? p : {};
       const providerName = String(p.providerName || p.name || p.label || defaultSettings.providerName || 'DeepSeek').trim() || 'DeepSeek';
       const baseUrl = String(p.baseUrl || defaultSettings.baseUrl || '').trim();
-      const models = splitModels(p.models || p.modelList || '');
+      /* 模型来源：models 数组 > modelList > model 单数字段（兼容旧数据），都不存在则为空 */
+      var rawModels;
+      if(Array.isArray(p.models)) rawModels = p.models;
+      else if(Array.isArray(p.modelList)) rawModels = p.modelList;
+      else if(p.model) rawModels = splitModels(p.model);
+      else rawModels = [];
+      var models = [];
+      var seenM = {};
+      for(var mi=0; mi<rawModels.length; mi++){
+        var m = String(rawModels[mi]||'').trim();
+        if(m && !seenM[m]){ seenM[m]=true; models.push(m); }
+      }
       const id = String(p.id || p.providerId || makeProviderId(providerName, baseUrl, i)).trim();
       return {
         id,
@@ -232,8 +243,28 @@
         baseUrl,
         apiKey: String(p.apiKey || '').trim(),
         path: String(p.path || p.requestPath || defaultSettings.path || '/v1/chat/completions').trim() || '/v1/chat/completions',
-        models: Array.from(new Set(models))
+        models: models
       };
+    }
+    /* 合并重复 provider：同 name+baseUrl → 合并 models 去重，保留最新的 apiKey */
+    function normalizeProviders(providers){
+      if(!Array.isArray(providers)) return [];
+      var merged = []; var seen = {};
+      for(var i=0; i<providers.length; i++){
+        var p = providers[i]; if(!p) continue;
+        var key = (p.providerName||'').trim().toLowerCase() + '||' + (p.baseUrl||'').trim().toLowerCase();
+        if(seen[key] !== undefined){
+          var existing = merged[seen[key]];
+          if(p.apiKey && p.apiKey.trim()) existing.apiKey = p.apiKey;
+          for(var j=0; j<p.models.length; j++){
+            if(!existing.models.includes(p.models[j])) existing.models.push(p.models[j]);
+          }
+        }else{
+          seen[key] = merged.length;
+          merged.push({id:p.id, providerType:p.providerType, providerName:p.providerName, baseUrl:p.baseUrl, apiKey:p.apiKey, path:p.path, models:p.models.slice()});
+        }
+      }
+      return merged;
     }
     function presetFromProvider(provider, model, index){
       const id = provider.id + '__' + slugify(model);
@@ -295,30 +326,46 @@
       return groups.map(normalizeProvider);
     }
     function legacyProviders(base){
-      const provider = normalizeProvider({
+      /* 仅在首次使用时创建默认 provider，从旧版扁平字段或默认值拼装 */
+      var models = [];
+      if(base.model) models = splitModels(base.model);
+      else if(base.models) models = splitModels(base.models);
+      if(!models.length) models = ['deepseek-chat'];
+      var provider = normalizeProvider({
         id:'p_legacy_0',
-        providerType: base.providerType,
-        providerName: base.providerName,
-        baseUrl: base.baseUrl,
-        apiKey: base.apiKey,
-        path: base.path,
-        models: splitModels(base.models || base.modelList || '')
+        providerType: base.providerType || 'openai',
+        providerName: base.providerName || 'DeepSeek',
+        baseUrl: base.baseUrl || defaultSettings.baseUrl,
+        apiKey: base.apiKey || '',
+        path: base.path || '/v1/chat/completions',
+        models: models
       }, 0);
       return [provider];
     }
     function ensureSettingsShape(raw){
-      const base = Object.assign({}, defaultSettings, raw || {});
-      let providers = [];
+      var base = Object.assign({}, raw || {});
+      /* 确保 base 有默认字段但不覆盖已有值 */
+      if(!base.providerType) base.providerType = defaultSettings.providerType;
+      if(!base.providerName && !base.modelProviders && !base.modelPresets) base.providerName = defaultSettings.providerName;
+      var providers = [];
       if(Array.isArray(base.modelProviders) && base.modelProviders.length){
-        providers = base.modelProviders.map(normalizeProvider).filter(p=>p);
+        providers = base.modelProviders.map(normalizeProvider).filter(function(p){return p;});
+        /* 合并重复 provider */
+        providers = normalizeProviders(providers);
       }else if(Array.isArray(base.modelPresets) && base.modelPresets.length){
         providers = providersFromPresets(base.modelPresets);
       }
-      if(!providers.length) providers = legacyProviders(base);
+      /* 只在没有任何 provider 时才创建默认的 */
+      if(!providers.length){
+        var hasAnyData = base.model || base.apiKey || base.baseUrl;
+        if(hasAnyData || !raw || Object.keys(raw).length === 0){
+          providers = legacyProviders(base);
+        }
+      }
       base.modelProviders = providers;
       base.modelPresets = providersToPresets(providers);
-      if(!base.activePresetId || !base.modelPresets.some(p=>p.id===base.activePresetId)){
-        const hit = base.modelPresets[0];
+      if(!base.activePresetId || !base.modelPresets.some(function(p){return p.id===base.activePresetId;})){
+        var hit = base.modelPresets[0];
         base.activePresetId = hit ? hit.id : '';
       }
       return base;
@@ -357,20 +404,12 @@
 
     let theme = resolveTheme();
     let settings = ensureSettingsShape(Object.assign({}, defaultSettings, readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {}));
-    /* 加载后强制去重：清理旧数据中可能存在的重复模型 */
-    if(Array.isArray(settings.modelProviders)){
-      var cleaned = false;
-      settings.modelProviders.forEach(function(prov){
-        if(!Array.isArray(prov.models)) return;
-        var seen = {}; var deduped = [];
-        for(var mi=0; mi<prov.models.length; mi++){
-          var m = prov.models[mi];
-          if(m && !seen[m]){ seen[m]=true; deduped.push(m); }
-        }
-        if(deduped.length !== prov.models.length){ prov.models = deduped; cleaned = true; }
-      });
-      if(cleaned){
-        settings.modelPresets = providersToPresets(settings.modelProviders);
+    /* 加载后强制合并去重：清理旧数据中可能存在的重复 provider 和重复模型 */
+    if(Array.isArray(settings.modelProviders) && settings.modelProviders.length){
+      var cleaned = normalizeProviders(settings.modelProviders);
+      if(cleaned.length !== settings.modelProviders.length){
+        settings.modelProviders = cleaned;
+        settings.modelPresets = providersToPresets(cleaned);
         saveJSON(KEYS.settings, settings);
       }
     }
@@ -3090,6 +3129,7 @@
         }, i);
       }).filter(p=>p);
       if(!providers.length) providers.push(normalizeProvider(defaultSettings,0));
+      providers = normalizeProviders(providers);
       settings.modelProviders = providers;
       settings.modelPresets = providersToPresets(providers);
       if(!settings.activePresetId || !settings.modelPresets.some(p=>p.id===settings.activePresetId)) settings.activePresetId = settings.modelPresets[0].id;
