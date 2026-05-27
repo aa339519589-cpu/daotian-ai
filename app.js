@@ -3895,52 +3895,59 @@
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
       if(!plainText || plainText.length < 3){ console.warn('[TTS] no text'); return; }
-      /* Chunk if text exceeds API limit (~300 Chinese chars) */
-      var MAX_CHUNK = 300;
-      var chunks = [];
-      for(var ci=0; ci<plainText.length; ci+=MAX_CHUNK){
-        chunks.push(plainText.slice(ci, ci+MAX_CHUNK));
+      /* Split text by sentence boundaries, max ~500 chars per chunk */
+      var chunks = []; var remaining = plainText;
+      while(remaining.length > 0){
+        if(remaining.length <= 500){ chunks.push(remaining); break; }
+        var slice = remaining.slice(0,500);
+        var brk = Math.max(slice.lastIndexOf('。'), slice.lastIndexOf('！'), slice.lastIndexOf('？'), slice.lastIndexOf('；'), slice.lastIndexOf('\n'), slice.lastIndexOf('，'), slice.lastIndexOf('、'));
+        if(brk < 50) brk = 500;
+        chunks.push(remaining.slice(0, brk+1));
+        remaining = remaining.slice(brk+1);
       }
+      chunks = chunks.filter(function(c){ return c.trim().length >= 3; });
 
       if(_ttsPlayingIdx === idx && _ttsAudio && !_ttsAudio.paused){
-        _ttsAudio.pause(); btn.classList.remove('playing'); return;
+        _ttsAudio.pause(); btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; return;
       }
-      if(_ttsPlayingIdx === idx && _ttsAudio && _ttsAudio.paused){
-        _ttsAudio.play(); btn.classList.add('playing'); return;
-      }
-
       if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
+      _ttsPlayingIdx = null;
       var prev = document.querySelector('.tts-play-btn.playing,.tts-play-btn.loading');
       if(prev){ prev.classList.remove('playing','loading'); }
 
-      if(_ttsCache[idx]){
-        var a = new Audio(URL.createObjectURL(_ttsCache[idx]));
-        a.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
-        _ttsAudio = a; _ttsPlayingIdx = idx;
-        a.play(); btn.classList.add('playing');
-        return;
-      }
-
       btn.classList.add('loading');
+      var stopped = false;
+      var consecutiveFails = 0;
+      function stop(){ stopped=true; if(_ttsAudio){try{_ttsAudio.pause();_ttsAudio=null;}catch(e){}} _ttsPlayingIdx=null; btn.classList.remove('playing','loading'); }
+
       try{
-        var allBlobs = [];
-        for(var ci=0; ci<chunks.length; ci++){
+        var firstBlob = null;
+        for(var ci=0; ci<chunks.length && !stopped; ci++){
           var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunks[ci]})});
+          if(!res.ok){ consecutiveFails++; if(consecutiveFails>=2){ stop(); btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); break; } continue; }
+          consecutiveFails = 0;
           var blob = await res.blob();
-          allBlobs.push(blob);
+          if(!firstBlob){ firstBlob = blob; }
+          /* Play each chunk sequentially */
+          await new Promise(function(resolve){
+            var a = new Audio(URL.createObjectURL(blob));
+            _ttsAudio = a; _ttsPlayingIdx = idx;
+            if(ci===0){ btn.classList.remove('loading'); btn.classList.add('playing'); }
+            a.onended = function(){ _ttsAudio=null; resolve(); };
+            a.onerror = function(){ consecutiveFails++; resolve(); };
+            a.play().catch(function(){ consecutiveFails++; resolve(); });
+          });
         }
-        var finalBlob = new Blob(allBlobs, {type:'audio/mpeg'});
-        _ttsCache[idx] = finalBlob;
-        btn.classList.remove('loading');
-        var a2 = new Audio(URL.createObjectURL(finalBlob));
-        a2.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
-        _ttsAudio = a2; _ttsPlayingIdx = idx;
-        a2.play(); btn.classList.add('playing');
+        if(!stopped && firstBlob){ _ttsCache[idx] = firstBlob; }
+        btn.classList.remove('playing','loading');
+        _ttsAudio = null; _ttsPlayingIdx = null;
       }catch(e){
         btn.classList.remove('loading'); btn.classList.add('error');
         setTimeout(function(){ btn.classList.remove('error'); }, 2000);
         _ttsAudio = null; _ttsPlayingIdx = null;
       }
+      /* Expose stop for pause button */
+      btn._ttsStop = stop;
     }
 
     document.addEventListener('click', function(e){

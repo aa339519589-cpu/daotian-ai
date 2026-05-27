@@ -12,13 +12,9 @@ const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PUBLIC_CHAT_DAILY_LIMIT = Number(process.env.PUBLIC_CHAT_DAILY_LIMIT || 100);
 const publicChatLimits = new Map();
 
-/* Volcengine TTS */
-const TTS_APP_ID = process.env.VOLCENGINE_TTS_APP_ID || "";
-const TTS_TOKEN = process.env.VOLCENGINE_TTS_ACCESS_TOKEN || "";
-const TTS_CLUSTER = process.env.VOLCENGINE_TTS_CLUSTER || "";
-const TTS_RESOURCE_ID = process.env.VOLCENGINE_TTS_RESOURCE_ID || "";
-const TTS_VOICE = process.env.VOLCENGINE_TTS_DEFAULT_VOICE || "BV704_streaming";
-const TTS_ENABLED = !!(TTS_APP_ID && TTS_TOKEN && TTS_CLUSTER);
+/* Edge TTS — Microsoft Read Aloud, free, xiaoxiao neural voice */
+const EDGE_TTS_URL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+const EDGE_TTS_VOICE = "zh-CN-XiaoxiaoNeural";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
@@ -634,12 +630,6 @@ async function handleFileParse(req, res){
 
 /* ── Volcengine TTS handler ── */
 async function handleTts(req, res){
-  if(!TTS_ENABLED){
-    return sendJson(res, 503, { error:"tts_not_configured", message:"TTS 未配置，请设置环境变量" });
-  }
-  if(!TTS_VOICE){
-    return sendJson(res, 503, { error:"tts_no_voice", message:"未设置 TTS 音色。请到火山引擎控制台 → 语音合成 → 音色列表，试听并选择一个明确标注为「女声」的音色，填入环境变量 VOLCENGINE_TTS_DEFAULT_VOICE" });
-  }
   let body = {};
   try{ body = JSON.parse((await readBody(req)).toString("utf8") || "{}"); }catch(e){
     return sendJson(res, 400, { error:"parse_error" });
@@ -647,66 +637,37 @@ async function handleTts(req, res){
   let text = String(body.text || "").trim();
   if(!text) return sendJson(res, 400, { error:"text_required" });
 
-  const reqid = "tts_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,6);
-  const voice = TTS_VOICE;
+  /* Clean markdown/code for speech */
+  text = text.replace(/```[\s\S]*?```/g,' ').replace(/`[^`]+`/g,' ');
+  text = text.replace(/https?:\/\/\S+/g,' ').replace(/[#$%&*+<=>@\\^_|~]+/g,' ');
+  text = text.replace(/\s+/g,' ').trim();
+  if(!text) return sendJson(res, 400, { error:"text_empty" });
 
-  const payload = {
-    app: { appid: TTS_APP_ID, token: TTS_TOKEN, cluster: TTS_CLUSTER },
-    user: { uid: "daotian-user" },
-    audio: { voice_type: voice, encoding: "mp3", speed_ratio: 1.2 },
-    request: { reqid, text, text_type: "plain", operation: "query" }
-  };
+  /* Use Python edge-tts via child_process */
+  const { spawn } = await import("node:child_process");
+  const py = spawn("python3", ["-m", "edge_tts", "--voice", EDGE_TTS_VOICE, "--text", text, "--write-media", "-", "--rate=+0%"]);
+
+  const chunks = [];
+  py.stdout.on("data", c => chunks.push(c));
+  let stderr = "";
+  py.stderr.on("data", c => stderr += c.toString());
 
   try{
-    const ttsHeaders = { "Content-Type": "application/json", "Authorization": "Bearer;" + TTS_TOKEN };
-    if(TTS_RESOURCE_ID) ttsHeaders["X-Api-Resource-Id"] = TTS_RESOURCE_ID;
-    const ttsRes = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
-      method: "POST",
-      headers: ttsHeaders,
-      body: JSON.stringify(payload)
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { py.kill(); reject(new Error("timeout")); }, 20000);
+      py.on("close", code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error("exit "+code)); });
+      py.on("error", e => { clearTimeout(timeout); reject(e); });
     });
 
-    const respText = await ttsRes.text();
-    let data = null;
-    try{ data = JSON.parse(respText); }catch(e){}
-
-    if(!ttsRes.ok){
-      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 服务 HTTP 错误: " + ttsRes.status });
-    }
-    if(!data || data.code !== 3000){
-      const code = data ? data.code : 'no_response';
-      const msg = data ? data.message : respText;
-      console.error("[TTS] API error", code, String(msg).slice(0,200));
-      if(String(code) === "3001" && (String(msg).includes("seedtts") || String(msg).includes("seed-tts"))){
-        return sendJson(res, 502, { error:"tts_seedtts_denied", message:"当前账号或 APP_ID 没有 seed-tts-2.0 / 温柔淑女2.0 音色权限，请在火山控制台确认该应用是否开通豆包语音合成模型 2.0" });
-      }
-      if(String(code) === "3001" && String(msg).includes("not granted")){
-        return sendJson(res, 502, { error:"tts_no_service", message:"火山引擎 TTS 服务未开通或音色无权限" });
-      }
-      if(String(code) === "3001" && String(msg).includes("invalid auth")){
-        return sendJson(res, 502, { error:"tts_auth_fail", message:"Access Token 无效" });
-      }
-      return sendJson(res, 502, { error:"tts_upstream_fail", message:"TTS 失败: " + (msg||"未知").slice(0,60) });
-    }
-
-    /* 火山引擎TTS成功返回code:3000，音频在data字段(base64) */
-    const audioB64 = data.data;
-    if(!audioB64 || audioB64.length < 100){
-      console.error("[TTS] no audio, keys:", Object.keys(data||{}).join(','), 'dataLen:', audioB64?audioB64.length:0);
-      return sendJson(res, 502, { error:"tts_no_audio", message:"TTS 返回音频数据异常" });
-    }
-
-    const audioBuf = Buffer.from(audioB64, "base64");
-    res.writeHead(200, {
-      ...corsHeaders(),
-      "Content-Type": "audio/mpeg",
-      "Content-Length": String(audioBuf.length),
-      "Cache-Control": "public, max-age=86400"
-    });
+    if(!chunks.length) throw new Error("no audio output");
+    const audioBuf = Buffer.concat(chunks);
+    if(audioBuf.length < 100) throw new Error("audio too small: "+audioBuf.length);
+    console.log(`[EdgeTTS] xiaoxiao: ${text.length} chars → ${audioBuf.length} bytes`);
+    res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(audioBuf.length) });
     res.end(audioBuf);
   }catch(err){
-    console.error("[TTS] error", err.message);
-    if(!res.headersSent) sendJson(res, 502, { error:"tts_error", message:"TTS 请求失败" });
+    console.error("[EdgeTTS]", err.message, stderr.slice(0,200));
+    if(!res.headersSent) sendJson(res, 502, { error:"tts_error", message:"语音暂时不可用" });
   }
 }
 
