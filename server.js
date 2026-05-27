@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseUploadedFile, buildFileContext } from "./fileParser.js";
+import { DAOTIAN_DEFAULT_SYSTEM_PROMPT } from "./config/prompts.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = ROOT;
@@ -360,6 +361,11 @@ async function handleChat(req, res){
       sources = [];
       console.error("Web search degraded", error.code || "web_search_failed", error.message);
     }
+  }
+
+  /* ── 注入稻田AI平台级System Prompt ── */
+  if(!messages.some(function(m){ return m?.role === "system" && m?.content === DAOTIAN_DEFAULT_SYSTEM_PROMPT; })){
+    messages.unshift({ role:"system", content: DAOTIAN_DEFAULT_SYSTEM_PROMPT });
   }
 
   try{
