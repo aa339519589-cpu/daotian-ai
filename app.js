@@ -696,7 +696,7 @@
           return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
         var ttsBtn = (m.content && m.content.length>5 && m.role==='assistant' && !m.thinking)
-          ? '<button class="tts-play-btn" data-tts-idx="tts_'+c.id+'_'+idx+'" title="朗读" onclick="console.log(\'[TTS] inline click\')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
+          ? '<button class="tts-play-btn" data-tts-idx="tts_'+c.id+'_'+idx+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
         return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
@@ -3894,56 +3894,42 @@
       var msgEl = btn.closest('.message');
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
-      if(!plainText || plainText.length < 3) return;
+      if(!plainText || plainText.length < 3){ console.warn('[TTS] no text'); return; }
       if(plainText.length > 1000) plainText = plainText.slice(0,1000);
 
-      /* Already playing this - pause/resume */
-      if(_ttsPlayingIdx === idx && _ttsAudio){
-        if(_ttsAudio.paused){ _ttsAudio.play(); btn.classList.add('playing'); btn.classList.remove('paused'); }
-        else{ _ttsAudio.pause(); btn.classList.add('paused'); btn.classList.remove('playing'); }
-        return;
+      if(_ttsPlayingIdx === idx && _ttsAudio && !_ttsAudio.paused){
+        _ttsAudio.pause(); btn.classList.remove('playing'); return;
+      }
+      if(_ttsPlayingIdx === idx && _ttsAudio && _ttsAudio.paused){
+        _ttsAudio.play(); btn.classList.add('playing'); return;
       }
 
-      /* Stop previous */
       if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
-      var prev = document.querySelector('.tts-play-btn.playing,.tts-play-btn.paused,.tts-play-btn.loading');
-      if(prev){ prev.classList.remove('playing','paused','loading'); }
+      var prev = document.querySelector('.tts-play-btn.playing,.tts-play-btn.loading');
+      if(prev){ prev.classList.remove('playing','loading'); }
 
-      /* Check cache */
       if(_ttsCache[idx]){
-        var ca = new Audio();
-        ca.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
-        ca.onerror = function(){ btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); _ttsPlayingIdx=null; _ttsAudio=null; };
-        ca.src = URL.createObjectURL(_ttsCache[idx]);
-        _ttsAudio = ca; _ttsPlayingIdx = idx;
-        ca.play().catch(function(e){ console.warn('[TTS] cache play failed:', e.message); });
-        btn.classList.add('playing');
+        var a = new Audio(URL.createObjectURL(_ttsCache[idx]));
+        a.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
+        _ttsAudio = a; _ttsPlayingIdx = idx;
+        a.play(); btn.classList.add('playing');
         return;
       }
 
-      /* Create Audio BEFORE fetch to preserve user gesture */
-      var audio = new Audio();
-      audio.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
-      audio.onerror = function(){ btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); _ttsPlayingIdx=null; _ttsAudio=null; };
-      _ttsAudio = audio;
-      _ttsPlayingIdx = idx;
       btn.classList.add('loading');
-
       try{
         var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:plainText})});
-        if(!res.ok){ throw new Error('TTS failed'); }
         var blob = await res.blob();
         _ttsCache[idx] = blob;
-        var url = URL.createObjectURL(blob);
-        audio.src = url;
-        audio.play().catch(function(e){ console.warn('[TTS] play failed:', e.message); btn.classList.remove('loading'); btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); });
         btn.classList.remove('loading');
-        btn.classList.add('playing');
+        var a2 = new Audio(URL.createObjectURL(blob));
+        a2.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
+        _ttsAudio = a2; _ttsPlayingIdx = idx;
+        a2.play(); btn.classList.add('playing');
       }catch(e){
-        btn.classList.remove('loading');
-        btn.classList.add('error');
+        btn.classList.remove('loading'); btn.classList.add('error');
         setTimeout(function(){ btn.classList.remove('error'); }, 2000);
-        console.warn('[TTS]',e.message);
+        _ttsAudio = null; _ttsPlayingIdx = null;
       }
     }
 
@@ -3952,30 +3938,10 @@
       if(btn){
         e.preventDefault(); e.stopPropagation();
         var idx = btn.getAttribute('data-tts-idx');
-        console.log('[TTS] button clicked, idx:', idx);
         if(idx) handleTtsClick(idx, btn);
-        else console.warn('[TTS] no idx on button');
         return;
       }
     });
-
-    /* Expose for debugging */
-    window.__ttsTest = async function(text){
-      text = text || '你好世界测试';
-      console.log('[TTS] test:', text);
-      try{
-        var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
-        console.log('[TTS] response:', res.status, res.ok);
-        if(!res.ok){ console.error('[TTS] HTTP error:', res.status); return; }
-        var blob = await res.blob();
-        console.log('[TTS] blob:', blob.size, 'bytes', blob.type);
-        var url = URL.createObjectURL(blob);
-        var a = new Audio(url);
-        a.onplay = function(){ console.log('[TTS] playing'); };
-        a.onerror = function(e){ console.error('[TTS] audio error:', e); };
-        a.play().then(function(){ console.log('[TTS] play success'); }).catch(function(e){ console.error('[TTS] play rejected:', e.message); });
-      }catch(e){ console.error('[TTS] error:', e.message); }
-    };
 
     renderAll();
     syncModelState();
