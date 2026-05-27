@@ -359,6 +359,23 @@
 
     let theme = resolveTheme();
     let settings = ensureSettingsShape(Object.assign({}, defaultSettings, readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {}));
+    /* 加载后强制去重：清理旧数据中可能存在的重复模型 */
+    if(Array.isArray(settings.modelProviders)){
+      var cleaned = false;
+      settings.modelProviders.forEach(function(prov){
+        if(!Array.isArray(prov.models)) return;
+        var seen = {}; var deduped = [];
+        for(var mi=0; mi<prov.models.length; mi++){
+          var m = prov.models[mi];
+          if(m && !seen[m]){ seen[m]=true; deduped.push(m); }
+        }
+        if(deduped.length !== prov.models.length){ prov.models = deduped; cleaned = true; }
+      });
+      if(cleaned){
+        settings.modelPresets = providersToPresets(settings.modelProviders);
+        saveJSON(KEYS.settings, settings);
+      }
+    }
     let chats = loadChats();
     let activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
     let sidebarOpen = true;
@@ -797,6 +814,10 @@
     function renderAll(){
       theme = resolveTheme();
       document.documentElement.setAttribute('data-theme', theme);
+      /* 同步 theme-color meta 到 safe-area 背景色 */
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if(!meta){ meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+      meta.content = theme === 'dark' ? '#282826' : '#f5f2ea';
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       if(sidebarOpen) closeModelPopover();
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
@@ -3057,10 +3078,17 @@
       const cards = Array.from(document.querySelectorAll('[data-provider-id]'));
       const providers = cards.map(function(card, i){
         function val(name){ const el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
+        var rawModels = splitModels(val('models'));
+        /* 强制去重：去掉空白，用 Set 去重，保持顺序 */
+        var seen = {}; var deduped = [];
+        for(var mi=0; mi<rawModels.length; mi++){
+          var m = rawModels[mi];
+          if(m && !seen[m]){ seen[m]=true; deduped.push(m); }
+        }
         return normalizeProvider({
           id: card.getAttribute('data-provider-id') || makeProviderId(val('providerName'), val('baseUrl'), i),
           providerType: val('providerType'), providerName: val('providerName'), baseUrl: val('baseUrl'),
-          apiKey: val('apiKey'), path: val('path'), models: splitModels(val('models'))
+          apiKey: val('apiKey'), path: val('path'), models: deduped
         }, i);
       }).filter(p=>p.models && p.models.length);
       if(!providers.length) providers.push(normalizeProvider(defaultSettings,0));
