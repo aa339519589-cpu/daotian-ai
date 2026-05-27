@@ -1136,11 +1136,16 @@
         assistant.memoryNotice = false;
         assistant.thinking=false;
       }
-      /* 确保附件区域已清空 + 滚动到底部 */
+      /* 确保附件区域已清空 */
       if(typeof showAttachPreview === 'function') showAttachPreview();
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); activeAbortController=null; generatingChatId=null; renderAll();
-      /* 发送后强制滚动到底部（多次延迟确保DOM更新后执行） */
-      if(typeof scrollLatest === 'function'){ scrollLatest(); }
+      /* 发送后强制滚动到底部（多次延迟确保DOM更新+附件清空后重新计算高度） */
+      var _msgBox = document.getElementById('messages');
+      if(_msgBox && loadAutoScroll()){
+        requestAnimationFrame(function(){ _msgBox.scrollTop = _msgBox.scrollHeight; });
+        setTimeout(function(){ _msgBox.scrollTop = _msgBox.scrollHeight; }, 100);
+        setTimeout(function(){ _msgBox.scrollTop = _msgBox.scrollHeight; }, 300);
+      }
       /* 后台预生成语音缓存 */
       if(assistant && assistant.content && !assistant.thinking){
         var _msgId = (assistant._chatId||c.id)+'_tts_'+(assistant._msgIdx||0);
