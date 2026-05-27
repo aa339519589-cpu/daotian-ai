@@ -523,7 +523,7 @@
           <div class="composer-wrap">
             <div class="composer">
               <button class="plus-btn" id="plusBtn" title="添加附件">+</button>
-              <textarea id="input" placeholder="输入消息..."></textarea>
+              <textarea id="input" placeholder="输入消息"></textarea>
               <button class="send" id="sendBtn">›</button>
             </div>
             <div class="attach-preview" id="attachPreview" style="display:none"></div>
@@ -931,7 +931,7 @@
     }
 
     function createChat(){ var empty=chats.find(function(c){ return !c.messages || !c.messages.length; }); if(empty){ activeId=empty.id; }else{ var id=uid(); chats.unshift({id:id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; } safeClearAttachments(); sidebarOpen=false; renderAll(); }
-    function startNewChat(){ if(activeAbortController){ try{activeAbortController.abort();}catch(e){} activeAbortController=null; generatingChatId=null; } sending=false; createChat(); }
+    function startNewChat(){ closeModelPopover(); if(activeAbortController){ try{activeAbortController.abort();}catch(e){} activeAbortController=null; generatingChatId=null; } sending=false; createChat(); }
     function deleteChat(id){
       if(!confirm('删除这个对话？\n删除后不可恢复。')) return;
       const idx = chats.findIndex(c=>c.id===id); if(idx<0) return;

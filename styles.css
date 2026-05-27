@@ -108,7 +108,7 @@ button{border:0;background:none;cursor:pointer}
 .model-top-trigger .chevron{font-size:14px;opacity:.68;flex:0 0 auto;margin-left:2px;transition:transform 160ms ease,opacity 160ms ease}
 .model-top-trigger[aria-expanded="true"] .chevron{transform:rotate(180deg);opacity:.92}
 .model-top-trigger:active{opacity:.72}
-.model-popover{position:fixed;top:52px;left:52px;z-index:700;width:min(200px,60vw);padding:6px;border-radius:18px;background:var(--surface-popover);border:1px solid var(--border-soft);box-shadow:var(--shadow-popover);transform-origin:top left;opacity:0;transform:translateY(-4px) scale(.98);pointer-events:none;transition:opacity 140ms ease,transform 140ms ease}
+.model-popover{position:fixed;top:52px;left:52px;z-index:50;width:min(200px,60vw);padding:6px;border-radius:18px;background:var(--surface-popover);border:1px solid var(--border-soft);box-shadow:var(--shadow-popover);transform-origin:top left;opacity:0;transform:translateY(-4px) scale(.98);pointer-events:none;transition:opacity 140ms ease,transform 140ms ease}
 .model-popover.open{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
 .model-option{width:100%;min-height:40px;display:grid;grid-template-columns:18px 1fr;column-gap:6px;align-items:center;padding:6px 10px;border-radius:12px;border:none;background:transparent;color:var(--text);text-align:left;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background 120ms ease}
 .model-option:active{transform:scale(.985)}
