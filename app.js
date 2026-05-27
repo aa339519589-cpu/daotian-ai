@@ -507,10 +507,10 @@
     app.innerHTML = `
       <div class="app-shell" data-theme="${theme}">
         <aside class="sidebar" id="sidebar">
-          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
+          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><div class="sidebar-brand"><svg class="sidebar-brand-icon" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="3"/><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>稻田 AI</span></div></div>
           <button class="new-chat-btn" id="sidebarNewChat">＋ 新建对话</button>
           <div class="chat-list" id="chatList"></div>
-          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">模型提供商</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
+          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openSettingsBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> 设置</button><button class="side-bottom-btn" id="openProvider"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg> 模型提供商</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
@@ -707,11 +707,10 @@
         .preset-list{display:flex;flex-direction:column;gap:12px}
         .preset-card{border:1px solid var(--border,rgba(127,127,127,.18));border-radius:18px;padding:14px;background:rgba(127,127,127,.06)}
         .preset-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;color:var(--text)}
+        .preset-card-head-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
         .preset-card-title{font-weight:650;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .preset-del{border:0;background:transparent;color:var(--muted);font:inherit;cursor:pointer;padding:4px 8px;border-radius:10px}
-        .preset-del:hover{background:rgba(127,127,127,.12);color:var(--text)}
         textarea.provider-models{min-height:82px;resize:vertical;line-height:1.45;font-family:inherit}
-        @media (max-width:760px){.model-menu{width:min(260px,calc(100vw - 36px))}#providerModal .modal{max-height:88vh}#providerModal .modal-body{max-height:calc(88vh - 112px);overflow:auto;-webkit-overflow-scrolling:touch}.preset-card .row{display:block}.preset-card .field{margin-bottom:10px}}
+        @media (max-width:760px){.model-menu{width:min(260px,calc(100vw - 36px))}#providerModal .modal{max-height:88vh}#providerModal .modal-body{max-height:calc(88vh - 112px);overflow:auto;-webkit-overflow-scrolling:touch}.preset-card .row{display:block}.preset-card .field{margin-bottom:10px}.preset-card-head-right{flex-wrap:wrap}}
       `;
       document.head.appendChild(style);
     }
@@ -3167,21 +3166,49 @@
   window.__MEMORY_V3__ = MEMORY_V3;
 
 
+    function getProviderStatus(provider){
+      var hasKey = !!(provider.apiKey && provider.apiKey.trim());
+      var hasUrl = !!(provider.baseUrl && provider.baseUrl.trim());
+      if(!hasKey && !hasUrl) return {cls:'unconfigured',label:'未配置'};
+      if(!hasKey) return {cls:'unconfigured',label:'未配置 Key'};
+      if(!hasUrl) return {cls:'unconfigured',label:'未配置 URL'};
+      return {cls:'has-key',label:'已填写 Key'};
+    }
+    function maskApiKey(key){
+      if(!key) return '';
+      if(key.length <= 8) return '••••••••';
+      return key.slice(0,3)+'••••••••'+key.slice(-4);
+    }
     function providerTemplate(provider, index){
       provider = normalizeProvider(provider, index);
+      var st = getProviderStatus(provider);
+      var maskedKey = maskApiKey(provider.apiKey);
+      var modelCount = provider.models.length;
       return `<div class="preset-card" data-provider-id="${escapeHTML(provider.id)}">
-        <div class="preset-card-head"><div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供商')}</div><button class="preset-del" type="button" data-provider-delete="${escapeHTML(provider.id)}">删除</button></div>
+        <div class="preset-card-head">
+          <div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供商')}</div>
+          <div class="preset-card-head-right">
+            <span class="provider-status ${st.cls}"><span class="provider-status-dot"></span>${st.label}</span>
+            <div class="provider-more-wrap">
+              <button class="provider-more-btn" data-provider-more="${escapeHTML(provider.id)}" title="更多">⋯</button>
+              <div class="provider-more-menu" data-provider-menu="${escapeHTML(provider.id)}">
+                <button class="provider-more-item" data-provider-fetch="${escapeHTML(provider.id)}">获取模型列表</button>
+                <button class="provider-more-item" data-provider-test="${escapeHTML(provider.id)}">测试连接</button>
+                <button class="provider-more-item danger" data-provider-delete="${escapeHTML(provider.id)}">删除供应商</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="row"><div class="field"><label>提供方名称</label><input data-provider-field="providerName" value="${escapeHTML(provider.providerName)}" placeholder="DeepSeek / 小米 / OpenAI"></div><div class="field"><label>提供方类型</label><select data-provider-field="providerType"><option value="openai" ${provider.providerType==='openai'?'selected':''}>OpenAI 兼容</option><option value="gemini" ${provider.providerType==='gemini'?'selected':''}>Gemini</option><option value="anthropic" ${provider.providerType==='anthropic'?'selected':''}>Anthropic</option></select></div></div>
         <div class="field"><label>Base URL</label><input data-provider-field="baseUrl" value="${escapeHTML(provider.baseUrl)}" placeholder="https://api.deepseek.com"></div>
-        <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;opacity:.5" title="显示/隐藏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
+        <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px" data-api-key-input="${escapeHTML(provider.id)}"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;opacity:.5" title="显示/隐藏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
         <div class="field"><label>请求路径</label><input data-provider-field="path" value="${escapeHTML(provider.path)}" placeholder="/v1/chat/completions"></div>
-        <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="margin-left:8px;color:var(--muted)"></span></div>
+        <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型列表</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="margin-left:8px;font-size:12px;color:var(--muted)"></span></div>
         <div class="fetch-models-results" data-fetch-results="${escapeHTML(provider.id)}" style="display:none;margin-top:8px;max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:8px">
           <input class="model-search-input" data-model-search="${escapeHTML(provider.id)}" placeholder="搜索模型..." style="width:100%;height:36px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.18);padding:0 10px;margin-bottom:8px;outline:0">
           <div class="model-list-inner" data-model-list="${escapeHTML(provider.id)}"></div>
         </div>
-        <div class="field"><label>可用模型（一行一个）</label><textarea class="provider-models" data-provider-field="models" placeholder="deepseek-chat\ndeepseek-reasoner">${escapeHTML(provider.models.join('\n'))}</textarea></div>
-        <div style="margin-top:4px"><button class="btn manual-add-toggle" data-manual-toggle="${escapeHTML(provider.id)}" type="button" style="background:transparent;border:1px dashed var(--line);color:var(--muted)">＋ 手动添加模型</button></div>
+        <div class="field"><label>可用模型（一行一个）<span style="font-weight:400;opacity:.5"> · ${modelCount} 个</span></label><textarea class="provider-models" data-provider-field="models" placeholder="deepseek-chat\ndeepseek-reasoner">${escapeHTML(provider.models.join('\n'))}</textarea></div>
       </div>`;
     }
 
@@ -3348,7 +3375,7 @@
 
     /* ── 模型提供商草稿管理 ── */
     var _providerDraft = null;
-    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function openSettings(){ closeModelPopover(); closeSettingsModal(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
     async function saveSettings(){
       setSaveProviderButtonState('saving');
@@ -3408,7 +3435,7 @@
     var settingsPageStack = ['home'];
 
     function openSettingsModal(){
-      closeModelPopover();
+      closeModelPopover(); closeSettings();
       if(window.innerWidth<760) sidebarOpen=false;
       renderSidebar();
       settingsPage = 'home';
@@ -3493,9 +3520,11 @@
       var mode = loadThemeMode();
       return '<div class="settings-page">'+
         '<div class="settings-card"><div class="settings-card-title">主题模式</div>'+
-          '<button class="settings-radio-row'+(mode==='system'?' selected':'')+'" data-theme-mode="system"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">跟随系统</span><span class="settings-radio-desc">根据系统设置自动切换主题</span></span></button>'+
-          '<button class="settings-radio-row'+(mode==='light'?' selected':'')+'" data-theme-mode="light"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">浅色</span><span class="settings-radio-desc">始终使用浅色主题</span></span></button>'+
-          '<button class="settings-radio-row'+(mode==='dark'?' selected':'')+'" data-theme-mode="dark"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">深色</span><span class="settings-radio-desc">始终使用深色主题</span></span></button>'+
+          '<div class="theme-segmented">'+
+            '<button class="theme-seg-btn'+(mode==='system'?' active':'')+'" data-theme-mode="system">跟随系统</button>'+
+            '<button class="theme-seg-btn'+(mode==='light'?' active':'')+'" data-theme-mode="light">浅色</button>'+
+            '<button class="theme-seg-btn'+(mode==='dark'?' active':'')+'" data-theme-mode="dark">深色</button>'+
+          '</div>'+
         '</div></div>';
     }
     function renderModelParamsPage(){
@@ -3561,7 +3590,7 @@
       var vs = loadVoiceSettings();
       var isEdge = vs.provider === 'edge';
       var currentVoice = EDGE_VOICES.find(function(v){ return v.id === vs.edgeVoice; }) || EDGE_VOICES[0];
-      var rateLabels = {'+10%':'慢一点','+25%':'正常','+40%':'快一点'};
+      var rateLabels = {'+15%':'慢一点','+25%':'正常','+40%':'快一点'};
       return '<div class="settings-page">'+
         '<div class="settings-card">'+
           '<button class="settings-toggle-row" id="voiceToggleRow" data-on="'+(vs.enabled?'1':'0')+'"><span class="settings-toggle-text"><span class="settings-toggle-title">语音开关</span><span class="settings-toggle-desc">'+(vs.enabled?'已开启':'已关闭')+'</span></span><span class="settings-toggle-switch'+(vs.enabled?' on':'')+'"><span class="settings-toggle-knob"></span></span></button>'+
@@ -3584,7 +3613,7 @@
         '<div class="settings-card">'+
           '<div class="settings-card-title">语速</div>'+
           '<div class="voice-provider-pills">'+
-            '<button class="voice-provider-pill'+(vs.rate==='+10%'?' active':'')+'" data-voice-rate="+10%">慢一点</button>'+
+            '<button class="voice-provider-pill'+(vs.rate==='+15%'?' active':'')+'" data-voice-rate="+15%">慢一点</button>'+
             '<button class="voice-provider-pill'+(vs.rate==='+25%'?' active':'')+'" data-voice-rate="+25%">正常</button>'+
             '<button class="voice-provider-pill'+(vs.rate==='+40%'?' active':'')+'" data-voice-rate="+40%">快一点</button>'+
           '</div>'+
@@ -4008,6 +4037,13 @@
       /* Fish Audio input changes */
       var fishInput = e.target.closest('#fishApiKey,#fishRefId,#fishVoiceName');
       if(!fishInput && e.target.matches && (e.target.id==='fishApiKey'||e.target.id==='fishRefId'||e.target.id==='fishVoiceName')){ return; }
+      /* Theme segmented button */
+      var segBtn = e.target.closest('.theme-seg-btn');
+      if(segBtn){
+        var mode = segBtn.getAttribute('data-theme-mode');
+        if(mode){ saveThemeMode(mode); theme = resolveTheme(); renderAll(); renderSettingsPage(); toast(mode==='system'?'已切换为跟随系统':mode==='light'?'已切换为浅色':'已切换为深色'); }
+        return;
+      }
       var radio = e.target.closest('.settings-radio-row');
       if(radio){
         var mode = radio.getAttribute('data-theme-mode');
@@ -4058,11 +4094,28 @@
       if(!e.target.closest('#modelPopover') && !e.target.closest('#modelTopTrigger')) closeModelPopover();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
       const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); safeClearAttachments(); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
+      /* Provider more menu toggle */
+      var moreBtn = e.target.closest('[data-provider-more]');
+      if(moreBtn){
+        e.stopPropagation();
+        var mid = moreBtn.getAttribute('data-provider-more');
+        var menu = document.querySelector('[data-provider-menu="'+mid+'"]');
+        if(menu){ menu.classList.toggle('show'); }
+        return;
+      }
+      /* Close more menu when clicking outside */
+      if(!e.target.closest('.provider-more-wrap')){
+        document.querySelectorAll('.provider-more-menu.show').forEach(function(m){ m.classList.remove('show'); });
+      }
       const providerDel=e.target.closest('[data-provider-delete]');
       if(providerDel){
         e.stopPropagation();
         var id=providerDel.getAttribute('data-provider-delete');
+        /* Close menu first */
+        var menu2 = providerDel.closest('.provider-more-menu');
+        if(menu2) menu2.classList.remove('show');
         deleteProvider(id);
+        return;
       }
       /* API Key 眼睛切换 */
       var eyeBtn = e.target.closest('.api-key-eye');
