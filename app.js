@@ -3891,7 +3891,6 @@
 
     async function handleTtsClick(idx, btn){
       if(!btn) return;
-      /* Get message text from parent .assistant-render */
       var msgEl = btn.closest('.message');
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
@@ -3912,11 +3911,22 @@
 
       /* Check cache */
       if(_ttsCache[idx]){
-        _playTtsAudio(_ttsCache[idx], idx, btn);
+        var ca = new Audio();
+        ca.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
+        ca.onerror = function(){ btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); _ttsPlayingIdx=null; _ttsAudio=null; };
+        ca.src = URL.createObjectURL(_ttsCache[idx]);
+        _ttsAudio = ca; _ttsPlayingIdx = idx;
+        ca.play().catch(function(e){ console.warn('[TTS] cache play failed:', e.message); });
+        btn.classList.add('playing');
         return;
       }
 
-      /* Fetch TTS */
+      /* Create Audio BEFORE fetch to preserve user gesture */
+      var audio = new Audio();
+      audio.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
+      audio.onerror = function(){ btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); _ttsPlayingIdx=null; _ttsAudio=null; };
+      _ttsAudio = audio;
+      _ttsPlayingIdx = idx;
       btn.classList.add('loading');
 
       try{
@@ -3924,24 +3934,17 @@
         if(!res.ok){ throw new Error('TTS failed'); }
         var blob = await res.blob();
         _ttsCache[idx] = blob;
+        var url = URL.createObjectURL(blob);
+        audio.src = url;
+        audio.play().catch(function(e){ console.warn('[TTS] play failed:', e.message); btn.classList.remove('loading'); btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); });
         btn.classList.remove('loading');
-        _playTtsAudio(blob, idx, btn);
+        btn.classList.add('playing');
       }catch(e){
         btn.classList.remove('loading');
         btn.classList.add('error');
         setTimeout(function(){ btn.classList.remove('error'); }, 2000);
         console.warn('[TTS]',e.message);
       }
-    }
-
-    function _playTtsAudio(blob, idx, btn){
-      var url = URL.createObjectURL(blob);
-      _ttsAudio = new Audio(url);
-      _ttsPlayingIdx = idx;
-      _ttsAudio.onended = function(){ btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; };
-      _ttsAudio.onerror = function(){ btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); _ttsPlayingIdx=null; _ttsAudio=null; };
-      _ttsAudio.play();
-      btn.classList.add('playing');
     }
 
     document.addEventListener('click', function(e){
