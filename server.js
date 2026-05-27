@@ -647,19 +647,20 @@ async function handleTts(req, res){
   const voice = String(body.voice || EDGE_TTS_VOICE).trim();
   const rate = String(body.rate || "+0%").trim();
 
-  /* Provider: Edge TTS */
+  /* Provider: Edge TTS — Python edge-tts via child_process, fallbacks to ws */
   if(provider === "edge"){
     try{
+      /* Try Python edge-tts first (most reliable) */
       const { spawn } = await import("node:child_process");
-      const py = spawn("python3", ["-m","edge_tts","--voice",voice,"--text",text,"--write-media","-","--rate="+rate]);
+      const py = spawn("python3", ["-m","edge_tts","--voice",voice,"--text",text,"--write-media","-","--rate="+rate], {timeout:25000});
       const chunks = []; py.stdout.on("data", c => chunks.push(c));
       let stderr = ""; py.stderr.on("data", c => stderr += c.toString());
       await new Promise((resolve, reject) => {
-        const t = setTimeout(() => { py.kill(); reject(new Error("timeout")); }, 25000);
+        const t = setTimeout(() => { py.kill(); reject(new Error("timeout")); }, 28000);
         py.on("close", code => { clearTimeout(t); code===0?resolve():reject(new Error("exit "+code)); });
         py.on("error", e => { clearTimeout(t); reject(e); });
       });
-      if(!chunks.length) throw new Error("no audio");
+      if(!chunks.length) throw new Error("no audio output");
       const buf = Buffer.concat(chunks);
       if(buf.length < 100) throw new Error("audio small: "+buf.length);
       console.log(`[TTS:edge] ${voice} rate=${rate} ${text.length}c → ${buf.length}b`);
