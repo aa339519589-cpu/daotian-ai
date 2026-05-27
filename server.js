@@ -364,8 +364,17 @@ async function handleChat(req, res){
   }
 
   /* ── 注入稻田AI平台级System Prompt ── */
-  if(!messages.some(function(m){ return m?.role === "system" && m?.content === DAOTIAN_DEFAULT_SYSTEM_PROMPT; })){
-    messages.unshift({ role:"system", content: DAOTIAN_DEFAULT_SYSTEM_PROMPT });
+  var daotianAlreadyInjected = messages.some(function(m){
+    return m?.role === "system" && m?.content && m.content.indexOf(DAOTIAN_DEFAULT_SYSTEM_PROMPT) >= 0;
+  });
+  if(!daotianAlreadyInjected){
+    /* 合并到第一个system消息顶部，而不是新建独立消息 */
+    var firstSysIdx = messages.findIndex(function(m){ return m?.role === "system"; });
+    if(firstSysIdx >= 0){
+      messages[firstSysIdx] = { role:"system", content: DAOTIAN_DEFAULT_SYSTEM_PROMPT + "\n\n" + messages[firstSysIdx].content };
+    } else {
+      messages.unshift({ role:"system", content: DAOTIAN_DEFAULT_SYSTEM_PROMPT });
+    }
   }
 
   try{
