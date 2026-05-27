@@ -508,8 +508,9 @@
       <div class="app-shell" data-theme="${theme}">
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
+          <button class="new-chat-btn" id="sidebarNewChat">＋ 新建对话</button>
           <div class="chat-list" id="chatList"></div>
-          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
+          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">模型提供商</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
@@ -539,9 +540,9 @@
         </main>
       </div>
       <div class="modal-backdrop" id="providerModal"><div class="modal">
-        <div class="modal-head"><span>设置 / 模型提供方</span><button class="icon-btn" id="closeProvider">×</button></div>
+        <div class="modal-head"><span>设置 / 模型提供商</span><button class="icon-btn" id="closeProvider">×</button></div>
         <div class="modal-body">
-          <div class="hint">可以保存多个模型提供方；每个提供方下面可以填多个模型。聊天页点"模型"就能切换，下一条消息立即使用选中的模型。</div>
+          <div class="hint">可以保存多个模型提供商；每个提供方下面可以填多个模型。聊天页点"模型"就能切换，下一条消息立即使用选中的模型。</div>
           <div id="presetList" class="preset-list"></div>
           <button class="btn" id="addPreset" type="button">＋ 添加提供方</button>
         </div>
@@ -742,7 +743,31 @@
       side.classList.toggle('closed', !sidebarOpen);
       $('#openSide').style.display = sidebarOpen ? 'none' : 'grid';
       const list = $('#chatList');
-      list.innerHTML = chats.map(c=>`<div class="chat-item ${c.id===activeId?'active':''}" data-id="${escapeHTML(c.id)}"><span class="chat-dot"></span><span class="chat-title">${escapeHTML(c.title)}</span><span class="chat-time">${nowTime()}</span>${(c.messages&&c.messages.length)?'<button class="delete-chat" data-del="'+escapeHTML(c.id)+'" title="删除">×</button>':''}</div>`).join('');
+      const now = new Date(); const todayStart = new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+      const yesterdayStart = todayStart - 86400000;
+      const groups = { today:[], yesterday:[], older:[] };
+      chats.forEach(function(c){
+        var t = c.updatedAt || c.createdAt || 0;
+        if(t >= todayStart) groups.today.push(c);
+        else if(t >= yesterdayStart) groups.yesterday.push(c);
+        else groups.older.push(c);
+      });
+      var html = '';
+      var labels = {today:'今天',yesterday:'昨天',older:'更早'};
+      ['today','yesterday','older'].forEach(function(g){
+        if(!groups[g].length) return;
+        html += '<div class="chat-group-title">'+labels[g]+'</div>';
+        groups[g].forEach(function(c){
+          var t = new Date(c.updatedAt||c.createdAt||0);
+          var timeStr = t.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+          html += '<div class="chat-item'+(c.id===activeId?' active':'')+'" data-id="'+escapeHTML(c.id)+'">'+
+            '<span class="chat-dot"></span>'+
+            '<span class="chat-item-main"><span class="chat-title">'+escapeHTML(c.title)+'</span><span class="chat-item-sub">'+timeStr+'</span></span>'+
+            ((c.messages&&c.messages.length)?'<button class="delete-chat" data-del="'+escapeHTML(c.id)+'" title="删除">×</button>':'')+
+          '</div>';
+        });
+      });
+      list.innerHTML = html;
     }
     function pickEmptyPrompt(){
       const seed = chats.length + (activeId ? activeId.length : 0) + new Date().getDate();
@@ -909,6 +934,7 @@
     function createChat(){ var empty=chats.find(function(c){ return !c.messages || !c.messages.length; }); if(empty){ activeId=empty.id; }else{ var id=uid(); chats.unshift({id:id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; } safeClearAttachments(); sidebarOpen=false; renderAll(); }
     function startNewChat(){ if(activeAbortController){ try{activeAbortController.abort();}catch(e){} activeAbortController=null; generatingChatId=null; } sending=false; createChat(); }
     function deleteChat(id){
+      if(!confirm('删除这个对话？\n删除后不可恢复。')) return;
       const idx = chats.findIndex(c=>c.id===id); if(idx<0) return;
       chats.splice(idx,1);
       if(chats.length===0){ const nid=uid(); chats=[{id:nid,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}]; activeId=nid; }
@@ -1148,7 +1174,7 @@
           assistant.role='error';
           var errMsg = err&&err.message?err.message:String(err);
           if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
-          else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供方配置';
+          else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供商配置';
           else if(errMsg.indexOf('rate_limit')>=0||errMsg.indexOf('429')>=0) errMsg = '请求太频繁，请稍后再试';
           else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0) errMsg = '网络连接失败，请检查网络后重试';
           else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
@@ -3144,7 +3170,7 @@
     function providerTemplate(provider, index){
       provider = normalizeProvider(provider, index);
       return `<div class="preset-card" data-provider-id="${escapeHTML(provider.id)}">
-        <div class="preset-card-head"><div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供方')}</div><button class="preset-del" type="button" data-provider-delete="${escapeHTML(provider.id)}">删除</button></div>
+        <div class="preset-card-head"><div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供商')}</div><button class="preset-del" type="button" data-provider-delete="${escapeHTML(provider.id)}">删除</button></div>
         <div class="row"><div class="field"><label>提供方名称</label><input data-provider-field="providerName" value="${escapeHTML(provider.providerName)}" placeholder="DeepSeek / 小米 / OpenAI"></div><div class="field"><label>提供方类型</label><select data-provider-field="providerType"><option value="openai" ${provider.providerType==='openai'?'selected':''}>OpenAI 兼容</option><option value="gemini" ${provider.providerType==='gemini'?'selected':''}>Gemini</option><option value="anthropic" ${provider.providerType==='anthropic'?'selected':''}>Anthropic</option></select></div></div>
         <div class="field"><label>Base URL</label><input data-provider-field="baseUrl" value="${escapeHTML(provider.baseUrl)}" placeholder="https://api.deepseek.com"></div>
         <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;opacity:.5" title="显示/隐藏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
@@ -3320,7 +3346,7 @@
       collectProviderEditor(); persist(); renderModelSwitcher();
     }
 
-    /* ── 模型提供方草稿管理 ── */
+    /* ── 模型提供商草稿管理 ── */
     var _providerDraft = null;
     function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
@@ -3367,7 +3393,7 @@
     function deleteProvider(providerId){
       var prov = settings.modelProviders.find(function(p){return p.id===providerId;});
       if(!prov) return;
-      var name = prov.providerName || '模型提供方';
+      var name = prov.providerName || '模型提供商';
       if(!confirm('确认删除 '+name+'？\n\n删除后该供应商下的所有模型都会从模型列表中移除。')) return;
       settings.modelProviders = settings.modelProviders.filter(function(p){return p.id!==providerId;});
       if(!settings.modelProviders.length){ settings.modelProviders = []; }
@@ -4107,7 +4133,7 @@
         return;
       }
     });
-    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat; $('#sidebarNewChat').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
