@@ -84,6 +84,7 @@ button{border:0;background:none;cursor:pointer}
 .sidebar .side-bottom-btn{color:var(--sidebar-muted)}
 .side-bottom-btn{height:32px;border-radius:10px;padding:0 10px;text-align:left;color:var(--muted);font-size:13px}
 .side-bottom-btn:hover{background:rgba(220,128,98,.08);color:var(--text)}
+.sidebar-label{color:var(--muted)}
 .main{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;position:relative}
 .floating-menu{position:absolute;left:6px;top:6px;z-index:5;width:26px;height:26px;border-radius:999px;background:rgba(255,255,255,.34);border:1px solid var(--line);box-shadow:0 8px 30px rgba(0,0,0,.05);display:grid;place-items:center;color:var(--muted);backdrop-filter:blur(12px);font-size:12px}
 [data-theme="dark"] .floating-menu{background:rgba(31,31,31,.88)}

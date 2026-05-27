@@ -146,7 +146,8 @@
       var s = (v||18)/18;
       var id = 'daotianFontScale'; var old = document.getElementById(id); if(old) old.remove();
       var st = document.createElement('style'); st.id = id;
-      st.textContent = 'body{font-size:'+Math.round(18*s)+'px!important}'+
+      st.textContent = 'html{font-size:'+Math.round(18*s)+'px!important}'+
+        'body{font-size:'+Math.round(18*s)+'px!important}'+
         '.bubble{font-size:'+Math.round(18*s)+'px!important}'+
         '.assistant-render{font-size:'+Math.round(18*s)+'px!important}'+
         'textarea,.field input,.field select,input[type="text"],input[type="password"]{font-size:'+Math.round(18*s)+'px!important}'+
@@ -165,6 +166,10 @@
         '.settings-toggle-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.hint,.settings-entry-desc,.settings-radio-desc,.settings-toggle-desc,.settings-card-hint{font-size:'+Math.round(13*s)+'px!important}'+
         '.side-bottom-btn{font-size:'+Math.round(13*s)+'px!important}'+
+        '.sidebar-label{font-size:'+Math.round(14*s)+'px!important}'+
+        '.preset-card-title{font-size:'+Math.round(15*s)+'px!important}'+
+        '.fetch-models-btn{font-size:'+Math.round(13*s)+'px!important}'+
+        '.manual-add-toggle{font-size:'+Math.round(13*s)+'px!important}'+
         '.btn{font-size:'+Math.round(15*s)+'px!important}'+
         '.status{font-size:'+Math.round(14*s)+'px!important}';
       document.head.appendChild(st);
@@ -480,7 +485,7 @@
     app.innerHTML = `
       <div class="app-shell" data-theme="${theme}">
         <aside class="sidebar" id="sidebar">
-          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span style="font-size:14px;color:var(--muted)">历史对话</span></div>
+          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
           <div class="chat-list" id="chatList"></div>
           <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
         </aside>
@@ -661,7 +666,7 @@
       const style=document.createElement('style');
       style.id='daotianThinkingStyle';
       style.textContent = `
-        .daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:15px;color:var(--muted,currentColor);opacity:.72;background:transparent;border:0;box-shadow:none}
+        .daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:1rem;color:var(--muted,currentColor);opacity:.72;background:transparent;border:0;box-shadow:none}
         .daotian-thinking-mark{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;animation:daotianDotPulse 1.6s ease-in-out infinite}
         .daotian-thinking-text{font-size:14px;letter-spacing:.02em;animation:daotianThinkingText 1.45s ease-in-out infinite}
         @keyframes daotianDotPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:.95;transform:scale(1.25)}}
@@ -679,7 +684,7 @@
         .preset-list{display:flex;flex-direction:column;gap:12px}
         .preset-card{border:1px solid var(--border,rgba(127,127,127,.18));border-radius:18px;padding:14px;background:rgba(127,127,127,.06)}
         .preset-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;color:var(--text)}
-        .preset-card-title{font-weight:600;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .preset-card-title{font-weight:650;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .preset-del{border:0;background:transparent;color:var(--muted);font:inherit;cursor:pointer;padding:4px 8px;border-radius:10px}
         .preset-del:hover{background:rgba(127,127,127,.12);color:var(--text)}
         textarea.provider-models{min-height:82px;resize:vertical;line-height:1.45;font-family:inherit}
@@ -3103,13 +3108,13 @@
         <div class="field"><label>Base URL</label><input data-provider-field="baseUrl" value="${escapeHTML(provider.baseUrl)}" placeholder="https://api.deepseek.com"></div>
         <div class="field"><label>API Key</label><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key"></div>
         <div class="field"><label>请求路径</label><input data-provider-field="path" value="${escapeHTML(provider.path)}" placeholder="/v1/chat/completions"></div>
-        <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="font-size:12px;margin-left:8px;color:var(--muted)"></span></div>
+        <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="margin-left:8px;color:var(--muted)"></span></div>
         <div class="fetch-models-results" data-fetch-results="${escapeHTML(provider.id)}" style="display:none;margin-top:8px;max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:8px">
-          <input class="model-search-input" data-model-search="${escapeHTML(provider.id)}" placeholder="搜索模型..." style="width:100%;height:36px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.18);padding:0 10px;margin-bottom:8px;font-size:13px;outline:0">
+          <input class="model-search-input" data-model-search="${escapeHTML(provider.id)}" placeholder="搜索模型..." style="width:100%;height:36px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.18);padding:0 10px;margin-bottom:8px;outline:0">
           <div class="model-list-inner" data-model-list="${escapeHTML(provider.id)}"></div>
         </div>
         <div class="field"><label>可用模型（一行一个）</label><textarea class="provider-models" data-provider-field="models" placeholder="deepseek-chat\ndeepseek-reasoner">${escapeHTML(provider.models.join('\n'))}</textarea></div>
-        <div style="margin-top:4px"><button class="btn manual-add-toggle" data-manual-toggle="${escapeHTML(provider.id)}" type="button" style="font-size:12px;background:transparent;border:1px dashed var(--line);color:var(--muted)">＋ 手动添加模型</button></div>
+        <div style="margin-top:4px"><button class="btn manual-add-toggle" data-manual-toggle="${escapeHTML(provider.id)}" type="button" style="background:transparent;border:1px dashed var(--line);color:var(--muted)">＋ 手动添加模型</button></div>
       </div>`;
     }
 
