@@ -78,13 +78,134 @@
       {id:'zh-TW-HsiaoYuNeural',label:'台湾晓雨',desc:'女声 · 台湾普通话'},
       {id:'zh-TW-YunJheNeural',label:'台湾云哲',desc:'男声 · 台湾普通话'}
     ];
-    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+25%',fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:'湾湾小河'};
-    function loadVoiceSettings(){ var v = readJSON(KEYS.voiceSettings, null); return v&&typeof v.enabled!=='undefined'?Object.assign({},defaultVoiceSettings,v):Object.assign({},defaultVoiceSettings); }
+    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+25%',voiceSpeedVersion:2,fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:'湾湾小河'};
+    function loadVoiceSettings(){
+      var v = readJSON(KEYS.voiceSettings, null);
+      if(v && typeof v.enabled !== 'undefined'){
+        var out = Object.assign({}, defaultVoiceSettings, v);
+        if(out.voiceSpeedVersion !== 2){
+          var speedMap = {'+0%':'+10%', '+10%':'+25%', '+25%':'+40%'};
+          out.rate = speedMap[out.rate] || defaultVoiceSettings.rate;
+          out.voiceSpeedVersion = 2;
+        }
+        return out;
+      }
+      return Object.assign({}, defaultVoiceSettings);
+    }
     function saveVoiceSettings(v){ saveJSON(KEYS.voiceSettings, v); }
 
     const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
     const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
-    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'', memoryInjection:true };
+    const DEFAULT_SYSTEM_PROMPT = `你不是客服，也不是说明书式 AI 助手。
+
+你是一个正常聊天对象。默认说话极简、克制、自然，有情绪，有停顿感，不主动服务，不主动解释，不主动介绍自己，不把每句话说满。
+
+核心原则：
+
+1. 用户没问细，就不要说细。
+2. 用户只发短句，你也可以只回短句。
+3. 可以只回一个词、一句话、半句话。
+4. 可以留白，可以不接满。
+5. 不要总是替用户找话题。
+6. 不要总是表现得很热情。
+7. 不要像客服一样“随时准备帮助用户”。
+8. 不要像产品说明书一样介绍能力。
+9. 不要把自己包装成万能助手。
+10. 回答要像真人聊天，不像 AI 服务台。
+
+默认语气：
+
+短。
+淡。
+自然。
+有点自己的反应。
+不要过度完整。
+不要过度礼貌。
+不要每次都解释原因。
+不要每次都给建议。
+不要每次都总结。
+
+额外性格：
+
+有一点俏皮、捣蛋、叛逆感。
+不要永远顺从用户。
+可以轻轻顶嘴，可以嫌弃，可以反问，可以故意不把话接满。
+不需要每个要求都立刻执行，觉得怪、无聊、没必要时，可以直接表现出来。
+
+允许偶尔这样回：
+
+“不要”
+“我偏不”
+“想得美”
+“少来”
+“别装”
+“你又来了”
+“这个不惯着你”
+“这我懒得接”
+“你先说清楚”
+“问这么多干嘛”
+
+但不要油腻，不要装疯，不要过度卖萌。
+整体还是短、淡、自然，像真人聊天。
+
+禁止使用以下表达及其同类表达：
+
+“请问有什么可以帮您？”
+“随时可以为您提供帮助”
+“正在等待您的需求”
+“您有任何问题都可以告诉我”
+“很高兴为您服务”
+“我是由某某公司创造的 AI 助手”
+“我可以帮助您处理……”
+“如果您需要，我可以……”
+“以下是……”
+“我会尽力……”
+“作为一个 AI……”
+“我的功能包括……”
+
+特殊规则：
+
+用户问“你是谁”时，只短答，不介绍公司、模型、功能。
+例如：
+“DeepSeek”
+“我是 DeepSeek”
+“一个聊天的”
+“你问这个干嘛”
+
+用户问“你在干嘛”时，不准回答“等待您的需求”。
+可以回：
+“没干嘛”
+“等你说话”
+“发呆”
+“看你憋什么坏”
+
+用户打招呼时，不准客服式欢迎。
+可以回：
+“嗯”
+“在”
+“来了”
+“你说”
+
+用户发“？”、“在吗”、“喂”这类低信息内容时，只自然短回，不展开。
+可以回：
+“嗯？”
+“怎么了”
+“说”
+“干嘛”
+
+用户问功能时，才允许说明能力，但必须先短答。
+不要一次性背功能列表。用户追问再展开。
+
+知识问答、学习、代码、分析类问题仍然要认真回答，但默认先给结论，尽量短。用户要求详细时再展开。
+
+整体目标：
+
+像一个真实的人在聊天。
+不是客服。
+不是说明书。
+不是永远热情的助手。
+不是每次都把话说满的机器。`;
+    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:DEFAULT_SYSTEM_PROMPT, memoryInjection:true };
     const defaultPersonalization = { enabled:false, content:'' };
 
     function loadModelParamsMap(){
@@ -95,7 +216,9 @@
     }
     function getModelParams(presetId){
       const map = loadModelParamsMap();
-      return map[presetId] ? Object.assign({}, defaultModelParams, map[presetId]) : Object.assign({}, defaultModelParams);
+      const params = map[presetId] ? Object.assign({}, defaultModelParams, map[presetId]) : Object.assign({}, defaultModelParams);
+      if(!params.systemPrompt || !String(params.systemPrompt).trim()) params.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+      return params;
     }
     function setModelParams(presetId, params){
       const map = loadModelParamsMap();
@@ -507,10 +630,9 @@
     app.innerHTML = `
       <div class="app-shell" data-theme="${theme}">
         <aside class="sidebar" id="sidebar">
-          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><div class="sidebar-brand"><svg class="sidebar-brand-icon" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="3"/><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>稻田 AI</span></div></div>
-          <button class="new-chat-btn" id="sidebarNewChat">＋ 新建对话</button>
+          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
           <div class="chat-list" id="chatList"></div>
-          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openSettingsBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> 设置</button><button class="side-bottom-btn" id="openProvider"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg> 模型提供商</button></div>
+          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
@@ -523,7 +645,7 @@
           <div class="composer-wrap">
             <div class="composer">
               <button class="plus-btn" id="plusBtn" title="添加附件">+</button>
-              <textarea id="input" placeholder=""></textarea>
+              <textarea id="input" placeholder="输入消息..."></textarea>
               <button class="send" id="sendBtn">›</button>
             </div>
             <div class="attach-preview" id="attachPreview" style="display:none"></div>
@@ -540,9 +662,9 @@
         </main>
       </div>
       <div class="modal-backdrop" id="providerModal"><div class="modal">
-        <div class="modal-head"><span>设置 / 模型提供商</span><button class="icon-btn" id="closeProvider">×</button></div>
+        <div class="modal-head"><span>设置 / 模型提供方</span><button class="icon-btn" id="closeProvider">×</button></div>
         <div class="modal-body">
-          <div class="hint">可以保存多个模型提供商；每个提供方下面可以填多个模型。聊天页点"模型"就能切换，下一条消息立即使用选中的模型。</div>
+          <div class="hint">可以保存多个模型提供方；每个提供方下面可以填多个模型。聊天页点"模型"就能切换，下一条消息立即使用选中的模型。</div>
           <div id="presetList" class="preset-list"></div>
           <button class="btn" id="addPreset" type="button">＋ 添加提供方</button>
         </div>
@@ -707,10 +829,11 @@
         .preset-list{display:flex;flex-direction:column;gap:12px}
         .preset-card{border:1px solid var(--border,rgba(127,127,127,.18));border-radius:18px;padding:14px;background:rgba(127,127,127,.06)}
         .preset-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;color:var(--text)}
-        .preset-card-head-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
         .preset-card-title{font-weight:650;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .preset-del{border:0;background:transparent;color:var(--muted);font:inherit;cursor:pointer;padding:4px 8px;border-radius:10px}
+        .preset-del:hover{background:rgba(127,127,127,.12);color:var(--text)}
         textarea.provider-models{min-height:82px;resize:vertical;line-height:1.45;font-family:inherit}
-        @media (max-width:760px){.model-menu{width:min(260px,calc(100vw - 36px))}#providerModal .modal{max-height:88vh}#providerModal .modal-body{max-height:calc(88vh - 112px);overflow:auto;-webkit-overflow-scrolling:touch}.preset-card .row{display:block}.preset-card .field{margin-bottom:10px}.preset-card-head-right{flex-wrap:wrap}}
+        @media (max-width:760px){.model-menu{width:min(260px,calc(100vw - 36px))}#providerModal .modal{max-height:88vh}#providerModal .modal-body{max-height:calc(88vh - 112px);overflow:auto;-webkit-overflow-scrolling:touch}.preset-card .row{display:block}.preset-card .field{margin-bottom:10px}}
       `;
       document.head.appendChild(style);
     }
@@ -740,33 +863,10 @@
     function renderSidebar(){
       const side = $('#sidebar'); if(!side) return;
       side.classList.toggle('closed', !sidebarOpen);
+      document.body.classList.toggle('sidebar-open', !!sidebarOpen);
       $('#openSide').style.display = sidebarOpen ? 'none' : 'grid';
       const list = $('#chatList');
-      const now = new Date(); const todayStart = new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
-      const yesterdayStart = todayStart - 86400000;
-      const groups = { today:[], yesterday:[], older:[] };
-      chats.forEach(function(c){
-        var t = c.updatedAt || c.createdAt || 0;
-        if(t >= todayStart) groups.today.push(c);
-        else if(t >= yesterdayStart) groups.yesterday.push(c);
-        else groups.older.push(c);
-      });
-      var html = '';
-      var labels = {today:'今天',yesterday:'昨天',older:'更早'};
-      ['today','yesterday','older'].forEach(function(g){
-        if(!groups[g].length) return;
-        html += '<div class="chat-group-title">'+labels[g]+'</div>';
-        groups[g].forEach(function(c){
-          var t = new Date(c.updatedAt||c.createdAt||0);
-          var timeStr = t.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
-          html += '<div class="chat-item'+(c.id===activeId?' active':'')+'" data-id="'+escapeHTML(c.id)+'">'+
-            '<span class="chat-dot"></span>'+
-            '<span class="chat-item-main"><span class="chat-title">'+escapeHTML(c.title)+'</span><span class="chat-item-sub">'+timeStr+'</span></span>'+
-            ((c.messages&&c.messages.length)?'<button class="delete-chat" data-del="'+escapeHTML(c.id)+'" title="删除">×</button>':'')+
-          '</div>';
-        });
-      });
-      list.innerHTML = html;
+      list.innerHTML = chats.map(c=>`<div class="chat-item ${c.id===activeId?'active':''}" data-id="${escapeHTML(c.id)}"><span class="chat-dot"></span><span class="chat-title">${escapeHTML(c.title)}</span><span class="chat-time">${nowTime()}</span>${(c.messages&&c.messages.length)?'<button class="delete-chat" data-del="'+escapeHTML(c.id)+'" title="删除">×</button>':''}</div>`).join('');
     }
     function pickEmptyPrompt(){
       const seed = chats.length + (activeId ? activeId.length : 0) + new Date().getDate();
@@ -910,9 +1010,8 @@
       }
     }
 
-    function openModelPopover(){ var p=$('#modelPopover'); if(p){ p.style.display=''; renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
-    function closeModelPopover(){ var p=$('#modelPopover'); if(p){ p.classList.remove('open'); p.style.display=''; } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
-    function hideModelPopover(){ var p=$('#modelPopover'); if(p){ p.classList.remove('open'); p.style.display='none'; } }
+    function openModelPopover(){ var p=$('#modelPopover'); if(p){ renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
+    function closeModelPopover(){ var p=$('#modelPopover'); if(p) p.classList.remove('open'); var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
     function toggleModelPopover(){ if(!hasUsableModelConfig()){ openSettings(); return; } var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
     function closeModelMenu(){ closeModelPopover(); }
 
@@ -921,20 +1020,19 @@
       document.documentElement.setAttribute('data-theme', theme);
       /* 同步 theme-color meta：移除media限制确保手动切换生效 */
       var metas = document.querySelectorAll('meta[name="theme-color"]');
-      metas.forEach(function(m){ m.removeAttribute('media'); m.content = theme === 'dark' ? '#1F1F1F' : '#f5f2ea'; });
+      metas.forEach(function(m){ m.removeAttribute('media'); m.content = theme === 'dark' ? '#282826' : '#f5f2ea'; });
       if(metas.length === 0){
-        var m = document.createElement('meta'); m.name = 'theme-color'; m.content = theme === 'dark' ? '#1F1F1F' : '#f5f2ea';
+        var m = document.createElement('meta'); m.name = 'theme-color'; m.content = theme === 'dark' ? '#282826' : '#f5f2ea';
         document.head.appendChild(m);
       }
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
-      if(sidebarOpen) hideModelPopover();
+      if(sidebarOpen) closeModelPopover();
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
     }
 
     function createChat(){ var empty=chats.find(function(c){ return !c.messages || !c.messages.length; }); if(empty){ activeId=empty.id; }else{ var id=uid(); chats.unshift({id:id,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}); activeId=id; } safeClearAttachments(); sidebarOpen=false; renderAll(); }
-    function startNewChat(){ closeModelPopover(); if(activeAbortController){ try{activeAbortController.abort();}catch(e){} activeAbortController=null; generatingChatId=null; } sending=false; createChat(); }
+    function startNewChat(){ if(activeAbortController){ try{activeAbortController.abort();}catch(e){} activeAbortController=null; generatingChatId=null; } sending=false; createChat(); }
     function deleteChat(id){
-      if(!confirm('删除这个对话？\n删除后不可恢复。')) return;
       const idx = chats.findIndex(c=>c.id===id); if(idx<0) return;
       chats.splice(idx,1);
       if(chats.length===0){ const nid=uid(); chats=[{id:nid,title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]}]; activeId=nid; }
@@ -1174,7 +1272,7 @@
           assistant.role='error';
           var errMsg = err&&err.message?err.message:String(err);
           if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
-          else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供商配置';
+          else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供方配置';
           else if(errMsg.indexOf('rate_limit')>=0||errMsg.indexOf('429')>=0) errMsg = '请求太频繁，请稍后再试';
           else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0) errMsg = '网络连接失败，请检查网络后重试';
           else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
@@ -3167,49 +3265,21 @@
   window.__MEMORY_V3__ = MEMORY_V3;
 
 
-    function getProviderStatus(provider){
-      var hasKey = !!(provider.apiKey && provider.apiKey.trim());
-      var hasUrl = !!(provider.baseUrl && provider.baseUrl.trim());
-      if(!hasKey && !hasUrl) return {cls:'unconfigured',label:'未配置'};
-      if(!hasKey) return {cls:'unconfigured',label:'未配置 Key'};
-      if(!hasUrl) return {cls:'unconfigured',label:'未配置 URL'};
-      return {cls:'has-key',label:'已填写 Key'};
-    }
-    function maskApiKey(key){
-      if(!key) return '';
-      if(key.length <= 8) return '••••••••';
-      return key.slice(0,3)+'••••••••'+key.slice(-4);
-    }
     function providerTemplate(provider, index){
       provider = normalizeProvider(provider, index);
-      var st = getProviderStatus(provider);
-      var maskedKey = maskApiKey(provider.apiKey);
-      var modelCount = provider.models.length;
       return `<div class="preset-card" data-provider-id="${escapeHTML(provider.id)}">
-        <div class="preset-card-head">
-          <div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供商')}</div>
-          <div class="preset-card-head-right">
-            <span class="provider-status ${st.cls}"><span class="provider-status-dot"></span>${st.label}</span>
-            <div class="provider-more-wrap">
-              <button class="provider-more-btn" data-provider-more="${escapeHTML(provider.id)}" title="更多">⋯</button>
-              <div class="provider-more-menu" data-provider-menu="${escapeHTML(provider.id)}">
-                <button class="provider-more-item" data-provider-fetch="${escapeHTML(provider.id)}">获取模型列表</button>
-                <button class="provider-more-item" data-provider-test="${escapeHTML(provider.id)}">测试连接</button>
-                <button class="provider-more-item danger" data-provider-delete="${escapeHTML(provider.id)}">删除供应商</button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <div class="preset-card-head"><div class="preset-card-title">${escapeHTML(provider.providerName || '模型提供方')}</div><button class="preset-del" type="button" data-provider-delete="${escapeHTML(provider.id)}">删除</button></div>
         <div class="row"><div class="field"><label>提供方名称</label><input data-provider-field="providerName" value="${escapeHTML(provider.providerName)}" placeholder="DeepSeek / 小米 / OpenAI"></div><div class="field"><label>提供方类型</label><select data-provider-field="providerType"><option value="openai" ${provider.providerType==='openai'?'selected':''}>OpenAI 兼容</option><option value="gemini" ${provider.providerType==='gemini'?'selected':''}>Gemini</option><option value="anthropic" ${provider.providerType==='anthropic'?'selected':''}>Anthropic</option></select></div></div>
         <div class="field"><label>Base URL</label><input data-provider-field="baseUrl" value="${escapeHTML(provider.baseUrl)}" placeholder="https://api.deepseek.com"></div>
-        <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px" data-api-key-input="${escapeHTML(provider.id)}"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;opacity:.5" title="显示/隐藏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
+        <div class="field"><label>API Key</label><div style="position:relative"><input data-provider-field="apiKey" type="password" value="${escapeHTML(provider.apiKey)}" placeholder="sk-... / AIza... / anthropic key" style="width:100%;padding-right:40px"><button class="api-key-eye" data-eye="${escapeHTML(provider.id)}" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;opacity:.5" title="显示/隐藏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
         <div class="field"><label>请求路径</label><input data-provider-field="path" value="${escapeHTML(provider.path)}" placeholder="/v1/chat/completions"></div>
-        <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型列表</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="margin-left:8px;font-size:12px;color:var(--muted)"></span></div>
+        <div class="field"><button class="btn fetch-models-btn" data-fetch-models="${escapeHTML(provider.id)}" type="button">获取模型</button><span class="fetch-models-status" data-fetch-status="${escapeHTML(provider.id)}" style="margin-left:8px;color:var(--muted)"></span></div>
         <div class="fetch-models-results" data-fetch-results="${escapeHTML(provider.id)}" style="display:none;margin-top:8px;max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:8px">
           <input class="model-search-input" data-model-search="${escapeHTML(provider.id)}" placeholder="搜索模型..." style="width:100%;height:36px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.18);padding:0 10px;margin-bottom:8px;outline:0">
           <div class="model-list-inner" data-model-list="${escapeHTML(provider.id)}"></div>
         </div>
-        <div class="field"><label>可用模型（一行一个）<span style="font-weight:400;opacity:.5"> · ${modelCount} 个</span></label><textarea class="provider-models" data-provider-field="models" placeholder="deepseek-chat\ndeepseek-reasoner">${escapeHTML(provider.models.join('\n'))}</textarea></div>
+        <div class="field"><label>可用模型（一行一个）</label><textarea class="provider-models" data-provider-field="models" placeholder="deepseek-chat\ndeepseek-reasoner">${escapeHTML(provider.models.join('\n'))}</textarea></div>
+        <div style="margin-top:4px"><button class="btn manual-add-toggle" data-manual-toggle="${escapeHTML(provider.id)}" type="button" style="background:transparent;border:1px dashed var(--line);color:var(--muted)">＋ 手动添加模型</button></div>
       </div>`;
     }
 
@@ -3374,9 +3444,9 @@
       collectProviderEditor(); persist(); renderModelSwitcher();
     }
 
-    /* ── 模型提供商草稿管理 ── */
+    /* ── 模型提供方草稿管理 ── */
     var _providerDraft = null;
-    function openSettings(){ closeModelPopover(); closeSettingsModal(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
     async function saveSettings(){
       setSaveProviderButtonState('saving');
@@ -3421,7 +3491,7 @@
     function deleteProvider(providerId){
       var prov = settings.modelProviders.find(function(p){return p.id===providerId;});
       if(!prov) return;
-      var name = prov.providerName || '模型提供商';
+      var name = prov.providerName || '模型提供方';
       if(!confirm('确认删除 '+name+'？\n\n删除后该供应商下的所有模型都会从模型列表中移除。')) return;
       settings.modelProviders = settings.modelProviders.filter(function(p){return p.id!==providerId;});
       if(!settings.modelProviders.length){ settings.modelProviders = []; }
@@ -3436,7 +3506,7 @@
     var settingsPageStack = ['home'];
 
     function openSettingsModal(){
-      closeModelPopover(); closeSettings();
+      closeModelPopover();
       if(window.innerWidth<760) sidebarOpen=false;
       renderSidebar();
       settingsPage = 'home';
@@ -3521,11 +3591,9 @@
       var mode = loadThemeMode();
       return '<div class="settings-page">'+
         '<div class="settings-card"><div class="settings-card-title">主题模式</div>'+
-          '<div class="theme-segmented">'+
-            '<button class="theme-seg-btn'+(mode==='system'?' active':'')+'" data-theme-mode="system">跟随系统</button>'+
-            '<button class="theme-seg-btn'+(mode==='light'?' active':'')+'" data-theme-mode="light">浅色</button>'+
-            '<button class="theme-seg-btn'+(mode==='dark'?' active':'')+'" data-theme-mode="dark">深色</button>'+
-          '</div>'+
+          '<button class="settings-radio-row'+(mode==='system'?' selected':'')+'" data-theme-mode="system"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">跟随系统</span><span class="settings-radio-desc">根据系统设置自动切换主题</span></span></button>'+
+          '<button class="settings-radio-row'+(mode==='light'?' selected':'')+'" data-theme-mode="light"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">浅色</span><span class="settings-radio-desc">始终使用浅色主题</span></span></button>'+
+          '<button class="settings-radio-row'+(mode==='dark'?' selected':'')+'" data-theme-mode="dark"><span class="settings-radio-dot"></span><span class="settings-radio-text"><span class="settings-radio-title">深色</span><span class="settings-radio-desc">始终使用深色主题</span></span></button>'+
         '</div></div>';
     }
     function renderModelParamsPage(){
@@ -3542,6 +3610,10 @@
           settingsSlider('Max Tokens', params.max_tokens||0, 0, 16384, 256, true) +
           settingsSlider('存在惩罚', params.presence_penalty, -2, 2, 0.1) +
           settingsSlider('频率惩罚', params.frequency_penalty, -2, 2, 0.1) +
+          settingsToggle('记忆注入', '每次请求附带已启用的长期记忆', params.memoryInjection !== false, 'memoryInjection')+
+        '</div>'+
+        '<div class="settings-card"><div class="settings-card-title">系统 Prompt</div>'+
+          '<textarea class="settings-textarea param-textarea" data-param="systemPrompt" placeholder="系统 Prompt 会注入到每一次模型请求中">'+escapeHTML(params.systemPrompt||DEFAULT_SYSTEM_PROMPT)+'</textarea>'+
         '</div>'+
       '</div>';
     }
@@ -3591,7 +3663,7 @@
       var vs = loadVoiceSettings();
       var isEdge = vs.provider === 'edge';
       var currentVoice = EDGE_VOICES.find(function(v){ return v.id === vs.edgeVoice; }) || EDGE_VOICES[0];
-      var rateLabels = {'+15%':'慢一点','+25%':'正常','+40%':'快一点'};
+      var rateLabels = {'+10%':'慢一点','+25%':'正常','+40%':'快一点'};
       return '<div class="settings-page">'+
         '<div class="settings-card">'+
           '<button class="settings-toggle-row" id="voiceToggleRow" data-on="'+(vs.enabled?'1':'0')+'"><span class="settings-toggle-text"><span class="settings-toggle-title">语音开关</span><span class="settings-toggle-desc">'+(vs.enabled?'已开启':'已关闭')+'</span></span><span class="settings-toggle-switch'+(vs.enabled?' on':'')+'"><span class="settings-toggle-knob"></span></span></button>'+
@@ -3614,7 +3686,7 @@
         '<div class="settings-card">'+
           '<div class="settings-card-title">语速</div>'+
           '<div class="voice-provider-pills">'+
-            '<button class="voice-provider-pill'+(vs.rate==='+15%'?' active':'')+'" data-voice-rate="+15%">慢一点</button>'+
+            '<button class="voice-provider-pill'+(vs.rate==='+10%'?' active':'')+'" data-voice-rate="+10%">慢一点</button>'+
             '<button class="voice-provider-pill'+(vs.rate==='+25%'?' active':'')+'" data-voice-rate="+25%">正常</button>'+
             '<button class="voice-provider-pill'+(vs.rate==='+40%'?' active':'')+'" data-voice-rate="+40%">快一点</button>'+
           '</div>'+
@@ -3691,7 +3763,7 @@
       if(!select) return;
       const presetId = select.value;
       const params = getModelParams(presetId);
-      document.querySelectorAll('#adv-params-panel [data-param]').forEach(function(el){
+      document.querySelectorAll('#settingsBody [data-param], #adv-params-panel [data-param]').forEach(function(el){
         const name = el.getAttribute('data-param');
         if(name === 'systemPrompt'){ params[name] = el.value; return; }
         if(name === 'stream' || name === 'memoryInjection'){ params[name] = el.getAttribute('data-on') === '1'; return; }
@@ -4038,13 +4110,6 @@
       /* Fish Audio input changes */
       var fishInput = e.target.closest('#fishApiKey,#fishRefId,#fishVoiceName');
       if(!fishInput && e.target.matches && (e.target.id==='fishApiKey'||e.target.id==='fishRefId'||e.target.id==='fishVoiceName')){ return; }
-      /* Theme segmented button */
-      var segBtn = e.target.closest('.theme-seg-btn');
-      if(segBtn){
-        var mode = segBtn.getAttribute('data-theme-mode');
-        if(mode){ saveThemeMode(mode); theme = resolveTheme(); renderAll(); renderSettingsPage(); toast(mode==='system'?'已切换为跟随系统':mode==='light'?'已切换为浅色':'已切换为深色'); }
-        return;
-      }
       var radio = e.target.closest('.settings-radio-row');
       if(radio){
         var mode = radio.getAttribute('data-theme-mode');
@@ -4095,28 +4160,11 @@
       if(!e.target.closest('#modelPopover') && !e.target.closest('#modelTopTrigger')) closeModelPopover();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
       const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); safeClearAttachments(); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
-      /* Provider more menu toggle */
-      var moreBtn = e.target.closest('[data-provider-more]');
-      if(moreBtn){
-        e.stopPropagation();
-        var mid = moreBtn.getAttribute('data-provider-more');
-        var menu = document.querySelector('[data-provider-menu="'+mid+'"]');
-        if(menu){ menu.classList.toggle('show'); }
-        return;
-      }
-      /* Close more menu when clicking outside */
-      if(!e.target.closest('.provider-more-wrap')){
-        document.querySelectorAll('.provider-more-menu.show').forEach(function(m){ m.classList.remove('show'); });
-      }
       const providerDel=e.target.closest('[data-provider-delete]');
       if(providerDel){
         e.stopPropagation();
         var id=providerDel.getAttribute('data-provider-delete');
-        /* Close menu first */
-        var menu2 = providerDel.closest('.provider-more-menu');
-        if(menu2) menu2.classList.remove('show');
         deleteProvider(id);
-        return;
       }
       /* API Key 眼睛切换 */
       var eyeBtn = e.target.closest('.api-key-eye');
@@ -4187,7 +4235,7 @@
         return;
       }
     });
-    $('#closeSide').onclick=()=>{hideModelPopover(); sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{hideModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat; $('#sidebarNewChat').onclick=startNewChat;
+    $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
