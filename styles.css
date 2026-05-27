@@ -51,7 +51,7 @@
 }
 [data-theme="dark"] .message.user .bubble{background:#141412;border-color:rgba(255,255,255,.06)}
 *{box-sizing:border-box}
-html,body,#app{width:100%;height:100%;margin:0}
+html,body,#app{width:100%;height:100%;margin:0;background:var(--bg)}
 html{font-size:18px;background:var(--bg)}body{font-family:var(--font-ui);font-weight:400;font-size:1rem;line-height:1.58;letter-spacing:0.005em;background:var(--bg);color:var(--text);overflow:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 .assistant-render{font-family:var(--font-reading)!important}
 pre,code,.assistant-render code,.assistant-render pre{font-family:var(--font-mono)!important}

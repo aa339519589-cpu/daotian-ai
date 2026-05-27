@@ -140,7 +140,7 @@
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
     }
-    function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=13&&v<=22) return v; return 18; }
+    function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=15&&v<=21) return v; return 18; }
     function saveFontSize(v){ setItem(KEYS.fontSize, String(v)); applyFontSize(v); }
     function applyFontSize(v){
       var s = (v||18)/18;
@@ -149,17 +149,24 @@
       st.textContent = 'body{font-size:'+Math.round(18*s)+'px!important}'+
         '.bubble{font-size:'+Math.round(18*s)+'px!important}'+
         '.assistant-render{font-size:'+Math.round(18*s)+'px!important}'+
-        'textarea{font-size:'+Math.round(18*s)+'px!important}'+
+        'textarea,.field input,.field select,input[type="text"],input[type="password"]{font-size:'+Math.round(18*s)+'px!important}'+
         '.model-top-trigger{font-size:'+Math.round(18*s)+'px!important}'+
         '.plus-menu-item{font-size:'+Math.round(14*s)+'px!important}'+
         '.chat-title{font-size:'+Math.round(14*s)+'px!important}'+
+        '.chat-time{font-size:'+Math.round(12*s)+'px!important}'+
+        '.pill{font-size:'+Math.round(13*s)+'px!important}'+
+        '.new-chat-btn{font-size:'+Math.round(14*s)+'px!important}'+
+        '.field label{font-size:'+Math.round(14*s)+'px!important}'+
+        '.model-option-title{font-size:'+Math.round(15*s)+'px!important}'+
+        '.model-option-subtitle{font-size:'+Math.round(12*s)+'px!important}'+
         '.settings-entry-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.settings-card-title{font-size:'+Math.round(13*s)+'px!important}'+
         '.settings-radio-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.settings-toggle-title{font-size:'+Math.round(15*s)+'px!important}'+
         '.hint,.settings-entry-desc,.settings-radio-desc,.settings-toggle-desc,.settings-card-hint{font-size:'+Math.round(13*s)+'px!important}'+
         '.side-bottom-btn{font-size:'+Math.round(13*s)+'px!important}'+
-        '.btn{font-size:'+Math.round(15*s)+'px!important}';
+        '.btn{font-size:'+Math.round(15*s)+'px!important}'+
+        '.status{font-size:'+Math.round(14*s)+'px!important}';
       document.head.appendChild(st);
     }
     function loadThemeMode(){
@@ -851,10 +858,13 @@
     function renderAll(){
       theme = resolveTheme();
       document.documentElement.setAttribute('data-theme', theme);
-      /* 同步 theme-color meta 到 safe-area 背景色 */
-      var meta = document.querySelector('meta[name="theme-color"]');
-      if(!meta){ meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
-      meta.content = theme === 'dark' ? '#282826' : '#f5f2ea';
+      /* 同步 theme-color meta：移除media限制确保手动切换生效 */
+      var metas = document.querySelectorAll('meta[name="theme-color"]');
+      metas.forEach(function(m){ m.removeAttribute('media'); m.content = theme === 'dark' ? '#282826' : '#f5f2ea'; });
+      if(metas.length === 0){
+        var m = document.createElement('meta'); m.name = 'theme-color'; m.content = theme === 'dark' ? '#282826' : '#f5f2ea';
+        document.head.appendChild(m);
+      }
       const shell = $('.app-shell'); if(shell) shell.setAttribute('data-theme', theme);
       if(sidebarOpen) closeModelPopover();
       renderSidebar(); renderMessages(); renderModelSwitcher(); persist();
