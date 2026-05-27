@@ -82,7 +82,8 @@
     function loadVoiceSettings(){ var v = readJSON(KEYS.voiceSettings, null); return v&&typeof v.enabled!=='undefined'?Object.assign({},defaultVoiceSettings,v):Object.assign({},defaultVoiceSettings); }
     function saveVoiceSettings(v){ saveJSON(KEYS.voiceSettings, v); }
 
-    const defaultSettings = { providerType:'openai', providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', apiKey:'', model:'deepseek-chat', path:'/v1/chat/completions' };
+    const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
+    const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
     const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'', memoryInjection:true };
     const defaultPersonalization = { enabled:false, content:'' };
 
@@ -217,6 +218,8 @@
     function readJSON(key, fallback){ try{ const v = safeGet(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } }
     function saveJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
     function setItem(key, value){ try{ localStorage.setItem(key, value); }catch(e){} }
+    function saveJSONStrict(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
+    function setItemStrict(key, value){ localStorage.setItem(key, value); }
 
     function slugify(value){
       return String(value || 'x').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,48) || 'x';
@@ -231,11 +234,17 @@
     function makeProviderId(name, baseUrl, i){
       return 'p_' + slugify((name || 'provider') + '_' + (baseUrl || '')) + '_' + i;
     }
+    function modelValuesFromProvider(p){
+      if(Array.isArray(p.models) || typeof p.models === 'string') return splitModels(p.models);
+      if(Array.isArray(p.modelList) || typeof p.modelList === 'string') return splitModels(p.modelList);
+      if(typeof p.model === 'string') return splitModels(p.model);
+      return [];
+    }
     function normalizeProvider(p, i){
       p = p && typeof p === 'object' ? p : {};
-      const providerName = String(p.providerName || p.name || p.label || defaultSettings.providerName || 'DeepSeek').trim() || 'DeepSeek';
-      const baseUrl = String(p.baseUrl || defaultSettings.baseUrl || '').trim();
-      const models = splitModels(p.models || p.modelList || p.model || '');
+      const providerName = String(p.providerName || p.name || p.label || '').trim();
+      const baseUrl = String(p.baseUrl || '').trim();
+      const models = modelValuesFromProvider(p);
       const id = String(p.id || p.providerId || makeProviderId(providerName, baseUrl, i)).trim();
       return {
         id,
@@ -244,8 +253,18 @@
         baseUrl,
         apiKey: String(p.apiKey || '').trim(),
         path: String(p.path || p.requestPath || defaultSettings.path || '/v1/chat/completions').trim() || '/v1/chat/completions',
-        models: models.length ? Array.from(new Set(models)) : []
+        models: Array.from(new Set(models))
       };
+    }
+    function providerHasConfig(provider){
+      if(!provider) return false;
+      return !!(
+        (provider.providerName && provider.providerName.trim()) ||
+        (provider.baseUrl && provider.baseUrl.trim()) ||
+        (provider.apiKey && provider.apiKey.trim()) ||
+        (provider.models && provider.models.length) ||
+        (provider.path && provider.path !== defaultSettings.path)
+      );
     }
     /* 合并重复 provider：同 name+baseUrl → 合并 models 去重 */
     function normalizeProviders(providers){
@@ -300,8 +319,8 @@
         if(!model) return;
         const normalized = {
           providerType: String(p.providerType || defaultSettings.providerType || 'openai'),
-          providerName: String(p.providerName || p.name || defaultSettings.providerName || 'DeepSeek').trim() || 'DeepSeek',
-          baseUrl: String(p.baseUrl || defaultSettings.baseUrl || '').trim(),
+          providerName: String(p.providerName || p.name || '').trim(),
+          baseUrl: String(p.baseUrl || '').trim(),
           apiKey: String(p.apiKey || '').trim(),
           path: String(p.path || defaultSettings.path || '/v1/chat/completions').trim() || '/v1/chat/completions',
           model
@@ -327,37 +346,38 @@
       return groups.map(normalizeProvider);
     }
     function legacyProviders(base){
+      const legacyModels = splitModels(base.models || base.modelList || base.model || '');
+      const hasRealLegacyConfig = !!(
+        String(base.apiKey || '').trim() ||
+        (String(base.baseUrl || '').trim() && String(base.baseUrl || '').trim() !== legacyDefaultSettings.baseUrl) ||
+        (String(base.model || '').trim() && String(base.model || '').trim() !== legacyDefaultSettings.model) ||
+        (String(base.providerName || '').trim() && String(base.providerName || '').trim() !== legacyDefaultSettings.providerName)
+      );
+      if(!hasRealLegacyConfig) return [];
       var provider = normalizeProvider({
         id:'p_legacy_0',
         providerType: base.providerType || 'openai',
-        providerName: base.providerName || 'DeepSeek',
-        baseUrl: base.baseUrl || defaultSettings.baseUrl,
+        providerName: base.providerName || '',
+        baseUrl: base.baseUrl || '',
         apiKey: base.apiKey || '',
         path: base.path || '/v1/chat/completions',
-        models: splitModels(base.model || base.models || 'deepseek-chat')
+        models: legacyModels
       }, 0);
-      return [provider];
+      return providerHasConfig(provider) ? [provider] : [];
     }
     function ensureSettingsShape(raw){
-      var base = Object.assign({}, raw || {});
-      /* 确保 base 有默认字段但不覆盖已有值 */
-      if(!base.providerType) base.providerType = defaultSettings.providerType;
-      if(!base.providerName && !base.modelProviders && !base.modelPresets) base.providerName = defaultSettings.providerName;
+      var hasProviderList = raw && typeof raw === 'object' && Array.isArray(raw.modelProviders);
+      var hasPresetList = raw && typeof raw === 'object' && Array.isArray(raw.modelPresets);
+      var base = Object.assign({}, defaultSettings, raw || {});
       var providers = [];
-      if(Array.isArray(base.modelProviders) && base.modelProviders.length){
-        providers = base.modelProviders.map(normalizeProvider).filter(function(p){return p;});
+      if(hasProviderList){
+        providers = base.modelProviders.map(normalizeProvider).filter(providerHasConfig);
         /* 合并重复 provider */
         providers = normalizeProviders(providers);
-      }else if(Array.isArray(base.modelPresets) && base.modelPresets.length){
+      }else if(hasPresetList && base.modelPresets.length){
         providers = providersFromPresets(base.modelPresets);
       }
-      /* 只在没有任何 provider 时才创建默认的 */
-      if(!providers.length){
-        var hasAnyData = base.model || base.apiKey || base.baseUrl;
-        if(hasAnyData || !raw || Object.keys(raw).length === 0){
-          providers = legacyProviders(base);
-        }
-      }
+      if(!providers.length && !hasProviderList && !hasPresetList) providers = legacyProviders(base);
       base.modelProviders = providers;
       base.modelPresets = providersToPresets(providers);
       if(!base.activePresetId || !base.modelPresets.some(function(p){return p.id===base.activePresetId;})){
@@ -399,34 +419,7 @@
     }
 
     let theme = resolveTheme();
-    let settings = ensureSettingsShape(Object.assign({}, defaultSettings, readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {}));
-    /* 加载后强制合并去重 + 清理自动注入的默认模型 */
-    if(Array.isArray(settings.modelProviders) && settings.modelProviders.length){
-      var cleaned = normalizeProviders(settings.modelProviders);
-      /* 彻底清除所有自动注入的默认模型：deepseek-chat和deepseek-reasoner如果是系统自动加的，一律删掉 */
-      var dirty = false;
-      for(var ci=0; ci<cleaned.length; ci++){
-        var prov = cleaned[ci];
-        if(!Array.isArray(prov.models)) continue;
-        /* 只保留用户明确添加的模型：过滤掉已知的自动注入模型 */
-        var autoModels = ['deepseek-chat','deepseek-reasoner'];
-        var filtered = [];
-        for(var mi=0; mi<prov.models.length; mi++){
-          /* 如果models数组只有一个模型且是默认模型 → 可能是自动注入的 → 清除 */
-          /* 如果models有多个模型 → 保留所有包括deepseek-chat(用户可能真需要) */
-          if(prov.models.length <= 1 && autoModels.indexOf(prov.models[mi]) >= 0){
-            dirty = true; continue;
-          }
-          filtered.push(prov.models[mi]);
-        }
-        if(filtered.length !== prov.models.length){ prov.models = filtered; dirty = true; }
-      }
-      if(dirty || cleaned.length !== settings.modelProviders.length){
-        settings.modelProviders = cleaned;
-        settings.modelPresets = providersToPresets(cleaned);
-        saveJSON(KEYS.settings, settings);
-      }
-    }
+    let settings = ensureSettingsShape(readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
     let chats = loadChats();
     let activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
     let sidebarOpen = true;
@@ -447,15 +440,37 @@
     }
     function syncLegacySettings(){
       const p = activePreset();
-      if(!p) return;
+      if(!p){
+        const firstProvider = (settings.modelProviders && settings.modelProviders[0]) || null;
+        settings.providerType = (firstProvider && firstProvider.providerType) || defaultSettings.providerType;
+        settings.providerName = (firstProvider && firstProvider.providerName) || '';
+        settings.baseUrl = (firstProvider && firstProvider.baseUrl) || '';
+        settings.apiKey = (firstProvider && firstProvider.apiKey) || '';
+        settings.model = '';
+        settings.path = (firstProvider && firstProvider.path) || defaultSettings.path;
+        return false;
+      }
       settings.providerType = p.providerType;
       settings.providerName = p.providerName;
       settings.baseUrl = p.baseUrl;
       settings.apiKey = p.apiKey;
       settings.model = p.model;
       settings.path = p.path;
+      return true;
     }
-    function persist(){ syncLegacySettings(); saveJSON(KEYS.chats,chats); setItem(KEYS.active,activeId); saveJSON(KEYS.settings,settings); }
+    function persist(options){
+      const strict = options && options.strict;
+      syncLegacySettings();
+      if(strict){
+        saveJSONStrict(KEYS.chats,chats);
+        setItemStrict(KEYS.active,activeId);
+        saveJSONStrict(KEYS.settings,settings);
+        return;
+      }
+      saveJSON(KEYS.chats,chats);
+      setItem(KEYS.active,activeId);
+      saveJSON(KEYS.settings,settings);
+    }
 
     /* ── Model state sync ── */
     function findFirstUsableProvider(){
@@ -479,6 +494,7 @@
         saveJSON(KEYS.settings, settings);
         return true;
       }
+      syncLegacySettings();
       return false;
     }
 
@@ -525,7 +541,7 @@
           <div id="presetList" class="preset-list"></div>
           <button class="btn" id="addPreset" type="button">＋ 添加提供方</button>
         </div>
-        <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider" onclick="window.__saveSettings__()">保存</button></div>
+        <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
       </div></div>
       <div class="modal-backdrop" id="settingsModal"><div class="settings-shell" id="settingsShell">
         <div class="settings-header">
@@ -3147,6 +3163,32 @@
       box.innerHTML = settings.modelProviders.map(providerTemplate).join('');
     }
 
+    function setSaveProviderButtonState(state){
+      const btn = $('#saveProvider');
+      if(!btn) return;
+      if(window.__providerSaveTimer__){
+        clearTimeout(window.__providerSaveTimer__);
+        window.__providerSaveTimer__ = null;
+      }
+      btn.dataset.saveState = state || 'idle';
+      if(state === 'saving'){
+        btn.textContent = '保存中...';
+        btn.disabled = true;
+      }else if(state === 'saved'){
+        btn.textContent = '已保存 ✓';
+        btn.disabled = false;
+        window.__providerSaveTimer__ = setTimeout(function(){
+          if(btn.dataset.saveState === 'saved') setSaveProviderButtonState('idle');
+        }, 1000);
+      }else if(state === 'error'){
+        btn.textContent = '保存失败';
+        btn.disabled = false;
+      }else{
+        btn.textContent = '保存';
+        btn.disabled = false;
+      }
+    }
+
     function collectProviderEditor(){
       const cards = Array.from(document.querySelectorAll('[data-provider-id]'));
       const providers = cards.map(function(card, i){
@@ -3163,12 +3205,15 @@
           providerType: val('providerType'), providerName: val('providerName'), baseUrl: val('baseUrl'),
           apiKey: val('apiKey'), path: val('path'), models: deduped
         }, i);
-      }).filter(function(p){ return p && p.models && p.models.length; });
-      if(!providers.length) providers.push(normalizeProvider(defaultSettings,0));
+      }).filter(providerHasConfig);
       providers = normalizeProviders(providers);
       settings.modelProviders = providers;
       settings.modelPresets = providersToPresets(providers);
-      if(!settings.activePresetId || !settings.modelPresets.some(p=>p.id===settings.activePresetId)) settings.activePresetId = settings.modelPresets[0].id;
+      if(!settings.modelPresets.length){
+        settings.activePresetId = '';
+      }else if(!settings.activePresetId || !settings.modelPresets.some(p=>p.id===settings.activePresetId)){
+        settings.activePresetId = settings.modelPresets[0].id;
+      }
       syncLegacySettings();
     }
 
@@ -3196,12 +3241,20 @@
         });
         var data = await res.json();
         if(data.ok && data.models && data.models.length){
-          if(statusEl) statusEl.textContent = '已获取 ' + data.models.length + ' 个模型';
+          var fetchedModels = data.models.map(function(m){ return String(m.id || m.name || '').trim(); }).filter(Boolean);
+          var textarea = card.querySelector('[data-provider-field="models"]');
+          var currentModels = splitModels(textarea ? textarea.value : val('models'));
+          fetchedModels.forEach(function(modelId){
+            if(currentModels.indexOf(modelId) < 0) currentModels.push(modelId);
+          });
+          if(textarea) textarea.value = currentModels.join('\n');
+          collectProviderEditor();
+          if(statusEl) statusEl.textContent = '已获取并加入 ' + fetchedModels.length + ' 个模型';
           if(btn){ btn.textContent = '已获取'; btn.disabled = false; }
-          var currentModels = splitModels(val('models'));
           var listHtml = data.models.map(function(m){
-            var added = currentModels.indexOf(m.id) >= 0;
-            return '<div class="model-list-row"><span class="model-list-name">'+escapeHTML(m.id)+'</span><button class="model-add-btn '+(added?'remove':'add')+'" data-model-name="'+escapeHTML(m.id)+'" data-provider-id="'+escapeHTML(providerId)+'">'+(added?'−':'＋')+'</button></div>';
+            var modelId = String(m.id || m.name || '').trim();
+            var added = currentModels.indexOf(modelId) >= 0;
+            return '<div class="model-list-row"><span class="model-list-name">'+escapeHTML(modelId)+'</span><button class="model-add-btn '+(added?'remove':'add')+'" data-model-name="'+escapeHTML(modelId)+'" data-provider-id="'+escapeHTML(providerId)+'">'+(added?'−':'＋')+'</button></div>';
           }).join('');
           var listEl = card.querySelector('[data-model-list="'+providerId+'"]');
           if(listEl) listEl.innerHTML = listHtml;
@@ -3211,6 +3264,7 @@
           if(btn){ btn.textContent = '获取失败，点此重试'; btn.disabled = false; }
         }
       }catch(err){
+        console.error('[models] fetch failed:', err);
         if(statusEl) statusEl.textContent = '网络错误，点此重试';
         if(btn){ btn.textContent = '获取失败，点此重试'; btn.disabled = false; }
       }
@@ -3241,29 +3295,24 @@
 
     /* ── 模型提供方草稿管理 ── */
     var _providerDraft = null;
-    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
-    function saveSettings(){
-      var saveBtn = document.getElementById('saveProvider');
-      if(!saveBtn) return;
-      var originalText = '保存';
-      /* 保存中状态 */
-      saveBtn.textContent = '保存中...'; saveBtn.disabled = true;
+    async function saveSettings(){
+      setSaveProviderButtonState('saving');
       try{
+        await new Promise(function(resolve){ setTimeout(resolve, 250); });
         collectProviderEditor();
         syncModelState();
-        persist();
+        persist({strict:true});
         renderModelSwitcher();
         _providerDraft = null;
-        saveBtn.textContent = '已保存 ✓';
-        setTimeout(function(){ saveBtn.textContent = originalText; saveBtn.disabled = false; }, 1000);
-        closeSettings();
-        if(hasUsableModelConfig()){ toast('配置已保存'); }else{ toast('已保存，但缺少 API Key'); }
+        setSaveProviderButtonState('saved');
+        if(hasUsableModelConfig()){ toast('配置已保存'); }
+        else{ toast('已保存，请先添加模型'); }
+        console.log('[settings] saved, key:', KEYS.settings, 'usable:', hasUsableModelConfig(), 'providers:', JSON.stringify(settings.modelProviders.map(function(p){return {name:p.providerName,key:p.apiKey?'***':'EMPTY',baseUrl:p.baseUrl,path:p.path,models:p.models};})));
       }catch(e){
         console.error('[saveSettings] 保存失败:', e);
-        saveBtn.textContent = '保存失败';
-        saveBtn.disabled = false;
-        setTimeout(function(){ saveBtn.textContent = originalText; saveBtn.disabled = false; }, 1500);
+        setSaveProviderButtonState('error');
         toast('保存失败：' + (e.message || '未知错误'));
       }
     }
@@ -4024,7 +4073,7 @@
       }
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
-    $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings;
+    $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
     $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
