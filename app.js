@@ -78,9 +78,6 @@
       {id:'zh-TW-HsiaoYuNeural',label:'台湾晓雨',desc:'女声 · 台湾普通话'},
       {id:'zh-TW-YunJheNeural',label:'台湾云哲',desc:'男声 · 台湾普通话'}
     ];
-    var _voiceDraft = null;
-    function initVoiceDraft(){ _voiceDraft = Object.assign({}, loadVoiceSettings()); }
-    function getVoiceDraft(){ return _voiceDraft && typeof _voiceDraft.enabled!=='undefined' ? _voiceDraft : loadVoiceSettings(); }
     var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+10%',fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:'湾湾小河'};
     function loadVoiceSettings(){ var v = readJSON(KEYS.voiceSettings, null); return v&&typeof v.enabled!=='undefined'?Object.assign({},defaultVoiceSettings,v):Object.assign({},defaultVoiceSettings); }
     function saveVoiceSettings(v){ saveJSON(KEYS.voiceSettings, v); }
@@ -3211,7 +3208,6 @@
       }else if(settingsPage === 'voiceSettings'){
         if(title) title.textContent = '语音功能';
         if(backBtn) backBtn.style.display = 'flex';
-        initVoiceDraft();
         body.innerHTML = renderVoiceSettingsPage();
       }
     }
@@ -3301,7 +3297,7 @@
     }
 
     function renderVoiceSettingsPage(){
-      var vs = getVoiceDraft();
+      var vs = loadVoiceSettings();
       var isEdge = vs.provider === 'edge';
       var currentVoice = EDGE_VOICES.find(function(v){ return v.id === vs.edgeVoice; }) || EDGE_VOICES[0];
       var rateLabels = {'+0%':'慢一点','+10%':'正常','+25%':'快一点'};
@@ -3470,15 +3466,15 @@
     });
     /* 参数文本域 input 事件 */
     document.addEventListener('input', function(e){
-      /* Fish Audio input — update draft */
+      /* Fish Audio input auto-save */
       if(e.target.closest('#fishApiKey')){
-        if(_voiceDraft) _voiceDraft.fishAudioApiKey = e.target.value; return;
+        var vs = loadVoiceSettings(); vs.fishAudioApiKey = e.target.value; saveVoiceSettings(vs); return;
       }
       if(e.target.closest('#fishRefId')){
-        if(_voiceDraft) _voiceDraft.fishAudioReferenceId = e.target.value; return;
+        var vs = loadVoiceSettings(); vs.fishAudioReferenceId = e.target.value; saveVoiceSettings(vs); return;
       }
       if(e.target.closest('#fishVoiceName')){
-        if(_voiceDraft) _voiceDraft.fishAudioVoiceName = e.target.value; return;
+        var vs = loadVoiceSettings(); vs.fishAudioVoiceName = e.target.value; saveVoiceSettings(vs); return;
       }
       if(e.target.closest('#fontSizeSlider')){
         var v = parseInt(e.target.value); applyFontSize(v); saveFontSize(v);
@@ -3682,27 +3678,33 @@
       if(vpPill){
         var prov = vpPill.getAttribute('data-voice-provider');
         var rate = vpPill.getAttribute('data-voice-rate');
-        if(prov && _voiceDraft){ _voiceDraft.provider = prov; renderSettingsPage(); }
-        if(rate && _voiceDraft){ _voiceDraft.rate = rate; renderSettingsPage(); }
+        if(prov){
+          var vs = loadVoiceSettings(); vs.provider = prov; saveVoiceSettings(vs);
+          renderSettingsPage();
+        }
+        if(rate){
+          var vs2 = loadVoiceSettings(); vs2.rate = rate; saveVoiceSettings(vs2);
+          renderSettingsPage();
+        }
         return;
       }
       /* Voice: enabled toggle */
       var vtr = e.target.closest('#voiceToggleRow');
-      if(vtr && _voiceDraft){
-        _voiceDraft.enabled = !_voiceDraft.enabled;
+      if(vtr){
+        var vs3 = loadVoiceSettings(); vs3.enabled = !vs3.enabled; saveVoiceSettings(vs3);
         renderSettingsPage();
         return;
       }
       /* Voice: save button */
       var saveBtn = e.target.closest('#saveVoiceBtn');
       if(saveBtn){
-        if(_voiceDraft){ saveVoiceSettings(_voiceDraft); toast('语音设置已保存'); }
+        toast('语音设置已保存');
         return;
       }
       /* Test voice button */
       var testBtn = e.target.closest('#testVoiceBtn');
       if(testBtn){
-        var vs = getVoiceDraft();
+        var vs = loadVoiceSettings();
         testBtn.textContent = '正在生成...';
         testBtn.disabled = true;
         var ttsBody = {text:'你好，我是稻田 AI。',provider:vs.provider,voice:vs.edgeVoice,rate:vs.rate};
@@ -3739,10 +3741,12 @@
         if(mode){ saveThemeMode(mode); theme = resolveTheme(); renderAll(); renderSettingsPage(); toast(mode==='system'?'已切换为跟随系统':mode==='light'?'已切换为浅色':'已切换为深色'); }
         /* Voice selection via radio */
         var vid2 = radio.getAttribute('data-voice-id');
-        if(vid2 && _voiceDraft){
+        if(vid2){
           var vlbl2 = radio.getAttribute('data-voice-label');
-          _voiceDraft.edgeVoice = vid2;
-          _voiceDraft.edgeVoiceLabel = vlbl2 || vid2;
+          var vs4 = loadVoiceSettings();
+          vs4.edgeVoice = vid2;
+          vs4.edgeVoiceLabel = vlbl2 || vid2;
+          saveVoiceSettings(vs4);
           renderSettingsPage();
         }
         return;
