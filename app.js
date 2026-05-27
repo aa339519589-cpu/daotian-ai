@@ -223,7 +223,7 @@
       p = p && typeof p === 'object' ? p : {};
       const providerName = String(p.providerName || p.name || p.label || defaultSettings.providerName || 'DeepSeek').trim() || 'DeepSeek';
       const baseUrl = String(p.baseUrl || defaultSettings.baseUrl || '').trim();
-      const models = splitModels(p.models || p.modelList || p.model || defaultSettings.model || 'deepseek-chat');
+      const models = splitModels(p.models || p.modelList || '');
       const id = String(p.id || p.providerId || makeProviderId(providerName, baseUrl, i)).trim();
       return {
         id,
@@ -232,7 +232,7 @@
         baseUrl,
         apiKey: String(p.apiKey || '').trim(),
         path: String(p.path || p.requestPath || defaultSettings.path || '/v1/chat/completions').trim() || '/v1/chat/completions',
-        models: models.length ? Array.from(new Set(models)) : [defaultSettings.model || 'deepseek-chat']
+        models: Array.from(new Set(models))
       };
     }
     function presetFromProvider(provider, model, index){
@@ -302,17 +302,15 @@
         baseUrl: base.baseUrl,
         apiKey: base.apiKey,
         path: base.path,
-        models: splitModels(base.models || base.modelList || base.model || defaultSettings.model)
+        models: splitModels(base.models || base.modelList || '')
       }, 0);
-      const deepseekLike = /deepseek/i.test(provider.providerName || '') || /deepseek/i.test(provider.baseUrl || '');
-      if(deepseekLike && !provider.models.includes('deepseek-reasoner')) provider.models.push('deepseek-reasoner');
       return [provider];
     }
     function ensureSettingsShape(raw){
       const base = Object.assign({}, defaultSettings, raw || {});
       let providers = [];
       if(Array.isArray(base.modelProviders) && base.modelProviders.length){
-        providers = base.modelProviders.map(normalizeProvider).filter(p=>p && p.models && p.models.length);
+        providers = base.modelProviders.map(normalizeProvider).filter(p=>p);
       }else if(Array.isArray(base.modelPresets) && base.modelPresets.length){
         providers = providersFromPresets(base.modelPresets);
       }
@@ -320,7 +318,7 @@
       base.modelProviders = providers;
       base.modelPresets = providersToPresets(providers);
       if(!base.activePresetId || !base.modelPresets.some(p=>p.id===base.activePresetId)){
-        const hit = base.modelPresets.find(p=>p.model===base.model && p.baseUrl===base.baseUrl) || base.modelPresets[0];
+        const hit = base.modelPresets[0];
         base.activePresetId = hit ? hit.id : '';
       }
       return base;
@@ -3090,7 +3088,7 @@
           providerType: val('providerType'), providerName: val('providerName'), baseUrl: val('baseUrl'),
           apiKey: val('apiKey'), path: val('path'), models: deduped
         }, i);
-      }).filter(p=>p.models && p.models.length);
+      }).filter(p=>p);
       if(!providers.length) providers.push(normalizeProvider(defaultSettings,0));
       settings.modelProviders = providers;
       settings.modelPresets = providersToPresets(providers);
@@ -3857,7 +3855,7 @@
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
     $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=saveSettings;
-    $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:['']}, n)); renderProviderEditor(); };
+    $('#addPreset').onclick=()=>{ collectProviderEditor(); const n=settings.modelProviders.length+1; settings.modelProviders.push(normalizeProvider({id:'p_custom_'+Date.now(),providerType:'openai',providerName:'新提供方 '+n,baseUrl:'',apiKey:'',path:'/v1/chat/completions',models:[]}, n)); renderProviderEditor(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
