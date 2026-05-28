@@ -71,31 +71,6 @@ function normalizeEmail(email){
 }
 
 /* ── Python edge-tts fallback ── */
-function splitTtsText(text){
-  const raw = String(text || "").replace(/\s+/g," ").trim();
-  if(!raw) return [];
-  const maxLen = 110;
-  const brkPtn = /[。！？；，、\n]/;
-  const chunks = [];
-  let remaining = raw;
-  while(remaining.length > 0){
-    if(remaining.length <= maxLen){ chunks.push(remaining); break; }
-    let slice = remaining.slice(0, maxLen);
-    let brk = -1;
-    for(let i = slice.length-1; i>=20; i--){
-      if(brkPtn.test(slice[i])){ brk = i; break; }
-    }
-    if(brk < 20){
-      // no good break found — hard split at maxLen
-      brk = maxLen-1;
-    }
-    chunks.push(remaining.slice(0, brk+1));
-    remaining = remaining.slice(brk+1);
-  }
-  // filter empty and whitespace-only chunks
-  return chunks.filter(function(c){ return c.trim().length >= 1; });
-}
-
 function runCommand(cmd, args){
   return new Promise((resolve, reject)=>{
     const proc = spawn(cmd, args, { timeout: 90000 });
@@ -1195,90 +1170,50 @@ async function handleTts(req, res){
   const voice = String(body.voice || EDGE_TTS_VOICE).trim();
   const rate = String(body.rate || "+0%").trim();
 
-  /* Provider: Edge TTS — split long text into chunks, node-edge-tts with python fallback */
+  /* Provider: Edge TTS — generate single clean MP3; frontend handles long-text queue */
   if(provider === "edge"){
-    const chunks = splitTtsText(text);
-    if(!chunks.length) return sendJson(res, 400, { ok:false, error:"text_empty" });
-    const totalChunks = chunks.length;
+    // Truncate to first ~450 chars (frontend sends ~400-char chunks; this is a safety net)
+    const ttsText = text.length > 500 ? text.slice(0, 450) : text;
     const { readFile, unlink } = await import("node:fs/promises");
+    const tmpFile = `/tmp/daotian_tts_${Date.now()}_${Math.random().toString(36).slice(2,8)}.mp3`;
+    let buf = null;
+    let lastErr = null;
 
-    console.log(`[TTS:edge] ${voice} rate=${rate} origLen=${text.length} chunks=${totalChunks}`);
-
-    // Generate a single chunk: node-edge-tts with 1 retry, then python fallback
-    async function generateChunk(chunk, ci){
-      const tmpFile = `/tmp/daotian_tts_${Date.now()}_${Math.random().toString(36).slice(2,8)}.mp3`;
-      let buf = null;
-      let lastErr = null;
-
-      for(let attempt = 0; attempt < 2 && !buf; attempt++){
-        try{
-          const pkg = await import("node-edge-tts");
-          const tts = new pkg.EdgeTTS({ voice, rate });
-          await tts.ttsPromise(chunk, tmpFile);
-          const raw = await readFile(tmpFile);
-          if(raw.length >= 80){ buf = raw; }
-          else { throw new Error("audio too small: "+raw.length); }
-        }catch(e){
-          lastErr = e;
-          if(attempt === 0) console.error(`[TTS:edge] chunk ${ci+1}/${totalChunks} node-edge-tts attempt ${attempt+1} failed:`, e.message);
-        }
-      }
-
-      if(!buf){
-        try{
-          buf = await synthesizeEdgeWithPython(chunk, voice, rate, tmpFile);
-        }catch(e){
-          lastErr = e;
-          console.error(`[TTS:edge] chunk ${ci+1}/${totalChunks} python fallback failed:`, e.message);
-        }
-      }
-
-      // Clean tmp file immediately
-      unlink(tmpFile).catch(function(){});
-
-      if(!buf){
-        console.error(`[TTS:edge] FAIL provider=${provider} voice=${voice} rate=${rate} origLen=${text.length} chunks=${totalChunks} failedChunk=${ci+1} reason=${lastErr ? lastErr.message : "unknown"}`);
-        return { ok:false, idx:ci, buf:null, error:lastErr };
-      }
-
-      console.log(`[TTS:edge] chunk ${ci+1}/${totalChunks} ok: ${chunk.length}c → ${buf.length}b`);
-      return { ok:true, idx:ci, buf };
-    }
-
-    // Run chunks in parallel with concurrency limit of 3
-    const CONCURRENCY = 3;
-    const results = new Array(totalChunks);
-    let cursor = 0;
-
-    async function worker(){
-      while(cursor < totalChunks){
-        const ci = cursor++;
-        results[ci] = await generateChunk(chunks[ci], ci);
+    // node-edge-tts, with 1 retry
+    for(let attempt = 0; attempt < 2 && !buf; attempt++){
+      try{
+        const pkg = await import("node-edge-tts");
+        const tts = new pkg.EdgeTTS({ voice, rate });
+        await tts.ttsPromise(ttsText, tmpFile);
+        const raw = await readFile(tmpFile);
+        if(raw.length >= 80){ buf = raw; }
+        else { throw new Error("audio too small: "+raw.length); }
+      }catch(e){
+        lastErr = e;
+        if(attempt === 0) console.error("[TTS:edge] node-edge-tts attempt "+(attempt+1)+" failed:", e.message);
       }
     }
 
-    const workers = [];
-    for(let w = 0; w < Math.min(CONCURRENCY, totalChunks); w++){
-      workers.push(worker());
+    // python edge_tts fallback
+    if(!buf){
+      try{
+        buf = await synthesizeEdgeWithPython(ttsText, voice, rate, tmpFile);
+      }catch(e){
+        lastErr = e;
+        console.error("[TTS:edge] python fallback failed:", e.message);
+      }
     }
-    await Promise.all(workers);
 
-    const successCount = results.filter(function(r){ return r && r.ok; }).length;
-    if(successCount === 0){
+    unlink(tmpFile).catch(function(){});
+
+    if(!buf){
+      console.error("[TTS:edge] FAIL provider="+provider+" voice="+voice+" rate="+rate+" origLen="+text.length+" reason="+(lastErr ? lastErr.message : "unknown"));
       return sendJson(res, 502, { ok:false, error:"语音暂时不可用" });
     }
 
-    // If >50% chunks failed, still fail
-    if(successCount < totalChunks * 0.5){
-      console.error(`[TTS:edge] too many failures: ${successCount}/${totalChunks} succeeded`);
-      return sendJson(res, 502, { ok:false, error:"语音生成部分失败，请稍后重试" });
-    }
-
-    const allBufs = results.filter(function(r){ return r && r.ok; }).map(function(r){ return r.buf; });
-    const merged = Buffer.concat(allBufs);
-    console.log(`[TTS:edge] done: ${successCount}/${totalChunks} chunks, ${text.length}c → ${merged.length}b`);
-    res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(merged.length) });
-    return res.end(merged);
+    console.log("[TTS:edge] "+voice+" rate="+rate+" "+text.length+"c → "+buf.length+"b");
+    res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(buf.length) });
+    return res.end(buf);
   }
 
   /* Provider: Fish Audio */

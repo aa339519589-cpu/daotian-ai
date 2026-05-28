@@ -5175,61 +5175,90 @@
       }
       toast(msg.length > 30 ? '语音播放失败' : msg);
     }
-    async function playBlobAudio(blob, idx, btn){
-      if(!blob) throw new Error('No audio blob');
-      if(_ttsAudio && typeof _ttsAudio.pause === 'function'){
-        try{ _ttsAudio.pause(); }catch(_e){}
-        _ttsAudio = null;
-      }
-      _ttsPlayingIdx = idx;
-      var objectUrl = URL.createObjectURL(blob);
-      return await new Promise(function(resolve, reject){
+    /* play one blob — used inside queue; does NOT manage _ttsPlayingIdx or button state */
+    function playOneBlob(blob, idx){
+      return new Promise(function(resolve, reject){
+        var objectUrl = URL.createObjectURL(blob);
         var a = new Audio(objectUrl);
         _ttsAudio = a;
-        if(btn){ btn.classList.remove('loading','paused'); btn.classList.add('playing'); }
-        a.onended = function(){ _ttsAudio=null; if(_ttsPlayingIdx === idx) _ttsPlayingIdx=null; if(btn) btn.classList.remove('playing','paused'); URL.revokeObjectURL(objectUrl); resolve(); };
-        a.onerror = function(){ _ttsAudio=null; if(_ttsPlayingIdx === idx) _ttsPlayingIdx=null; if(btn) btn.classList.remove('playing','paused'); URL.revokeObjectURL(objectUrl); reject(new Error('音频播放失败')); };
-        a.play().catch(function(err){
-          URL.revokeObjectURL(objectUrl);
-          reject(err);
-        });
+        a.onended = function(){ _ttsAudio = null; URL.revokeObjectURL(objectUrl); resolve(); };
+        a.onerror = function(){ _ttsAudio = null; URL.revokeObjectURL(objectUrl); reject(new Error('音频播放失败')); };
+        a.play().catch(function(err){ URL.revokeObjectURL(objectUrl); reject(err); });
       });
     }
+
+    /* playBlobQueue: sequential playback of blobs array, supports pause/resume */
+    async function playBlobQueue(blobs, idx, btn){
+      var startIndex = _ttsQueueIndex || 0;
+      _ttsQueue = blobs;
+      _ttsBtn = btn;
+
+      for(var qi = startIndex; qi < blobs.length && _ttsQueue === blobs; qi++){
+        _ttsQueueIndex = qi;
+        if(btn){ btn.classList.remove('loading','paused'); btn.classList.add('playing'); }
+        try{
+          await playOneBlob(blobs[qi], idx);
+        }catch(err){
+          console.error('[TTS] queue blob '+(qi+1)+'/'+blobs.length+' failed:', err && err.message ? err.message : err);
+          /* skip failed segment, continue */
+        }
+      }
+
+      /* finished or aborted */
+      if(_ttsQueue === blobs){
+        _ttsQueue = null;
+        _ttsQueueIndex = 0;
+        _ttsBtn = null;
+        _ttsAudio = null;
+        if(_ttsPlayingIdx === idx) _ttsPlayingIdx = null;
+        if(btn) btn.classList.remove('playing','paused');
+      }
+    }
+    function stopTtsQueue(){
+      _ttsQueue = null; _ttsQueueIndex = 0;
+      if(_ttsAudio){ try{ _ttsAudio.pause(); _ttsAudio = null; }catch(_e){} }
+      if(_ttsBtn){ _ttsBtn.classList.remove('playing','paused','loading'); _ttsBtn = null; }
+      _ttsPlayingIdx = null; _ttsPausedAt = 0;
+    }
+    function splitTextForTts(text){
+      var chunks = []; var remaining = String(text||'').replace(/\s+/g,' ').trim();
+      if(!remaining) return [];
+      while(remaining.length > 0){
+        if(remaining.length <= 400){ chunks.push(remaining); break; }
+        var slice = remaining.slice(0,400);
+        var brk = Math.max(slice.lastIndexOf('。'), slice.lastIndexOf('！'), slice.lastIndexOf('？'), slice.lastIndexOf('；'), slice.lastIndexOf('\n'), slice.lastIndexOf('，'), slice.lastIndexOf('、'));
+        if(brk < 50) brk = 400;
+        chunks.push(remaining.slice(0, brk+1));
+        remaining = remaining.slice(brk+1);
+      }
+      return chunks.filter(function(c){ return c.trim().length >= 1; });
+    }
+
     async function preGenerateVoice(msgId, text){
       if(!text || !String(text).trim().length) return;
       var vs = getSafeVoiceSettingsForTts();
       if(!vs.enabled) return;
       if(_voiceCache[msgId] && (_voiceCache[msgId].status==='ready'||_voiceCache[msgId].status==='loading')) return;
-      _voiceCache[msgId] = {status:'loading', blob:null, error:null};
+      _voiceCache[msgId] = {status:'loading'};
       try{
-        var ttsBody = {text:text, provider:vs.provider, voice:vs.edgeVoice, rate:vs.rate};
-        if(vs.provider==='fish'){ ttsBody.fishAudioApiKey=vs.fishAudioApiKey; ttsBody.fishAudioReferenceId=vs.fishAudioReferenceId; }
-        var chunks = []; var remaining = text;
-        while(remaining.length > 0){
-          if(remaining.length <= 500){ chunks.push(remaining); break; }
-          var slice = remaining.slice(0,500);
-          var brk = Math.max(slice.lastIndexOf('。'), slice.lastIndexOf('！'), slice.lastIndexOf('？'), slice.lastIndexOf('；'), slice.lastIndexOf('\n'), slice.lastIndexOf('，'), slice.lastIndexOf('、'));
-          if(brk < 50) brk = 500;
-          chunks.push(remaining.slice(0, brk+1));
-          remaining = remaining.slice(brk+1);
-        }
-        chunks = chunks.filter(function(c){ return c.trim().length >= 1; });
-        var firstBlob = null;
+        var chunks = splitTextForTts(text);
+        if(!chunks.length){ _voiceCache[msgId] = {status:'error', error:'text_empty'}; return; }
+        var blobs = [];
         for(var ci=0; ci<chunks.length; ci++){
           var ttsB = {text:chunks[ci], provider:vs.provider, voice:vs.edgeVoice, rate:vs.rate};
           if(vs.provider==='fish'){ ttsB.fishAudioApiKey=vs.fishAudioApiKey; ttsB.fishAudioReferenceId=vs.fishAudioReferenceId; }
           var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ttsB)});
           if(!res.ok) throw new Error('TTS failed: '+res.status);
           var blob = await res.blob();
-          if(!firstBlob) firstBlob = blob;
+          blobs.push(blob);
         }
-        if(firstBlob){
-          _voiceCache[msgId] = {status:'ready', blob:firstBlob, error:null};
+        if(blobs.length){
+          _voiceCache[msgId] = {status:'ready', blobs:blobs, error:null};
         }else{
-          _voiceCache[msgId] = {status:'error', blob:null, error:'No audio'};
+          _voiceCache[msgId] = {status:'error', error:'No audio'};
         }
       }catch(e){
-        _voiceCache[msgId] = {status:'error', blob:null, error:e.message};
+        _voiceCache[msgId] = {status:'error', error:e.message};
       }
     }
 
@@ -5237,115 +5266,105 @@
     var _ttsAudio = null;
     var _ttsPlayingIdx = null;
     var _ttsPausedAt = 0;
+    var _ttsQueue = null;
+    var _ttsQueueIndex = 0;
+    var _ttsBtn = null; // current active button during queue playback
 
     async function handleTtsClick(idx, btn){
       if(!btn) return;
       var vs = getSafeVoiceSettingsForTts();
       if(!vs.enabled){ toast('语音功能已关闭'); return; }
-      /* 同一按钮：播放中 → 暂停；暂停中 → 继续 */
-      if(_ttsPlayingIdx === idx && _ttsAudio){
-        if(!_ttsAudio.paused){
+
+      /* ── Pause/resume within same queue ── */
+      if(_ttsPlayingIdx === idx && _ttsQueue){
+        if(_ttsAudio && !_ttsAudio.paused){
           _ttsAudio.pause(); _ttsPausedAt = _ttsAudio.currentTime;
           btn.classList.remove('playing'); btn.classList.add('paused');
           return;
-        }else{
-          _ttsAudio.currentTime = _ttsPausedAt;
+        }else if(_ttsAudio && _ttsAudio.paused){
           _ttsAudio.play();
           btn.classList.remove('paused'); btn.classList.add('playing');
           return;
         }
       }
-      /* 不同按钮：停止旧的，播新的 */
-      if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
-      _ttsPlayingIdx = null; _ttsPausedAt = 0;
-      var prevBtns = document.querySelectorAll('.tts-play-btn.playing,.tts-play-btn.paused');
-      prevBtns.forEach(function(b){ b.classList.remove('playing','paused'); });
-      /* 检查缓存 — 清除错误缓存以便重试 */
+
+      /* ── Different message → stop everything ── */
+      if(_ttsPlayingIdx !== idx){
+        stopTtsQueue();
+      }
+
+      /* ── Cached blobs → queue play ── */
       var cached = _voiceCache[idx];
       if(cached && cached.status === 'error'){ delete _voiceCache[idx]; cached = null; }
-      if(cached && cached.status === 'ready' && cached.blob){
+      if(cached && cached.status === 'ready' && cached.blobs && cached.blobs.length){
+        var prevBtns = document.querySelectorAll('.tts-play-btn.playing,.tts-play-btn.paused');
+        prevBtns.forEach(function(b){ b.classList.remove('playing','paused'); });
+        _ttsPlayingIdx = idx;
+        _ttsQueueIndex = 0;
+        btn.classList.remove('loading','paused');
         try{
-          await playBlobAudio(cached.blob, idx, btn);
+          await playBlobQueue(cached.blobs, idx, btn);
         }catch(err){
           setTtsButtonError(btn, err);
         }
         return;
       }
       if(cached && cached.status === 'loading'){
-        /* loading 超过 8s 视为超时，清除缓存允许重试 */
-        var loadingTimeout = setTimeout(function(){
-          if(_voiceCache[idx] && _voiceCache[idx].status === 'loading'){
-            delete _voiceCache[idx];
-          }
+        var _ct = setTimeout(function(){
+          if(_voiceCache[idx] && _voiceCache[idx].status === 'loading'){ delete _voiceCache[idx]; }
         }, 8000);
         toast('语音正在生成中...');
         return;
       }
+
+      /* ── Live generate + queue play ── */
       var msgEl = btn.closest('.message');
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
       if(!plainText){ console.warn('[TTS] no text'); return; }
-      /* Split text by sentence boundaries, max ~500 chars per chunk */
-      var chunks = []; var remaining = plainText;
-      while(remaining.length > 0){
-        if(remaining.length <= 500){ chunks.push(remaining); break; }
-        var slice = remaining.slice(0,500);
-        var brk = Math.max(slice.lastIndexOf('。'), slice.lastIndexOf('！'), slice.lastIndexOf('？'), slice.lastIndexOf('；'), slice.lastIndexOf('\n'), slice.lastIndexOf('，'), slice.lastIndexOf('、'));
-        if(brk < 50) brk = 500;
-        chunks.push(remaining.slice(0, brk+1));
-        remaining = remaining.slice(brk+1);
-      }
-      chunks = chunks.filter(function(c){ return c.trim().length >= 1; });
 
-      if(_ttsPlayingIdx === idx && _ttsAudio && !_ttsAudio.paused){
-        _ttsAudio.pause(); btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; return;
-      }
-      if(_ttsAudio){ try{_ttsAudio.pause();_ttsAudio=null;}catch(e){} }
-      _ttsPlayingIdx = null;
-      var prev = document.querySelector('.tts-play-btn.playing,.tts-play-btn.loading');
-      if(prev){ prev.classList.remove('playing','loading'); }
+      var chunks = splitTextForTts(plainText);
+      if(!chunks.length) return;
+
+      stopTtsQueue();
+      var prevBtns2 = document.querySelectorAll('.tts-play-btn.playing,.tts-play-btn.paused,.tts-play-btn.loading');
+      prevBtns2.forEach(function(b){ b.classList.remove('playing','paused','loading'); });
 
       btn.classList.add('loading');
+      _ttsPlayingIdx = idx;
       var stopped = false;
-      var consecutiveFails = 0;
-      function stop(){ stopped=true; if(_ttsAudio){try{_ttsAudio.pause();_ttsAudio=null;}catch(e){}} _ttsPlayingIdx=null; btn.classList.remove('playing','loading'); }
+
+      function stopLive(){ stopped = true; stopTtsQueue(); }
 
       try{
-        var firstBlob = null;
-        for(var ci=0; ci<chunks.length && !stopped; ci++){
+        var blobs = [];
+        var consecutiveFails = 0;
+        for(var ci = 0; ci < chunks.length && !stopped; ci++){
           var vss = getSafeVoiceSettingsForTts();
           var ttsBody = {text:chunks[ci], provider:vss.provider, voice:vss.edgeVoice, rate:vss.rate};
           if(vss.provider==='fish'){ ttsBody.fishAudioApiKey=vss.fishAudioApiKey; ttsBody.fishAudioReferenceId=vss.fishAudioReferenceId; }
           var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ttsBody)});
           if(!res.ok){
-            var errText = '';
-            try{ errText = (await res.text()).slice(0,300); }catch(_e){}
-            console.error('[TTS] request failed:', res.status, errText);
             consecutiveFails++;
-            if(consecutiveFails>=2){
-              stop();
-              setTtsButtonError(btn, new Error('语音请求失败'));
-              break;
-            }
+            if(consecutiveFails>=2){ stopTtsQueue(); setTtsButtonError(btn, new Error('语音请求失败')); break; }
             continue;
           }
           consecutiveFails = 0;
           var blob = await res.blob();
-          if(!firstBlob){ firstBlob = blob; }
-          /* Play each chunk sequentially */
-          await new Promise(function(resolve){
-            playBlobAudio(blob, idx, btn).then(function(){ resolve(); }).catch(function(err){ consecutiveFails++; console.error('[TTS] chunk playback failed:', err && err.message ? err.message : err); resolve(); });
-          });
+          blobs.push(blob);
         }
-        if(!stopped && firstBlob){ _voiceCache[idx] = {status:'ready', blob:firstBlob, error:null}; }
-        btn.classList.remove('playing','loading');
-        _ttsAudio = null; _ttsPlayingIdx = null;
+        if(!stopped && blobs.length){
+          _voiceCache[idx] = {status:'ready', blobs:blobs, error:null};
+          btn.classList.remove('loading');
+          await playBlobQueue(blobs, idx, btn);
+        }else if(!stopped){
+          btn.classList.remove('playing','loading');
+          _ttsPlayingIdx = null;
+        }
       }catch(e){
         setTtsButtonError(btn, e);
-        _ttsAudio = null; _ttsPlayingIdx = null;
       }
-      /* Expose stop for pause button */
-      btn._ttsStop = stop;
+      btn._ttsStop = stopLive;
     }
 
     document.addEventListener('click', function(e){
