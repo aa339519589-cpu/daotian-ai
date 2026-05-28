@@ -530,32 +530,20 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 
 /* ── 生成中底部缓冲 ── */
 .messages.generating-space{
-  padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
-  scroll-padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
-  display:flex!important;
-  flex-direction:column!important;
+  padding-bottom:max(120px, calc(96px + env(safe-area-inset-bottom,0px)))!important;
+  scroll-padding-bottom:max(120px, calc(96px + env(safe-area-inset-bottom,0px)))!important;
 }
 .messages.generating-space::before{
-  content:"";
-  flex:1 0 auto;
-  min-height:0;
-}
-.messages.generating-space .message{
-  flex-shrink:0;
+  content:none!important;
+  display:none!important;
 }
 body.keyboard-open .messages.generating-space{
-  padding-bottom:8px!important;
-  scroll-padding-bottom:8px!important;
-  display:flex!important;
-  flex-direction:column!important;
+  padding-bottom:96px!important;
+  scroll-padding-bottom:96px!important;
 }
 body.keyboard-open .messages.generating-space::before{
-  content:"";
-  flex:1 0 auto;
-  min-height:0;
-}
-body.keyboard-open .messages.generating-space .message{
-  flex-shrink:0;
+  content:none!important;
+  display:none!important;
 }
 @media(min-width:901px){
   .messages.generating-space{
