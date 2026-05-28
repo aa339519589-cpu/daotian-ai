@@ -571,17 +571,6 @@ body.keyboard-open .messages.generating-space{
     max-width:88%;
     min-width:120px;
   }
-  /* 大内容卡片使用全宽 */
-  .assistant-content:has(.code-block),
-  .assistant-content:has(pre),
-  .assistant-content:has(table),
-  .assistant-content:has(.markdown-table-wrap),
-  .assistant-content:has(.artifact-card),
-  .assistant-content:has(.html-preview-frame),
-  .assistant-content:has(.artifact-preview-frame){
-    max-width:calc(100vw - 36px);
-    min-width:calc(100vw - 36px);
-  }
 }
 .daotian-thinking-message{
   width:100%;
@@ -841,3 +830,19 @@ body.keyboard-open .messages.generating-space{
 .ss-input{height:46px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.06);padding:0 14px;color:var(--text);font-size:14px;width:100%;outline:0}
 .ss-input:focus{border-color:rgba(220,128,98,.4)}
 [data-theme="dark"] .ss-input{background:rgba(0,0,0,.16)}
+
+/* ── 富内容宽屏模式（移动端） ── */
+@media(max-width:900px){
+  .message.assistant.rich-wide{width:100%!important;max-width:none!important;justify-content:flex-start!important}
+  .message.assistant.rich-wide .assistant-content{width:calc(100vw - 36px)!important;max-width:calc(100vw - 36px)!important;min-width:0!important;box-sizing:border-box!important}
+  .message.assistant.rich-wide .assistant-render{width:100%!important;max-width:100%!important;overflow:visible!important}
+  .message.assistant.rich-wide .artifact-card,
+  .message.assistant.rich-wide .code-block,
+  .message.assistant.rich-wide .markdown-table-wrap,
+  .message.assistant.rich-wide .html-preview-frame,
+  .message.assistant.rich-wide .artifact-preview-frame{width:100%!important;max-width:100%!important;box-sizing:border-box!important}
+  .message.assistant.rich-wide .markdown-table-wrap,
+  .message.assistant.rich-wide .code-block pre,
+  .message.assistant.rich-wide pre{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
+  .message.assistant.rich-wide table{width:max-content!important;min-width:100%!important}
+}

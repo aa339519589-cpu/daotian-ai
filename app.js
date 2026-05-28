@@ -1530,6 +1530,14 @@
       var h = d.getHours(), m = d.getMinutes();
       return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;
     }
+    function hasRichLayoutContent(text){
+      text = String(text || '');
+      if(/```/.test(text)) return true;
+      if(/<table|<iframe|<canvas|<svg|<!doctype html|<html/i.test(text)) return true;
+      if(/^\s*\|.+\|\s*$/m.test(text) && /^\s*\|?\s*:?-{3,}:?\s*\|/m.test(text)) return true;
+      if(text.split('\n').some(function(line){ return line.length > 60; })) return true;
+      return false;
+    }
     function renderMessages(){
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
       const msgs = Array.isArray(c.messages) ? c.messages : [];
@@ -1554,8 +1562,10 @@
         var ttsText = (m.content || '').replace(/\s+/g,' ').trim();
         var ttsBtn = (m.role==='assistant' && !m.thinking && ttsText.length>0)
           ? '<button class="tts-play-btn" data-tts-idx="'+makeTtsMsgId(c.id,idx)+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
-        var scrollAttr = m.scrollFocus ? ' data-scroll-focus="1"' : '';
-        return '<div class="message assistant"'+scrollAttr+'><div class="assistant-content"><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
+        var isRich = hasRichLayoutContent(m.content);
+        var richClass = isRich ? ' rich-wide' : '';
+        var scrollAttr2 = m.scrollFocus ? ' data-scroll-focus="1"' : '';
+        return '<div class="message assistant'+richClass+'"'+scrollAttr2+'><div class="assistant-content"><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       box.classList.toggle('generating-space', !!hasScrollFocus);
       scheduleEnhanceRender();
