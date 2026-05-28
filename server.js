@@ -1271,6 +1271,9 @@ const server = http.createServer(async (req, res)=>{
     if(req.method === "GET" && pathname === "/public/config"){
       return sendJson(res, 200, { chatModel:"deepseek-chat", webSearchConfigured:Boolean(TAVILY_API_KEY), providers:[] });
     }
+    if(req.method === "GET" && pathname === "/api/search/status"){
+      return sendJson(res, 200, { ok:true, configured:Boolean(TAVILY_API_KEY), provider:"tavily" });
+    }
     if(req.method === "POST" && pathname === "/chat") return await handleChat(req, res);
     if(req.method === "POST" && pathname === "/models/list") return await handleModelsList(req, res);
     if(req.method === "POST" && pathname === "/file/parse") return await handleFileParse(req, res);

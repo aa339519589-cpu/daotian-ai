@@ -259,8 +259,20 @@
     function isStreamingNow(){
       return !!(typeof sending !== 'undefined' && sending) || !!(typeof generatingChatId !== 'undefined' && generatingChatId);
     }
-    function shouldSuppressStreamScrollForKeyboard(){
-      return isKeyboardMode() && isStreamingNow();
+    function shouldKeepFollowing(){
+      if(!loadAutoScroll()) return false;
+      var box = $('#messages');
+      if(!box) return false;
+      var distance = box.scrollHeight - box.scrollTop - box.clientHeight;
+      return distance <= 220;
+    }
+    function scrollMessagesToBottomStable(){
+      if(!shouldKeepFollowing()) return;
+      var box = $('#messages');
+      if(!box) return;
+      requestAnimationFrame(function(){
+        box.scrollTop = box.scrollHeight;
+      });
     }
     function scrollActiveMessageIntoReadingZone(options){
       options = options || {};
@@ -1569,8 +1581,8 @@
       }).join('');
       box.classList.toggle('generating-space', !!hasScrollFocus);
       scheduleEnhanceRender();
-      if(loadAutoScroll() && !shouldSuppressStreamScrollForKeyboard()){
-        scheduleThinkingScroll();
+      if(loadAutoScroll()){
+        scrollMessagesToBottomStable();
       }
     }
     function friendlyModelName(model){
@@ -1889,7 +1901,7 @@
             }
           }
           assistant.content += delta;
-          if(assistant.scrollFocus && !shouldSuppressStreamScrollForKeyboard()) scheduleStreamScroll();
+          if(assistant.scrollFocus) scrollMessagesToBottomStable();
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
         });
@@ -5932,7 +5944,22 @@
         if(action === 'camera'){ var ci = document.getElementById('cameraInput'); if(ci) ci.click(); }
         else if(action === 'image'){ var ii = document.getElementById('imageInput'); if(ii) ii.click(); }
         else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
-        else if(action === 'search'){ searchOn=!searchOn; saveSearchOn(searchOn); updateSearchVisual(); }
+        else if(action === 'search'){
+          if(!searchOn){
+            /* turning on → check server config */
+            fetch('/api/search/status').then(function(r){ return r.json(); }).then(function(s){
+              if(s && s.configured){
+                searchOn = true; saveSearchOn(true); updateSearchVisual();
+              }else{
+                searchOn = false; toast('联网搜索未配置，请在 Render 环境变量添加 TAVILY_API_KEY');
+              }
+            }).catch(function(){
+              searchOn = false; toast('无法检查搜索状态，请稍后重试');
+            });
+          }else{
+            searchOn = false; saveSearchOn(false); updateSearchVisual();
+          }
+        }
         return;
       }
       if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){
