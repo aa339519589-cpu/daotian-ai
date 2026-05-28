@@ -66,7 +66,7 @@
       memoryCandidates:'daotian.memoryCandidates.v1',
       autoExtract:'daotian.autoExtract.v1',
       memoryGlobal:'daotian.memoryGlobal.v1',
-      tokenDisplay:'daotian.tokenDisplay.v1',
+      tokenDisplay:'daotian.tokenDisplay.v2',
       autoScroll:'daotian.autoScroll.v1',
       themeMode:'daotian.themeMode.v1',
       fontSize:'daotian.fontSize.v1',
@@ -151,7 +151,7 @@
       saveJSON(KEYS.autoExtract, v === true);
     }
     function loadTokenDisplay(){
-      return readJSON(KEYS.tokenDisplay, true) === true;
+      return readJSON(KEYS.tokenDisplay, false) === true;
     }
     function saveTokenDisplay(v){
       saveJSON(KEYS.tokenDisplay, v === true);
@@ -959,7 +959,8 @@
           var label = m.memoryNotice ? '记忆已更新' : '想一下';
           return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
-        var ttsBtn = (m.content && m.content.length>5 && m.role==='assistant' && !m.thinking)
+        var ttsText = (m.content || '').replace(/\s+/g,' ').trim();
+        var ttsBtn = (m.role==='assistant' && !m.thinking && ttsText.length>0)
           ? '<button class="tts-play-btn" data-tts-idx="tts_'+c.id+'_'+idx+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
         var scrollAttr = m.scrollFocus ? ' data-scroll-focus="1"' : '';
         return '<div class="message assistant"'+scrollAttr+'><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
@@ -4563,7 +4564,7 @@
       });
     }
     async function preGenerateVoice(msgId, text){
-      if(!text || text.length < 3) return;
+      if(!text || !String(text).trim().length) return;
       var vs = loadVoiceSettings();
       if(!vs.enabled) return;
       if(_voiceCache[msgId] && (_voiceCache[msgId].status==='ready'||_voiceCache[msgId].status==='loading')) return;
@@ -4580,7 +4581,7 @@
           chunks.push(remaining.slice(0, brk+1));
           remaining = remaining.slice(brk+1);
         }
-        chunks = chunks.filter(function(c){ return c.trim().length >= 3; });
+        chunks = chunks.filter(function(c){ return c.trim().length >= 1; });
         var firstBlob = null;
         for(var ci=0; ci<chunks.length; ci++){
           var ttsB = {text:chunks[ci], provider:vs.provider, voice:vs.edgeVoice, rate:vs.rate};
@@ -4642,7 +4643,7 @@
       var msgEl = btn.closest('.message');
       var renderEl = msgEl ? msgEl.querySelector('.assistant-render') : null;
       var plainText = renderEl ? (renderEl.textContent || renderEl.innerText || '').replace(/\s+/g,' ').trim() : '';
-      if(!plainText || plainText.length < 3){ console.warn('[TTS] no text'); return; }
+      if(!plainText){ console.warn('[TTS] no text'); return; }
       /* Split text by sentence boundaries, max ~500 chars per chunk */
       var chunks = []; var remaining = plainText;
       while(remaining.length > 0){
@@ -4653,7 +4654,7 @@
         chunks.push(remaining.slice(0, brk+1));
         remaining = remaining.slice(brk+1);
       }
-      chunks = chunks.filter(function(c){ return c.trim().length >= 3; });
+      chunks = chunks.filter(function(c){ return c.trim().length >= 1; });
 
       if(_ttsPlayingIdx === idx && _ttsAudio && !_ttsAudio.paused){
         _ttsAudio.pause(); btn.classList.remove('playing'); _ttsPlayingIdx=null; _ttsAudio=null; return;
