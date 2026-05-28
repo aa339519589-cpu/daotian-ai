@@ -16,6 +16,7 @@ const PUBLIC_CHAT_DAILY_LIMIT = Number(process.env.PUBLIC_CHAT_DAILY_LIMIT || 10
 const publicChatLimits = new Map();
 const DATA_DIR = process.env.DATA_DIR || join(ROOT, "data");
 const AUTH_FILE = join(DATA_DIR, "auth.json");
+const ACCESS_FILE = join(DATA_DIR, "access.json");
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_DAYS || 30) * 24 * 60 * 60 * 1000;
 
 /* Edge TTS — Microsoft Read Aloud, free, xiaoxiao neural voice */
@@ -79,6 +80,9 @@ function tokenHash(token){
 function emptyAuthStore(){
   return { users:[], sessions:[], userData:{} };
 }
+function emptyAccessStore(){
+  return { packages:[] };
+}
 async function readAuthStore(){
   try{
     const raw = await readFile(AUTH_FILE, "utf8");
@@ -91,6 +95,21 @@ async function readAuthStore(){
   }catch{
     return emptyAuthStore();
   }
+}
+async function readAccessStore(){
+  try{
+    const raw = await readFile(ACCESS_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return { packages:Array.isArray(parsed.packages) ? parsed.packages : [] };
+  }catch{
+    return emptyAccessStore();
+  }
+}
+async function writeAccessStore(store){
+  await mkdir(DATA_DIR, { recursive:true });
+  const tmp = ACCESS_FILE + "." + process.pid + "." + Date.now() + ".tmp";
+  await writeFile(tmp, JSON.stringify(store, null, 2));
+  await rename(tmp, ACCESS_FILE);
 }
 async function writeAuthStore(store){
   await mkdir(DATA_DIR, { recursive:true });
@@ -246,6 +265,178 @@ async function handleSaveUserData(req, res){
   sendJson(res, 200, { ok:true, data:auth.store.userData[auth.user.id] || {} });
 }
 
+async function handleCreateAccessPackage(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
+  let body = {};
+  try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
+  const providerId = String(body.providerId || "").trim();
+  const packageName = String(body.packageName || "").trim();
+  const models = Array.isArray(body.models) ? body.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
+  const quotaTotal = Number(body.quotaTotal || 0);
+  const expiresInDays = Number(body.expiresInDays || body.expiryDays || 0);
+  const enabled = body.enabled !== false;
+  if(!providerId) return sendJson(res, 400, { ok:false, error:"provider_required", message:"请选择一个模型提供方" });
+  if(!packageName) return sendJson(res, 400, { ok:false, error:"package_name_required", message:"请填写模型包名称" });
+  if(!models.length) return sendJson(res, 400, { ok:false, error:"models_required", message:"请至少选择一个模型" });
+  const providers = parseUserProviders(auth.store.userData[auth.user.id] || {});
+  const provider = providers.find(p=>p.id === providerId);
+  if(!provider) return sendJson(res, 404, { ok:false, error:"provider_not_found", message:"未找到该模型提供方" });
+  const store = await readAccessStore();
+  const existing = store.packages.find(p=>p.providerUserId === auth.user.id && p.providerId === providerId && p.packageName === packageName);
+  const code = String(body.code || "").trim() || crypto.randomBytes(4).toString("hex").toUpperCase();
+  const next = normalizeAccessPackage(existing || {});
+  const pkg = normalizeAccessPackage({
+    ...next,
+    id: existing ? existing.id : newId("pkg"),
+    code,
+    providerUserId: auth.user.id,
+    providerId,
+    packageName,
+    models,
+    baseUrl: provider.baseUrl,
+    apiKey: provider.apiKey,
+    path: provider.path,
+    providerName: provider.providerName,
+    providerType: provider.providerType,
+    quotaTotal,
+    expiresAt: expiresInDays > 0 ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString() : "",
+    quotaUsed: existing ? Number(existing.quotaUsed || 0) : 0,
+    enabled,
+    createdAt: existing ? existing.createdAt : nowIso(),
+    updatedAt: nowIso()
+  });
+  if(existing){
+    const idx = store.packages.findIndex(p=>p.id === existing.id);
+    store.packages[idx] = pkg;
+  }else{
+    store.packages.push(pkg);
+  }
+  await writeAccessStore(store);
+  sendJson(res, 200, { ok:true, package: {
+    id: pkg.id,
+    code: pkg.code,
+    providerUserId: pkg.providerUserId,
+    providerId: pkg.providerId,
+    packageName: pkg.packageName,
+    models: pkg.models,
+    enabled: pkg.enabled,
+    quotaTotal: pkg.quotaTotal,
+    quotaUsed: pkg.quotaUsed,
+    expiresAt: pkg.expiresAt,
+    createdAt: pkg.createdAt,
+    updatedAt: pkg.updatedAt,
+    status: packageStatus(pkg)
+  } });
+}
+
+async function handleListAccessPackages(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
+  const store = await readAccessStore();
+  const packages = store.packages.filter(p=>p.providerUserId === auth.user.id).map(p=>{
+    const pkg = normalizeAccessPackage(p);
+    return {
+      id: pkg.id,
+      code: pkg.code,
+      packageName: pkg.packageName,
+      models: pkg.models,
+      enabled: pkg.enabled,
+      quotaTotal: pkg.quotaTotal,
+      quotaUsed: pkg.quotaUsed,
+      expiresAt: pkg.expiresAt,
+      status: packageStatus(pkg),
+      createdAt: pkg.createdAt,
+      updatedAt: pkg.updatedAt
+    };
+  });
+  sendJson(res, 200, { ok:true, packages });
+}
+
+async function handleClaimAccessCode(req, res){
+  let body = {};
+  try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
+  const code = String(body.code || "").trim();
+  if(!code) return sendJson(res, 400, { ok:false, error:"code_required", message:"请输入接入码" });
+  const hit = await findAccessPackageByCode(code);
+  if(!hit) return sendJson(res, 404, { ok:false, error:"not_found", message:"接入码不存在或已失效" });
+  const pkg = hit.pkg;
+  const status = packageStatus(pkg);
+  if(status === "disabled") return sendJson(res, 403, { ok:false, error:"disabled", message:"接入码已停用" });
+  if(status === "expired") return sendJson(res, 410, { ok:false, error:"expired", message:"接入码已过期" });
+  if(status === "quota") return sendJson(res, 429, { ok:false, error:"quota", message:"接入额度已用完" });
+  sendJson(res, 200, { ok:true, package:{
+    id: pkg.id,
+    code: pkg.code,
+    packageName: pkg.packageName,
+    models: pkg.models,
+    providerName: pkg.providerName,
+    status: packageStatus(pkg),
+    expiresAt: pkg.expiresAt,
+    quotaTotal: pkg.quotaTotal,
+    quotaUsed: pkg.quotaUsed
+  }});
+}
+
+function parseUserProviders(userData){
+  const raw = userData && typeof userData === "object" ? userData["daotian.settings.v323"] || userData["daotian.settings.v322"] || userData["daotian.settings"] : "";
+  if(!raw) return [];
+  try{
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const providers = Array.isArray(parsed?.modelProviders) ? parsed.modelProviders : [];
+    return providers.map(p=>({
+      id:String(p.id || "").trim(),
+      providerType:String(p.providerType || "openai").trim(),
+      providerName:String(p.providerName || "").trim(),
+      baseUrl:String(p.baseUrl || "").trim(),
+      apiKey:String(p.apiKey || "").trim(),
+      path:String(p.path || p.requestPath || "/v1/chat/completions").trim() || "/v1/chat/completions",
+      models:Array.isArray(p.models) ? p.models.map(v=>String(v||"").trim()).filter(Boolean) : []
+    })).filter(p=>p.baseUrl && p.apiKey && p.models.length);
+  }catch{
+    return [];
+  }
+}
+
+function normalizeAccessPackage(pkg){
+  const models = Array.isArray(pkg.models) ? pkg.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
+  return {
+    id:String(pkg.id || "").trim(),
+    code:String(pkg.code || "").trim(),
+    providerUserId:String(pkg.providerUserId || "").trim(),
+    providerId:String(pkg.providerId || "").trim(),
+    packageName:String(pkg.packageName || pkg.name || "").trim(),
+    models:Array.from(new Set(models)),
+    baseUrl:String(pkg.baseUrl || "").trim(),
+    apiKey:String(pkg.apiKey || "").trim(),
+    path:String(pkg.path || "/v1/chat/completions").trim() || "/v1/chat/completions",
+    providerName:String(pkg.providerName || "").trim(),
+    providerType:String(pkg.providerType || "openai").trim(),
+    enabled:pkg.enabled !== false,
+    quotaTotal:Number(pkg.quotaTotal || 0),
+    quotaUsed:Number(pkg.quotaUsed || 0),
+    expiresAt:pkg.expiresAt ? new Date(pkg.expiresAt).toISOString() : "",
+    createdAt:pkg.createdAt || nowIso(),
+    updatedAt:pkg.updatedAt || nowIso()
+  };
+}
+
+function packageStatus(pkg){
+  if(!pkg.enabled) return "disabled";
+  if(pkg.expiresAt && Date.parse(pkg.expiresAt) <= Date.now()) return "expired";
+  if(pkg.quotaTotal > 0 && pkg.quotaUsed >= pkg.quotaTotal) return "quota";
+  return "active";
+}
+
+async function findAccessPackageByCode(code){
+  const normalized = String(code || "").trim();
+  if(!normalized) return null;
+  const store = await readAccessStore();
+  const pkg = store.packages.map(normalizeAccessPackage).find(p=>p.code === normalized);
+  if(!pkg) return null;
+  return { store, pkg };
+}
+
 /* ── Multipart form parsing (minimal, no external deps) ── */
 async function readMultipartBody(req){
   const contentType = String(req.headers["content-type"] || "");
@@ -338,6 +529,50 @@ function normalizeFrontendUpstream(body){
     apiKey,
     requestPath
   };
+}
+
+async function resolveUpstreamFromRequest(req, body){
+  const accessCode = String(body.accessCode || body.code || "").trim();
+  if(accessCode){
+    const hit = await findAccessPackageByCode(accessCode);
+    if(!hit) return { error: { status:404, message:"接入码不存在或已失效" } };
+    const pkg = hit.pkg;
+    const status = packageStatus(pkg);
+    if(status === "disabled") return { error:{ status:403, message:"接入码已停用" } };
+    if(status === "expired") return { error:{ status:410, message:"接入码已过期" } };
+    if(status === "quota") return { error:{ status:429, message:"接入额度已用完" } };
+    return {
+      upstream: {
+        id: pkg.id,
+        name: pkg.packageName || pkg.providerName || "接入模型",
+        baseUrl: pkg.baseUrl,
+        apiKey: pkg.apiKey,
+        requestPath: pkg.path || "/v1/chat/completions"
+      },
+      packageHit: hit
+    };
+  }
+  const auth = await authFromRequest(req);
+  const providerId = String(body.providerId || "").trim();
+  if(auth && providerId){
+    const providers = parseUserProviders(auth.store.userData[auth.user.id] || {});
+    const provider = providers.find(p=>p.id === providerId);
+    if(provider && provider.baseUrl && provider.apiKey){
+      return {
+        upstream: {
+          id: provider.id,
+          name: provider.providerName || "当前模型",
+          baseUrl: provider.baseUrl,
+          apiKey: provider.apiKey,
+          requestPath: provider.path || "/v1/chat/completions"
+        }
+      };
+    }
+    return { error:{ status:404, message:"未找到可用的模型提供方" } };
+  }
+  const fallback = normalizeFrontendUpstream(body);
+  if(fallback) return { upstream:fallback };
+  return { error:{ status:400, message:"缺少模型提供方或接入码" } };
 }
 function shouldUseWebSearch(message, manualEnabled=false){
   if(manualEnabled) return true;
@@ -470,7 +705,8 @@ async function handleChat(req, res){
   let messages = Array.isArray(body.messages) ? body.messages.slice(-50) : [];
   messages = applyContextMode(messages, contextMode);
   let sources = [];
-  const upstream = normalizeFrontendUpstream(body);
+  const resolved = await resolveUpstreamFromRequest(req, body);
+  const upstream = resolved.upstream || null;
 
   function fail(statusCode, payload){
     if(stream){
@@ -485,7 +721,15 @@ async function handleChat(req, res){
 
   if(!model){ fail(400, { error:"model_required", message:"请先填写模型名称" }); return; }
   if(!messages.length && !rawFiles.length){ fail(400, { error:"message_required", message:"请先输入要发送的话" }); return; }
-  if(!upstream){ fail(400, { error:"frontend_upstream_required", message:"联网搜索需要使用当前模型配置，请先在设置里填 Base URL 和 API Key" }); return; }
+  if(resolved.error){ fail(resolved.error.status || 400, { error:"upstream_resolution_failed", message: resolved.error.message }); return; }
+  if(!upstream){ fail(400, { error:"frontend_upstream_required", message:"请先选择模型提供方或输入接入码" }); return; }
+  if(resolved.packageHit && resolved.packageHit.pkg){
+    const allowedModels = Array.isArray(resolved.packageHit.pkg.models) ? resolved.packageHit.pkg.models : [];
+    if(allowedModels.length && model && !allowedModels.includes(model)){
+      fail(403, { error:"model_not_allowed", message:"该接入码不允许使用这个模型" });
+      return;
+    }
+  }
 
   /* ── Real file parsing pipeline ── */
   if(rawFiles.length > 0){
@@ -560,6 +804,14 @@ async function handleChat(req, res){
     if(stream){
       openSse(res);
       await streamOpenAiResponse({ req, res, upstream, model, messages, body, sources });
+      if(resolved.packageHit && resolved.packageHit.store && resolved.packageHit.pkg){
+        const store = resolved.packageHit.store;
+        const idx = store.packages.findIndex(p=>p.code === resolved.packageHit.pkg.code);
+        if(idx >= 0){
+          store.packages[idx] = { ...store.packages[idx], quotaUsed: Number(store.packages[idx].quotaUsed || 0) + 1, updatedAt: nowIso() };
+          await writeAccessStore(store);
+        }
+      }
       return;
     }
     const response = await fetch(safeUrl(upstream.baseUrl, upstream.requestPath), {
@@ -579,6 +831,14 @@ async function handleChat(req, res){
     try{ data = JSON.parse(text); }catch{ data = { text }; }
     if(!response.ok){ sendJson(res, response.status, { error:"upstream_error", status:response.status, detail:data }); return; }
     const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.output_text || "";
+    if(resolved.packageHit && resolved.packageHit.store && resolved.packageHit.pkg){
+      const store = resolved.packageHit.store;
+      const idx = store.packages.findIndex(p=>p.code === resolved.packageHit.pkg.code);
+      if(idx >= 0){
+        store.packages[idx] = { ...store.packages[idx], quotaUsed: Number(store.packages[idx].quotaUsed || 0) + 1, updatedAt: nowIso() };
+        await writeAccessStore(store);
+      }
+    }
     sendJson(res, 200, { upstream:upstream.name, model, content, sources, raw:data });
   }catch(error){
     if(error?.name === "AbortError") return;
@@ -619,6 +879,26 @@ async function handleModelsList(req, res){
   const providerName = String(body.providerName || "").trim();
   const baseUrl = String(body.baseUrl || "").trim();
   const apiKey = String(body.apiKey || "").trim();
+  const accessCode = String(body.accessCode || "").trim();
+  const providerId = String(body.providerId || "").trim();
+
+  if(accessCode){
+    const hit = await findAccessPackageByCode(accessCode);
+    if(!hit) return sendJson(res, 200, { ok:false, error:"接入码不存在或已失效" });
+    const pkg = hit.pkg;
+    const status = packageStatus(pkg);
+    if(status !== "active") return sendJson(res, 200, { ok:false, error:status === "disabled" ? "接入码已停用" : status === "expired" ? "接入码已过期" : "接入额度已用完" });
+    const models = pkg.models.map(id=>({ id, name:id, owned_by: pkg.packageName || pkg.providerName || "" }));
+    return sendJson(res, 200, { ok:true, models, providerName:pkg.packageName || pkg.providerName || "接入模型", accessCode, packageName:pkg.packageName });
+  }
+  if(providerId){
+    const auth = await authFromRequest(req);
+    if(!auth) return sendJson(res, 401, { ok:false, error:"unauthorized", message:"请先登录" });
+    const providers = parseUserProviders(auth.store.userData[auth.user.id] || {});
+    const provider = providers.find(p=>p.id === providerId);
+    if(!provider) return sendJson(res, 404, { ok:false, error:"not_found", message:"未找到模型提供方" });
+    return sendJson(res, 200, { ok:true, models:provider.models.map(id=>({ id, name:id, owned_by: provider.providerName || "" })), providerName:provider.providerName, providerId });
+  }
 
   if(!baseUrl) return sendJson(res, 400, { ok:false, error:"请先填写 Base URL" });
   if(!apiKey) return sendJson(res, 400, { ok:false, error:"请先填写 API Key" });
@@ -910,6 +1190,9 @@ const server = http.createServer(async (req, res)=>{
     if(req.method === "GET" && pathname === "/api/auth/me") return await handleMe(req, res);
     if(req.method === "GET" && pathname === "/api/user/data") return await handleGetUserData(req, res);
     if((req.method === "POST" || req.method === "PUT") && pathname === "/api/user/data") return await handleSaveUserData(req, res);
+    if(req.method === "POST" && pathname === "/api/access/claim") return await handleClaimAccessCode(req, res);
+    if(req.method === "GET" && pathname === "/api/access/packages") return await handleListAccessPackages(req, res);
+    if(req.method === "POST" && pathname === "/api/access/packages") return await handleCreateAccessPackage(req, res);
     if(req.method === "GET" && pathname === "/public/config"){
       return sendJson(res, 200, { chatModel:"deepseek-chat", webSearchConfigured:Boolean(TAVILY_API_KEY), providers:[] });
     }

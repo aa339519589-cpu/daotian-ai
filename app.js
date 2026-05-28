@@ -61,6 +61,8 @@
       oldChats:'daotian.chats', oldActive:'daotian.activeChat', oldSettings:'daotian.settings',
       v322Chats:'daotian.chats.v322', v322Active:'daotian.activeChat.v322', v322Settings:'daotian.settings.v322',
       modelParams:'daotian.modelParams.v1',
+      accessPackages:'daotian.accessPackages.v1',
+      accessClaims:'daotian.accessClaims.v1',
       personalization:'daotian.personalization.v1',
       memories:'daotian.memories.v1',
       memoryCandidates:'daotian.memoryCandidates.v1',
@@ -149,6 +151,34 @@
     }
     function saveAutoExtract(v){
       saveJSON(KEYS.autoExtract, v === true);
+    }
+    function loadAccessPackages(){
+      var v = readJSON(KEYS.accessPackages, []);
+      return Array.isArray(v) ? v : [];
+    }
+    function saveAccessPackages(v){
+      saveJSON(KEYS.accessPackages, Array.isArray(v) ? v : []);
+    }
+    function loadAccessClaims(){
+      var v = readJSON(KEYS.accessClaims, {});
+      return v && typeof v === 'object' ? v : {};
+    }
+    function saveAccessClaims(v){
+      saveJSON(KEYS.accessClaims, v && typeof v === 'object' ? v : {});
+    }
+    async function refreshAccessPackages(){
+      if(!AUTH_USER || !AUTH_USER.id) return loadAccessPackages();
+      try{
+        var res = await authFetch('/api/access/packages', {method:'GET', headers:{}});
+        var data = await res.json();
+        if(data && data.ok && Array.isArray(data.packages)){
+          saveAccessPackages(data.packages);
+          return data.packages;
+        }
+      }catch(err){
+        console.warn('[access] refresh failed:', err);
+      }
+      return loadAccessPackages();
     }
     function loadTokenDisplay(){
       return readJSON(KEYS.tokenDisplay, false) === true;
@@ -338,6 +368,7 @@
           Object.keys(AUTH_DATA).forEach(function(key){
             localStorage.setItem(scopedStorageKey(key), String(AUTH_DATA[key]));
           });
+          await refreshAccessPackages();
         }catch(dataErr){
           console.warn('[auth] user data restore failed, continuing with local state:', dataErr && dataErr.message ? dataErr.message : dataErr);
         }
@@ -466,8 +497,70 @@
       });
       return presets;
     }
+    function accessPackageKey(pkg){
+      return String(pkg.code || pkg.id || pkg.packageName || '').trim();
+    }
+    function accessPackageStatus(pkg){
+      if(!pkg) return 'inactive';
+      if(pkg.enabled === false) return 'disabled';
+      if(pkg.expiresAt && Date.parse(pkg.expiresAt) <= Date.now()) return 'expired';
+      if(Number(pkg.quotaTotal || 0) > 0 && Number(pkg.quotaUsed || 0) >= Number(pkg.quotaTotal || 0)) return 'quota';
+      return 'active';
+    }
+    function normalizeAccessPackage(pkg, i){
+      pkg = pkg && typeof pkg === 'object' ? pkg : {};
+      var models = splitModels(pkg.models);
+      return {
+        id: String(pkg.id || 'pkg_' + i || '').trim(),
+        code: String(pkg.code || '').trim(),
+        providerUserId: String(pkg.providerUserId || '').trim(),
+        providerId: String(pkg.providerId || '').trim(),
+        packageName: String(pkg.packageName || pkg.name || '').trim(),
+        providerName: String(pkg.providerName || '').trim(),
+        models: Array.from(new Set(models)),
+        enabled: pkg.enabled !== false,
+        quotaTotal: Number(pkg.quotaTotal || 0),
+        quotaUsed: Number(pkg.quotaUsed || 0),
+        expiresAt: String(pkg.expiresAt || '').trim(),
+        createdAt: String(pkg.createdAt || '').trim(),
+        updatedAt: String(pkg.updatedAt || '').trim()
+      };
+    }
+    function accessPackageToPreset(pkg, i){
+      pkg = normalizeAccessPackage(pkg, i);
+      var firstModel = pkg.models[0] || '';
+      var code = accessPackageKey(pkg);
+      return {
+        id: 'access__' + slugify(code || pkg.packageName || ('pkg_' + i)),
+        providerId: 'access__' + slugify(code || pkg.packageName || ('pkg_' + i)),
+        providerType: 'openai',
+        providerName: pkg.packageName || pkg.providerName || '接入模型',
+        baseUrl: '',
+        apiKey: '',
+        path: '/v1/chat/completions',
+        model: firstModel,
+        label: (pkg.packageName || pkg.providerName || '接入模型') + (firstModel ? ' / ' + firstModel : ''),
+        accessCode: code,
+        accessPackageId: pkg.id,
+        accessStatus: accessPackageStatus(pkg),
+        accessPackage: pkg,
+        models: pkg.models.slice(),
+        readOnly: true,
+        packageName: pkg.packageName,
+        providerUserId: pkg.providerUserId
+      };
+    }
+    function accessPackagesToPresets(packages){
+      var out = [];
+      (Array.isArray(packages) ? packages : []).forEach(function(pkg, i){
+        var p = normalizeAccessPackage(pkg, i);
+        if(!accessPackageKey(p)) return;
+        out.push(accessPackageToPreset(p, i));
+      });
+      return out;
+    }
     function providerKeyFromPreset(p){
-      return [p.providerType||'openai', p.providerName||'', p.baseUrl||'', p.apiKey||'', p.path||'/v1/chat/completions'].join('\n');
+      return [p.providerType||'openai', p.providerName||'', p.baseUrl||'', p.apiKey||'', p.path||'/v1/chat/completions', p.accessCode||''].join('\n');
     }
     function providersFromPresets(presets){
       const groups = [];
@@ -593,7 +686,9 @@
     function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
     function modelPresets(){
       settings = ensureSettingsShape(settings);
-      return settings.modelPresets || [];
+      var own = Array.isArray(settings.modelPresets) ? settings.modelPresets : [];
+      var access = accessPackagesToPresets(loadAccessPackages());
+      return own.concat(access);
     }
     function activePreset(){
       const presets = modelPresets();
@@ -668,7 +763,7 @@
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
           <div class="chat-list" id="chatList"></div>
-          <div class="sidebar-bottom"><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
+      <div class="sidebar-bottom"><button class="side-bottom-btn" id="openAccessCode">接入码</button><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
@@ -1056,7 +1151,7 @@
 
     function openModelPopover(){ var p=$('#modelPopover'); if(p){ renderModelSwitcher(); p.classList.add('open'); } var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','true'); }
     function closeModelPopover(){ var p=$('#modelPopover'); if(p) p.classList.remove('open'); var t=$('#modelTopTrigger'); if(t) t.setAttribute('aria-expanded','false'); }
-    function toggleModelPopover(){ if(!hasUsableModelConfig()){ openSettings(); return; } var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
+    function toggleModelPopover(){ if(!hasUsableModelConfig()){ openProviderHub(); return; } var p=$('#modelPopover'); if(p && p.classList.contains('open')) closeModelPopover(); else openModelPopover(); }
     function closeModelMenu(){ closeModelPopover(); }
 
     function renderAll(){
@@ -1107,25 +1202,29 @@
     async function callModel(messages, onDelta, preset){
       const cfg = preset || activePreset();
       if((cfg.providerType||'openai') !== 'openai') throw new Error('Gemini / Anthropic 已保存，但还需要后端转发适配。当前先用 OpenAI 兼容接口。');
-      const headers={'Content-Type':'application/json'}; if(cfg.apiKey) headers.Authorization='Bearer '+cfg.apiKey;
+      const headers={'Content-Type':'application/json'};
       const body={model:cfg.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true,stream_options:{include_usage:true}};
       exportModelParamsBody(cfg.id, body);
       let targetUrl = buildOpenAIURL(cfg);
-      if(searchOn){
+      if(searchOn || cfg.accessCode || cfg.providerId || (AUTH_USER && AUTH_USER.id && cfg.providerName)){
         targetUrl = '/chat';
-        body.webSearch = true;
-        body.search = true;
-        body.frontendUpstream = {
-          providerType: cfg.providerType || 'openai',
-          providerName: cfg.providerName || cfg.label || '当前模型',
-          baseUrl: cfg.baseUrl || '',
-          apiKey: cfg.apiKey || '',
-          requestPath: cfg.path || '/v1/chat/completions',
-          path: cfg.path || '/v1/chat/completions',
-          model: cfg.model || 'deepseek-chat'
-        };
+        body.webSearch = Boolean(searchOn);
+        body.search = Boolean(searchOn);
+        if(cfg.accessCode) body.accessCode = cfg.accessCode;
+        else if(cfg.providerId) body.providerId = cfg.providerId;
+        else if(cfg.baseUrl && cfg.apiKey){
+          body.frontendUpstream = {
+            providerType: cfg.providerType || 'openai',
+            providerName: cfg.providerName || cfg.label || '当前模型',
+            baseUrl: cfg.baseUrl || '',
+            apiKey: cfg.apiKey || '',
+            requestPath: cfg.path || '/v1/chat/completions',
+            path: cfg.path || '/v1/chat/completions',
+            model: cfg.model || 'deepseek-chat'
+          };
+        }
       }
-      const fetchHeaders = searchOn ? {'Content-Type':'application/json'} : headers;
+      const fetchHeaders = targetUrl === '/chat' ? {'Content-Type':'application/json'} : headers;
       const res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:JSON.stringify(body)});
       if(!res.ok){ const txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
 
@@ -1193,7 +1292,7 @@
       var input=$('#input'); var text=(input.value||'').trim();
       var hasAttachments = _attachments && _attachments.length > 0;
       if(!text && !hasAttachments) return;
-      if(!hasUsableModelConfig()){ toast('请先添加模型'); openSettings(); return; }
+      if(!hasUsableModelConfig()){ toast('请先添加模型'); openProviderHub(); return; }
       var cfg = activePreset();
 
       /* Image check: non-vision model blocks images */
@@ -1248,17 +1347,21 @@
       /* Build request body — include upstream when going through /chat */
       var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true}};
       exportModelParamsBody(cfg.id, body);
-      if(searchOn || hasAttachments){
+      if(searchOn || hasAttachments || cfg.accessCode || cfg.providerId){
         if(searchOn){ body.webSearch = true; body.search = true; }
-        body.frontendUpstream = {
-          providerType: cfg.providerType || 'openai',
-          providerName: cfg.providerName || cfg.label || '当前模型',
-          baseUrl: cfg.baseUrl || '',
-          apiKey: cfg.apiKey || '',
-          requestPath: cfg.path || '/v1/chat/completions',
-          path: cfg.path || '/v1/chat/completions',
-          model: cfg.model || 'deepseek-chat'
-        };
+        if(cfg.accessCode) body.accessCode = cfg.accessCode;
+        else if(cfg.providerId) body.providerId = cfg.providerId;
+        else{
+          body.frontendUpstream = {
+            providerType: cfg.providerType || 'openai',
+            providerName: cfg.providerName || cfg.label || '当前模型',
+            baseUrl: cfg.baseUrl || '',
+            apiKey: cfg.apiKey || '',
+            requestPath: cfg.path || '/v1/chat/completions',
+            path: cfg.path || '/v1/chat/completions',
+            model: cfg.model || 'deepseek-chat'
+          };
+        }
       }
 
       var timeoutId = setTimeout(function(){
@@ -3393,6 +3496,7 @@
       function val(name){ var el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
       var baseUrl = val('baseUrl');
       var apiKey = val('apiKey');
+      var providerName = val('providerName');
       if(!baseUrl){ toast('请先填写 Base URL'); return; }
       if(!apiKey){ toast('请先填写 API Key'); return; }
 
@@ -3403,10 +3507,12 @@
       if(btn){ btn.textContent = '获取中...'; btn.disabled = true; }
 
       try{
-        var res = await fetch('/models/list', {
+        var payload = { providerName: providerName, baseUrl: baseUrl, apiKey: apiKey };
+        if(AUTH_USER && AUTH_USER.id) payload.providerId = providerId;
+        var res = await authFetch('/models/list', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ providerName: val('providerName'), baseUrl: baseUrl, apiKey: apiKey })
+          body: JSON.stringify(payload)
         });
         var data = await res.json();
         if(data.ok && data.models && data.models.length){
@@ -3466,6 +3572,9 @@
     var _providerDraft = null;
     function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
+    function openSettingsModalPage(page){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settingsPage = page || 'home'; settingsPageStack = ['home']; if(page && page !== 'home') settingsPageStack.push(page); renderSettingsPage(); $('#settingsModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function openAccessPage(){ openSettingsModalPage('access'); }
+    function openProviderHub(){ openSettingsModalPage('providerHub'); }
     async function saveSettings(){
       setSaveProviderButtonState('saving');
       try{
@@ -3586,6 +3695,14 @@
         if(title) title.textContent = '语音功能';
         if(backBtn) backBtn.style.display = 'flex';
         body.innerHTML = renderVoiceSettingsPage();
+      }else if(settingsPage === 'access'){
+        if(title) title.textContent = '接入码';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderAccessPage();
+      }else if(settingsPage === 'providerHub'){
+        if(title) title.textContent = '模型提供方';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderProviderHubPage();
       }
     }
 
@@ -3601,6 +3718,8 @@
       var authLabel = AUTH_USER && AUTH_USER.id ? '当前账号' : '游客模式';
       var authEmail = AUTH_USER && AUTH_USER.email ? AUTH_USER.email : '本地临时保存';
       return '<div class="settings-home">'+
+        settingsEntry('接入码','输入接入码获取可用模型','access','⌘')+
+        settingsEntry('模型提供方','配置私有模型并生成接入码','providerHub','◫')+
         settingsEntry('外观与主题','跟随系统 / 浅色 / 深色','appearance','○')+
         settingsEntry('模型与参数','模型、Temperature、Top P','model','◇')+
         settingsEntry('记忆设置','跨聊天记忆与提取','memory','□')+
@@ -3718,6 +3837,54 @@
         '<button class="settings-btn primary" id="testVoiceBtn" style="margin-top:8px;width:100%">测试听音 — 你好，我是稻田 AI</button>'+
         '<button class="settings-btn" id="saveVoiceBtn" style="margin-top:12px;width:100%;background:var(--accent);border-color:var(--accent);color:#fff;border-radius:999px;font-weight:600">保存设置</button>'+
       '</div>';
+    }
+
+    function renderAccessPage(){
+      var claims = loadAccessClaims();
+      var codes = Object.keys(claims);
+      var cards = codes.map(function(code){
+        var pkg = claims[code];
+        return '<div class="settings-card"><div class="settings-card-title">'+escapeHTML(pkg.packageName || '接入模型')+'</div><div class="settings-muted">接入码：'+escapeHTML(code)+'</div><div class="settings-muted">状态：'+escapeHTML(pkg.status || 'active')+'</div><div class="settings-muted">模型：'+escapeHTML((pkg.models || []).join('、') || '无')+'</div></div>';
+      }).join('');
+      return '<div class="settings-page access-page">'+
+        '<div class="settings-card"><div class="settings-card-title">接入码</div><div class="settings-muted">输入别人提供的接入码，即可获取可用模型</div><div class="access-claim-row"><input id="accessCodeInput" class="settings-input" placeholder="请输入接入码"><button class="settings-btn primary" id="claimAccessBtn">一键接入</button></div><div id="accessStatus" class="settings-muted" style="margin-top:8px"></div></div>'+
+        (cards || '')+
+      '</div>';
+    }
+
+    function renderProviderHubPage(){
+      settings = ensureSettingsShape(settings);
+      if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
+      var ownList = '<div id="presetList">'+settings.modelProviders.map(providerTemplate).join('')+'</div>';
+      var packageList = accessPackagesToPresets(loadAccessPackages()).map(function(p){
+        var pkg = p.accessPackage || {};
+        return '<div class="settings-card"><div class="settings-card-title">'+escapeHTML(p.packageName || p.providerName || '模型包')+'</div><div class="settings-muted">接入码：'+escapeHTML(p.accessCode || '')+'</div><div class="settings-muted">模型：'+escapeHTML((p.models||[]).join('、'))+'</div><div class="settings-muted">状态：'+escapeHTML(p.accessStatus || 'active')+'</div></div>';
+      }).join('');
+      return '<div class="settings-page provider-hub">'+
+        '<div class="settings-card"><div class="settings-card-title">自己使用</div><div class="settings-muted">配置自己的模型，保存后仅当前用户可见</div>'+ownList+'<div style="display:flex;gap:8px;margin-top:12px"><button class="settings-btn" id="addProvider">＋ 添加提供方</button><button class="settings-btn primary" id="saveProvider">保存</button></div></div>'+
+        '<div class="settings-card"><div class="settings-card-title">分享给别人</div><div class="settings-muted">选择自己的模型包，生成接入码分享给别人</div><div id="packageEditor">'+renderPackageEditor()+'</div></div>'+
+        (packageList ? '<div class="settings-card"><div class="settings-card-title">已生成的接入码</div><div class="package-grid">'+packageList+'</div></div>' : '')+
+      '</div>';
+    }
+
+    function renderPackageEditor(){
+      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
+      var opts = providers.map(function(p){ return '<option value="'+escapeHTML(p.id)+'">'+escapeHTML(p.providerName || '模型提供方')+'</option>'; }).join('');
+      var firstProvider = providers[0] || null;
+      var models = firstProvider ? firstProvider.models : [];
+      return '<div class="package-editor">'+
+        '<div class="row"><div class="field"><label>选择模型提供方</label><select id="packageProviderSelect" class="settings-select">'+opts+'</select></div><div class="field"><label>模型包名称</label><input id="packageNameInput" class="settings-input" placeholder="例如：团队共享包"></div></div>'+
+        '<div class="row"><div class="field"><label>有效期（天）</label><input id="packageExpiryInput" class="settings-input" type="number" min="1" step="1" value="30"></div><div class="field"><label>额度（0 为不限）</label><input id="packageQuotaInput" class="settings-input" type="number" min="0" step="1" value="0"></div></div>'+
+        '<div class="field"><label>可分享模型</label><textarea id="packageModelsInput" class="settings-textarea" placeholder="一行一个模型名">'+escapeHTML(models.join('\n'))+'</textarea></div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="settings-btn primary" id="createPackageBtn">生成接入码</button><button class="settings-btn" id="refreshPackageBtn" type="button">刷新列表</button></div>'+
+        '<div id="packageCreateStatus" class="settings-muted" style="margin-top:8px"></div>'+
+      '</div>';
+    }
+    function syncPackageEditorModels(providerId){
+      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
+      var provider = providers.find(function(p){ return p.id === providerId; }) || providers[0] || null;
+      var ta = $('#packageModelsInput');
+      if(ta && provider) ta.value = (provider.models || []).join('\n');
     }
 
     function renderMemoryList(){
@@ -3884,6 +4051,12 @@
       if(e.target.closest('.param-textarea')){
         saveCurrentModelParams();
         return;
+      }
+    });
+    document.addEventListener('change', function(e){
+      var pkgSel = e.target.closest('#packageProviderSelect');
+      if(pkgSel){
+        syncPackageEditorModels(pkgSel.value);
       }
     });
 
@@ -4198,7 +4371,7 @@
       const presetBtn = e.target.closest('[data-model-preset]');
       if(presetBtn){ settings.activePresetId = presetBtn.getAttribute('data-model-preset'); syncLegacySettings(); persist(); renderModelSwitcher(); closeModelMenu(); toast('已切换模型'); return; }
       const manage = e.target.closest('#manageModels');
-      if(manage){ closeModelMenu(); openSettings(); return; }
+      if(manage){ closeModelMenu(); openProviderHub(); return; }
       if(e.target.closest('#modelTopTrigger')){ toggleModelPopover(); return; }
       if(!e.target.closest('#modelPopover') && !e.target.closest('#modelTopTrigger')) closeModelPopover();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
@@ -4240,12 +4413,85 @@
         }
         return;
       }
-      var addProviderBtn = e.target.closest('#addPreset');
+      var addProviderBtn = e.target.closest('#addPreset,#addProvider');
       if(addProviderBtn){
         e.preventDefault();
         addProviderEditorCard();
         return;
       }
+      var claimBtn = e.target.closest('#claimAccessBtn');
+      if(claimBtn){
+        var input = $('#accessCodeInput');
+        var status = $('#accessStatus');
+        var code = input ? input.value.trim() : '';
+        if(!code){ if(status) status.textContent = '请输入接入码'; return; }
+        claimBtn.disabled = true; claimBtn.textContent = '接入中...';
+        if(status) status.textContent = '接入中...';
+        (async function(){
+          try{
+            var res = await fetch('/api/access/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})});
+            var data = await res.json();
+            if(!res.ok || !data.ok) throw new Error(data.message || data.error || '接入失败');
+            var claims = loadAccessClaims();
+            claims[code] = data.package;
+            saveAccessClaims(claims);
+            saveAccessPackages(Object.values(claims));
+            renderSettingsPage();
+            if(status) status.textContent = '成功：' + (data.package.packageName || '接入模型');
+            toast('接入成功');
+          }catch(err){
+            if(status) status.textContent = err.message || '接入失败';
+            toast(err.message || '接入失败');
+          }finally{
+            claimBtn.disabled = false;
+            claimBtn.textContent = '一键接入';
+          }
+        })();
+        return;
+      }
+      var createPkgBtn = e.target.closest('#createPackageBtn');
+      if(createPkgBtn){
+        var providerSel = $('#packageProviderSelect');
+        var nameInput = $('#packageNameInput');
+        var expiryInput = $('#packageExpiryInput');
+        var quotaInput = $('#packageQuotaInput');
+        var modelsInput = $('#packageModelsInput');
+        var statusEl = $('#packageCreateStatus');
+        if(!providerSel || !nameInput || !modelsInput){ return; }
+        var pkgBody = {
+          providerId: providerSel.value,
+          packageName: nameInput.value.trim(),
+          models: splitModels(modelsInput.value),
+          expiresInDays: Number(expiryInput && expiryInput.value || 0),
+          quotaTotal: Number(quotaInput && quotaInput.value || 0),
+          enabled: true
+        };
+        createPkgBtn.disabled = true;
+        createPkgBtn.textContent = '生成中...';
+        if(statusEl) statusEl.textContent = '生成中...';
+        (async function(){
+          try{
+            var res = await authFetch('/api/access/packages', {method:'POST', body:JSON.stringify(pkgBody)});
+            if(!res.ok) throw new Error('生成失败');
+            var data = await res.json();
+            if(!data.ok) throw new Error(data.message || '生成失败');
+            await refreshAccessPackages();
+            if(statusEl) statusEl.textContent = '接入码：' + data.package.code;
+            toast('接入码已生成');
+            renderSettingsPage();
+          }catch(err){
+            console.error('[access] create package failed:', err);
+            if(statusEl) statusEl.textContent = err.message || '生成失败';
+            toast(err.message || '生成失败');
+          }finally{
+            createPkgBtn.disabled = false;
+            createPkgBtn.textContent = '生成接入码';
+          }
+        })();
+        return;
+      }
+      var refreshPkgBtn = e.target.closest('#refreshPackageBtn');
+      if(refreshPkgBtn){ refreshAccessPackages(); return; }
       /* Fetch models button */
       var fetchBtn = e.target.closest('[data-fetch-models]');
       if(fetchBtn){
@@ -4279,7 +4525,9 @@
       }
     });
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
-    $('#openProvider').onclick=openSettings; $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
+    var _openAccessCode = $('#openAccessCode'); if(_openAccessCode) _openAccessCode.onclick = openAccessPage;
+    var _openProvider = $('#openProvider'); if(_openProvider) _openProvider.onclick = openProviderHub;
+    $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
 
