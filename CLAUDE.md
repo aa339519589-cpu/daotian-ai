@@ -1,14 +1,14 @@
-# 稻田 Ai — 项目规则
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 启动方式
 
 ```bash
-cd /Users/paopaopaopao/Desktop/dao\ tian && node server.js
+cd /Users/paopaopaopao/daotian-ai-work && node server.js
 ```
 
 浏览器打开 http://127.0.0.1:8787
-
-也可双击 `Claude Code DeepSeek.command` 启动 Claude Code。
 
 ## 核心原则
 
@@ -28,51 +28,107 @@ cd /Users/paopaopaopao/Desktop/dao\ tian && node server.js
 
 ## 文件架构
 
-- `app.js` — 单页应用全部 JS 逻辑（IIFE 模式）
-- `styles.css` — 全部样式
-- `server.js` — Node.js 静态文件服务器 + API 转发
-- `index.html` — 入口 HTML
-- `package.json` — 项目配置
-- `Dockerfile` — Docker 部署配置
-- `render.yaml` — Render 部署配置
-- `.claude/settings.json` — 项目级 Claude Code 设置（acceptEdits 模式）
+| 文件 | 职责 |
+|---|---|
+| `app.js` | 单页应用全部 JS 逻辑（IIFE 模式），约 5000 行 |
+| `styles.css` | 全部样式 |
+| `server.js` | Node.js 静态文件服务器 + API 路由 + 认证 + 接入码管理 |
+| `index.html` | 入口 HTML（轻量，只含 MathJax/Mermaid/HF 预加载） |
+| `fileParser.js` | 文件解析逻辑（PDF/Word/Excel/图片 OCR） |
+| `prompt-runtime.js` | 系统提示词运行时逻辑 |
+| `Dockerfile` | Docker 部署配置 |
+| `render.yaml` | Render 部署配置 |
+| `data/` | 服务端持久化数据（auth store、access store） |
+| `config/` | 配置文件目录 |
 
 ## 数据存储
 
-key 通过 KEYS 常量管理：
-- `daotian.chats.v323` — 聊天记录
-- `daotian.settings.v323` — 设置
-- `daotian.theme.v323` — 主题
-- `daotian.modelParams.v1` — 模型参数
-- `daotian.personalization.v1` — 个性化设置
-- `daotian.memories.v1` — 跨聊天记忆（含证据计数、分类、评分）
-- `daotian.memoryCandidates.v1` — 候选记忆
-- `daotian.autoExtract.v1` — 自动提取开关
+### localStorage key（通过 KEYS 常量管理）
 
-## 记忆系统架构
+| Key | 用途 |
+|---|---|
+| `daotian.chats.v323` | 聊天记录 |
+| `daotian.settings.v323` | 设置（含 modelProviders + shareModelProviders） |
+| `daotian.theme.v323` | 主题 |
+| `daotian.modelParams.v1` | 模型参数（温度、Top P 等，按 preset ID 索引） |
+| `daotian.personalization.v1` | 个性化设置 |
+| `daotian.memories.v1` | 跨聊天记忆 |
+| `daotian.memoryCandidates.v1` | 候选记忆 |
+| `daotian.autoExtract.v1` | 自动提取开关 |
+| `daotian.access.claims` | 已接入的接入码 |
 
-四阶段流程：摄取（Ingestion）→ 存储（Storage）→ 检索（Retrieval）→ 整合（Synthesis）
+### 登录态 key 隔离
 
-### 分层存储
-- 工作记忆：当前会话聊天历史
-- 候选记忆池：自动提取的潜在记忆，含 evidence 计数
-- 长期记忆库：确认后的重要记忆
-- 证据累计：同一内容出现 3 次以上自动升级
+登录后，`saveJSONStrict` 使用 `scopedStorageKey(key)` 写入 `daotian.user.<id>.<key>`。读取时优先读 scoped key，fallback 到 unscoped key。游客模式两个 key 相同。
 
-### 分类体系（7 类）
-1. explicit_memory_request — 明确要求记住
-2. correction_rule — 纠错规则
-3. project_rule — 项目规则
-4. long_term_background — 长期背景
-5. stable_preference — 稳定偏好
-6. temporary_state — 临时状态（不记录）
-7. casual_chat — 闲聊（不记录）
+## 设置系统架构
 
-### 评分维度
-6 维评分 + 决策阈值：长期价值、未来复用、稳定性、具体性、敏感度风险、琐碎度
+设置入口在 `#settingsModal`，由 `settingsPage` 状态驱动页面切换：
+
+- `home` — 设置首页
+- `providerHub` — **模型提供方**（自己使用 + 分享给别人）
+- `access` — 接入码（输入别人的码来获取模型）
+- `appearance` / `model` / `memory` / `personalization` / `chatPrefs` / `voiceSettings`
+
+导航函数：`settingsGoTo(page)` 前进、`settingsGoBack()` 后退（有栈）。
+
+### 模型提供方（providerHub）架构
+
+两个独立板块，状态完全分离：
+
+- **自己使用** → `settings.modelProviders` — 自己配置模型自己用
+- **分享给别人** → `settings.shareModelProviders` — 配置模型生成接入码给别人用
+
+关键函数：
+- `providerHubScopeKey(scope)` → `'modelProviders'` | `'shareModelProviders'`
+- `providerHubProviders(scope)` / `setProviderHubProviders(scope, list)` — 读写
+- `collectProviderHubSection(scope)` — 从 DOM 收集并保存
+- `saveProviderHubSection(scope)` — 收集 + syncLegacySettings + persistModelSettingsStrict
+- `renderProviderSection(scope)` — 渲染单个板块 HTML
+- `providerTemplate(provider, index)` — 单个提供方卡片 HTML
+
+**注意：** 旧的 `#providerModal` 已废弃，侧边栏「模型提供方」按钮现在走 `openProviderHub()` → `settingsModal` 的 providerHub 页面。旧 `openSettings()` / `saveSettings()` / `collectProviderEditor()` 仍保留但已加 guard，不会污染 providerHub 数据。
+
+### 接入码系统
+
+- **生成**：在 providerHub 的「分享给别人」添加提供方 → 填写模型包信息 → 点击「生成接入码」→ 调用 `POST /api/access/packages`
+- **使用**：在「接入码」页面输入码 → 调用 `POST /api/access/claim` → 成功后模型出现在模型切换列表
+- 接入码使用者**看不到**提供者的 API Key / Base URL / 请求路径，聊天请求由后端代理
+
+## API 端点
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/auth/register` | 注册 |
+| POST | `/api/auth/login` | 登录 |
+| POST | `/api/auth/logout` | 退出 |
+| GET | `/api/auth/me` | 获取当前用户 |
+| GET | `/api/user/data` | 获取用户数据（聊天、设置同步） |
+| POST | `/api/user/data` | 保存用户数据 |
+| POST | `/api/access/packages` | 创建接入码（生成分享包） |
+| GET | `/api/access/packages` | 列出我的接入码 |
+| POST | `/api/access/claim` | 使用接入码获取模型 |
+| POST | `/chat` | 聊天请求（代理转发到模型供应商） |
+| POST | `/models/list` | 获取模型列表（从供应商 /models 接口拉取） |
+| POST | `/file/parse` | 文件解析 |
+| POST | `/api/tts` | 语音合成 |
+
+## 认证系统
+
+- `server.js` 内置用户认证（bcrypt + JSON 文件存储）
+- `AUTH_USER` 全局变量保存当前用户状态
+- `authFetch(path, options)` — 前端封装 fetch，自动处理认证和序列化
+- `queueAuthDataSync(key, str)` — 延迟批量同步数据到服务端
+- `flushAuthDataSync()` — 手动刷新同步队列
+- 游客模式：数据仅存 localStorage，不登录也能用
+
+## 记忆系统
+
+四阶段流程：摄取 → 存储 → 检索 → 整合
+
+7 类分类体系 + 6 维评分，证据累计 3 次以上自动升级为长期记忆。
 
 ## 部署
 
-- Render 部署：项目根目录 render.yaml 配置
-- GitHub 需要先推送代码，Render 自动拉取部署
-- Docker 部署：Dockerfile 配置
+- 推送代码到 GitHub → Render 自动拉取部署
+- `render.yaml` + `Dockerfile` 配置
