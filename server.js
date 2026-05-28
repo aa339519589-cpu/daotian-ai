@@ -92,7 +92,8 @@ async function readAuthStore(){
       sessions:Array.isArray(parsed.sessions) ? parsed.sessions : [],
       userData:parsed.userData && typeof parsed.userData === "object" ? parsed.userData : {}
     };
-  }catch{
+  }catch(e){
+    console.error('[auth] readAuthStore failed:', e.message, '| file:', AUTH_FILE);
     return emptyAuthStore();
   }
 }
@@ -112,10 +113,15 @@ async function writeAccessStore(store){
   await rename(tmp, ACCESS_FILE);
 }
 async function writeAuthStore(store){
-  await mkdir(DATA_DIR, { recursive:true });
-  const tmp = AUTH_FILE + "." + process.pid + "." + Date.now() + ".tmp";
-  await writeFile(tmp, JSON.stringify(store, null, 2));
-  await rename(tmp, AUTH_FILE);
+  try{
+    await mkdir(DATA_DIR, { recursive:true });
+    const tmp = AUTH_FILE + "." + process.pid + "." + Date.now() + ".tmp";
+    await writeFile(tmp, JSON.stringify(store, null, 2));
+    await rename(tmp, AUTH_FILE);
+  }catch(e){
+    console.error('[auth] writeAuthStore failed:', e.message, '| file:', AUTH_FILE, '| users:', store.users.length);
+    throw e;
+  }
 }
 function parseCookies(req){
   const out = {};
@@ -199,6 +205,7 @@ async function handleRegister(req, res){
   store.userData[user.id] = store.userData[user.id] || {};
   const token = await createSession(req, store, user.id);
   await writeAuthStore(store);
+  console.log('[auth] REGISTER OK | email:', email, '| userId:', user.id, '| total users:', store.users.length);
   sendJson(res, 200, { ok:true, user:publicUser(user) }, { "set-cookie":sessionCookie(req, token, Math.floor(SESSION_TTL_MS/1000)) });
 }
 
@@ -210,6 +217,7 @@ async function handleLogin(req, res){
   const store = await readAuthStore();
   const user = store.users.find(u=>u.email === email);
   if(!user || !(await bcrypt.compare(password, user.passwordHash || ""))){
+    console.log('[auth] LOGIN FAILED | email:', email, '| users in store:', store.users.length, '| user found:', !!user, '| all emails:', store.users.map(u=>u.email).join(', '));
     return sendJson(res, 401, { ok:false, error:"invalid_credentials", message:"邮箱或密码不正确" });
   }
   store.userData[user.id] = store.userData[user.id] || {};
@@ -1258,7 +1266,14 @@ const server = http.createServer(async (req, res)=>{
       sendJson(res, 200, { ok:true, message:"服务端存储尚未启用，记忆保存在浏览器本地。后续版本将支持服务端持久化。", time:nowIso() });
       return;
     }
-    if(pathname === "/health") return sendJson(res, 200, { ok:true, time:nowIso() });
+    if(pathname === "/health"){
+      try{
+        const store = await readAuthStore();
+        return sendJson(res, 200, { ok:true, time:nowIso(), users:store.users.length, sessions:store.sessions.length, dataDir:DATA_DIR });
+      }catch(e){
+        return sendJson(res, 200, { ok:true, time:nowIso(), error:e.message });
+      }
+    }
     return serveStatic(req, res);
   }catch(error){
     console.error(error);

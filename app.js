@@ -1218,7 +1218,7 @@
       const body={model:cfg.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true,stream_options:{include_usage:true}};
       exportModelParamsBody(cfg.id, body);
       let targetUrl = buildOpenAIURL(cfg);
-      if(searchOn || cfg.accessCode || cfg.providerId || (AUTH_USER && AUTH_USER.id && cfg.providerName)){
+      if(searchOn || cfg.accessCode || cfg.providerId || (cfg.baseUrl && cfg.apiKey)){
         targetUrl = '/chat';
         body.webSearch = Boolean(searchOn);
         body.search = Boolean(searchOn);
@@ -1447,18 +1447,32 @@
       var hasFiles = _attachments && _attachments.length > 0;
       var fetchBody, fetchHeaders, targetUrl;
 
-      if(hasFiles || searchOn){
+      if(hasFiles || searchOn || (cfg.baseUrl && cfg.apiKey)){
         /* Send to our backend for file parsing + proxying */
-        var fd = new FormData();
-        fd.append('body', JSON.stringify(body));
         if(hasFiles){
+          var fd = new FormData();
+          fd.append('body', JSON.stringify(body));
           for(var fai=0; fai<_attachments.length; fai++){
             fd.append('files', _attachments[fai].file, _attachments[fai].name);
           }
+          fetchBody = fd;
+          fetchHeaders = {};
+        }else{
+          fetchHeaders = {'Content-Type':'application/json'};
+          fetchBody = JSON.stringify(body);
         }
-        fetchBody = fd;
-        fetchHeaders = {};
         targetUrl = '/chat';
+        body.accessCode = cfg.accessCode || '';
+        body.providerId = cfg.providerId || '';
+        body.frontendUpstream = {
+          providerType: cfg.providerType || 'openai',
+          providerName: cfg.providerName || cfg.label || '当前模型',
+          baseUrl: cfg.baseUrl || '',
+          apiKey: cfg.apiKey || '',
+          requestPath: cfg.path || '/v1/chat/completions',
+          path: cfg.path || '/v1/chat/completions',
+          model: cfg.model || 'deepseek-chat'
+        };
       }else{
         fetchHeaders = {'Content-Type':'application/json'};
         if(cfg.apiKey) fetchHeaders.Authorization = 'Bearer '+cfg.apiKey;
