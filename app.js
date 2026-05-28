@@ -1483,13 +1483,14 @@
       if(document.getElementById('daotianThinkingStyle')) return;
       const style=document.createElement('style');
       style.id='daotianThinkingStyle';
-      style.textContent = `
-        .daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:1rem;color:var(--muted,currentColor);opacity:.72;background:transparent;border:0;box-shadow:none}
-        .daotian-thinking-mark{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;animation:daotianDotPulse 1.6s ease-in-out infinite}
-        .daotian-thinking-text{font-size:14px;letter-spacing:.02em;animation:daotianThinkingText 1.45s ease-in-out infinite}
-        @keyframes daotianDotPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:.95;transform:scale(1.25)}}
-        @keyframes daotianThinkingText{0%,100%{opacity:.52}50%{opacity:.86}}
-      `;
+      style.textContent = '\
+.daotian-thinking{display:inline-flex;align-items:center;gap:8px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:1rem;color:var(--muted,currentColor);opacity:.82;background:transparent;border:0;box-shadow:none}\
+.daotian-thinking-mark{width:13px;height:13px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}\
+.daotian-asterisk-spinner{width:13px;height:13px;display:block;overflow:visible;animation:daotianAsteriskSpin 1.16s linear infinite;transform-origin:50% 50%}\
+.daotian-asterisk-spinner line{stroke:#D96A2B;stroke-width:2.35;stroke-linecap:round;opacity:.96;filter:drop-shadow(0 0 2px rgba(217,106,43,.22))}\
+.daotian-thinking-text{font-size:14px;letter-spacing:.02em;color:var(--muted);opacity:.64}\
+@keyframes daotianAsteriskSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}\
+';
       document.head.appendChild(style);
     }
 
@@ -1603,7 +1604,7 @@
         if(m.thinking && !m.content){
           ensureThinkingStyle();
           var label = m.memoryNotice ? '记忆已更新' : '想一下';
-          return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
+          return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true"><svg class="daotian-asterisk-spinner" viewBox="0 0 24 24"><line x1="12" y1="3.2" x2="12" y2="20.8"/><line x1="4.4" y1="7.6" x2="19.6" y2="16.4"/><line x1="19.6" y1="7.6" x2="4.4" y2="16.4"/></svg></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
         var ttsText = (m.content || '').replace(/\s+/g,' ').trim();
         var ttsBtn = (m.role==='assistant' && !m.thinking && ttsText.length>0)
