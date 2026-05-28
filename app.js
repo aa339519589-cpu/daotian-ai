@@ -775,7 +775,7 @@
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
           <div class="chat-list" id="chatList"></div>
-      <div class="sidebar-bottom"><button class="side-bottom-btn" id="openAccessCode">接入码</button><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
+      <div class="sidebar-bottom"><button class="side-bottom-btn" id="openAccessCode">接入码</button><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openShare">分享给别人</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
@@ -3801,6 +3801,7 @@
     }
     function openAccessPage(){ openSettingsModalPage('access'); }
     function openProviderHub(){ openSettingsModalPage('providerHub'); }
+    function openShareHub(){ openSettingsModalPage('shareHub'); }
     async function saveSettings(){
       if(settingsPage === 'providerHub') return;
       setSaveProviderButtonState('saving');
@@ -3954,6 +3955,10 @@
         if(title) title.textContent = '模型提供方';
         if(backBtn) backBtn.style.display = 'flex';
         body.innerHTML = renderProviderHubPage();
+      }else if(settingsPage === 'shareHub'){
+        if(title) title.textContent = '分享给别人';
+        if(backBtn) backBtn.style.display = 'flex';
+        body.innerHTML = renderShareHubPage();
       }
     }
 
@@ -4106,45 +4111,53 @@
     function renderProviderHubPage(){
       settings = ensureSettingsShape(settings);
       if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
-      if(!Array.isArray(settings.shareModelProviders)) settings.shareModelProviders = [];
       var ownSection = renderProviderSection('self');
-      var shareSection = renderProviderSection('share');
-      var packageList = accessPackagesToPresets(loadAccessPackages()).map(function(p){
-        var pkg = p.accessPackage || {};
-        return '<div class="settings-card"><div class="settings-card-title">'+escapeHTML(p.packageName || p.providerName || '模型包')+'</div><div class="settings-muted">接入码：'+escapeHTML(p.accessCode || '')+'</div><div class="settings-muted">模型：'+escapeHTML((p.models||[]).join('、'))+'</div><div class="settings-muted">状态：'+escapeHTML(p.accessStatus || 'active')+'</div></div>';
-      }).join('');
       return '<div class="settings-page provider-hub">'+
         ownSection+
-        shareSection+
-        '<div class="settings-card"><div class="settings-card-title">生成接入码</div><div class="settings-muted">选择分享用的模型，生成接入码发给别人</div><div id="packageEditor">'+renderPackageEditor()+'</div></div>'+
-        (packageList ? '<div class="settings-card"><div class="settings-card-title">已生成的接入码</div><div class="package-grid">'+packageList+'</div></div>' : '')+
       '</div>';
     }
 
     function renderPackageEditor(){
-      var providers = Array.isArray(settings.shareModelProviders) ? settings.shareModelProviders : [];
-      var selectedId = settings.sharePackageProviderId || '';
+      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
+      var selectedId = settings.sharePackageProviderId || (providers[0] ? providers[0].id : '');
       var opts = providers.map(function(p){
-        return '<option value="'+escapeHTML(p.id)+'"'+(p.id === selectedId ? ' selected' : '')+'>'+escapeHTML(p.providerName || '模型提供方')+'</option>';
+        return '<option value=”'+escapeHTML(p.id)+'”'+(p.id === selectedId ? ' selected' : '')+'>'+escapeHTML(p.providerName || '模型提供方')+'</option>';
       }).join('');
-      var selectedProvider = providers[0] || null;
-      selectedId = selectedId || ($('#sharePackageProviderSelect') ? $('#sharePackageProviderSelect').value : '') || (selectedProvider ? selectedProvider.id : '');
-      if(selectedId) selectedProvider = providers.find(function(p){ return p.id === selectedId; }) || selectedProvider;
+      var selectedProvider = providers.find(function(p){ return p.id === selectedId; }) || providers[0] || null;
       var models = selectedProvider ? selectedProvider.models : [];
-      var emptyHint = providers.length ? '' : '<div class="settings-muted" style="margin-top:10px">先在“分享给别人”里添加一个提供方</div>';
-      return '<div class="package-editor">'+
-        '<div class="row"><div class="field"><label>选择模型提供方</label><select id="sharePackageProviderSelect" class="settings-select">'+opts+'</select></div><div class="field"><label>模型包名称</label><input id="sharePackageNameInput" class="settings-input" placeholder="例如：团队共享包"></div></div>'+
-        '<div class="row"><div class="field"><label>有效期（天）</label><input id="sharePackageExpiryInput" class="settings-input" type="number" min="1" step="1" value="30"></div><div class="field"><label>额度（0 为不限）</label><input id="sharePackageQuotaInput" class="settings-input" type="number" min="0" step="1" value="0"></div></div>'+
-        '<div class="field"><label>可分享模型</label><textarea id="sharePackageModelsInput" class="settings-textarea" placeholder="一行一个模型名">'+escapeHTML(models.join('\n'))+'</textarea>'+emptyHint+'</div>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="settings-btn primary" id="shareCreatePackageBtn">生成接入码</button><button class="settings-btn" id="shareRefreshPackageBtn" type="button">刷新列表</button></div>'+
-        '<div id="sharePackageStatus" class="settings-muted" style="margin-top:8px"></div>'+
+      var emptyHint = providers.length ? '' : '<div class=”settings-muted” style=”margin-top:10px”>请先在”模型提供方”里保存至少一个提供方</div>';
+      return '<div class=”package-editor”>'+
+        '<div class=”row”><div class=”field”><label>选择已保存的模型提供方</label><select id=”sharePackageProviderSelect” class=”settings-select”>'+opts+'</select></div><div class=”field”><label>模型包名称</label><input id=”sharePackageNameInput” class=”settings-input” placeholder=”例如：团队共享包”></div></div>'+
+        '<div class=”row”><div class=”field”><label>有效期（天）</label><input id=”sharePackageExpiryInput” class=”settings-input” type=”number” min=”1” step=”1” value=”30”></div><div class=”field”><label>额度（0 为不限）</label><input id=”sharePackageQuotaInput” class=”settings-input” type=”number” min=”0” step=”1” value=”0”></div></div>'+
+        '<div class=”field”><label>可分享模型（从上面提供方已保存的模型中选择）</label><textarea id=”sharePackageModelsInput” class=”settings-textarea” placeholder=”一行一个模型名”>'+escapeHTML(models.join('\n'))+'</textarea>'+emptyHint+'</div>'+
+        '<div style=”display:flex;gap:8px;flex-wrap:wrap”><button class=”settings-btn primary” id=”shareCreatePackageBtn”>生成接入码</button><button class=”settings-btn” id=”shareRefreshPackageBtn” type=”button”>刷新列表</button></div>'+
+        '<div id=”sharePackageStatus” class=”settings-muted” style=”margin-top:8px”></div>'+
       '</div>';
     }
     function syncPackageEditorModels(providerId){
-      var providers = Array.isArray(settings.shareModelProviders) ? settings.shareModelProviders : [];
+      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
       var provider = providers.find(function(p){ return p.id === providerId; }) || providers[0] || null;
       var ta = $('#sharePackageModelsInput');
       if(ta && provider) ta.value = (provider.models || []).join('\n');
+    }
+
+    function renderShareHubPage(){
+      settings = ensureSettingsShape(settings);
+      if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
+      var packages = loadAccessPackages();
+      var packageCards = (Array.isArray(packages) && packages.length)
+        ? packages.map(function(p){
+            return '<div class=”settings-card”><div class=”settings-card-title”>'+escapeHTML(p.packageName || '模型包')+'</div>'+
+              '<div class=”settings-muted”>接入码：<code>'+escapeHTML(p.code || '')+'</code> <button class=”copy-code-btn” data-copy=”'+escapeHTML(p.code || '')+'” type=”button” style=”cursor:pointer;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:2px 10px;font-size:12px”>复制</button></div>'+
+              '<div class=”settings-muted”>模型：'+escapeHTML((p.models||[]).join('、') || '无')+'</div>'+
+              '<div class=”settings-muted”>状态：'+(p.enabled!==false?'启用中':'已停用')+' / 额度：'+(p.quotaTotal>0?p.quotaUsed+'/'+p.quotaTotal:'不限')+' / 到期：'+(p.expiresAt?new Date(p.expiresAt).toLocaleDateString():'永久')+'</div>'+
+              '</div>';
+          }).join('')
+        : '<div class=”settings-muted”>暂无已生成的接入码</div>';
+      return '<div class=”settings-page share-hub”>'+
+        '<div class=”settings-card”><div class=”settings-card-title”>生成新接入码</div><div class=”settings-muted”>从已保存的模型提供方中选择模型，生成接入码分享给别人</div><div id=”packageEditor”>'+renderPackageEditor()+'</div></div>'+
+        '<div class=”settings-card”><div class=”settings-card-title”>已生成的接入码</div>'+packageCards+'</div>'+
+      '</div>';
     }
 
     function renderMemoryList(){
@@ -4747,7 +4760,7 @@
           return;
         }
         var pkgBody = {
-          providerScope: 'share',
+          providerScope: 'self',
           providerId: providerSel.value,
           packageName: nameInput.value.trim(),
           models: splitModels(modelsInput.value),
@@ -4777,6 +4790,14 @@
             createPkgBtn.textContent = '生成接入码';
           }
         })();
+        return;
+      }
+      var copyCodeBtn = e.target.closest('.copy-code-btn');
+      if(copyCodeBtn){
+        var codeText = copyCodeBtn.getAttribute('data-copy') || '';
+        if(codeText){
+          navigator.clipboard.writeText(codeText).then(function(){ toast('已复制接入码'); }, function(){ toast('复制失败，请手动复制'); });
+        }
         return;
       }
       var refreshPkgBtn = e.target.closest('#shareRefreshPackageBtn');
@@ -4834,6 +4855,7 @@
     $('#closeSide').onclick=()=>{sidebarOpen=false;renderAll();}; $('#openSide').onclick=()=>{closeModelPopover(); sidebarOpen=true;renderAll();}; $('#topNewChatBtn').onclick=startNewChat;
     var _openAccessCode = $('#openAccessCode'); if(_openAccessCode) _openAccessCode.onclick = openAccessPage;
     var _openProvider = $('#openProvider'); if(_openProvider) _openProvider.onclick = openProviderHub;
+    var _openShare = $('#openShare'); if(_openShare) _openShare.onclick = openShareHub;
     $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
     $('#sendBtn').onclick=sendMessage;
     $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
