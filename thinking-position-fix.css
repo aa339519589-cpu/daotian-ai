@@ -1,0 +1,24 @@
+/* Fix: keep the temporary “想一下” thinking row in the upper reading zone, not pinned to the bottom.
+   Root cause: the thinking row is the last message; without enough bottom scroll space, any scroll-to-bottom logic forces it down near the composer. */
+
+.messages.generating-space{
+  padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+  scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+}
+
+.daotian-thinking-message{
+  scroll-margin-top:18dvh!important;
+  scroll-margin-bottom:72dvh!important;
+}
+
+@media(max-width:900px){
+  .messages.generating-space{
+    padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+    scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+  }
+
+  body.keyboard-open .messages.generating-space{
+    padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;
+    scroll-padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;
+  }
+}
