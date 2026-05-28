@@ -258,10 +258,21 @@
     function initUserScrollDetection(){
       if(_scrollDetectInited) return; _scrollDetectInited = true;
       var box = $('#messages'); if(!box) return;
+      var lastScrollTop = 0;
       function onUserScroll(e){
-        /* Ignore touches on composer area — only real message scrolling counts */
+        /* Ignore touches on composer/input area */
         if(e && e.target){
-          if(e.target.closest('.composer-wrap, textarea, input, #sendBtn, .plus-btn, .search-globe')) return;
+          if(e.target.closest('.composer-wrap, textarea, input, #sendBtn, .plus-btn, .search-globe, .plus-menu')) return;
+        }
+        /* Only mark as user-scrolling if actually scrolling UP (away from bottom) */
+        var currentTop = box.scrollTop;
+        var scrollingUp = currentTop < lastScrollTop - 10;
+        lastScrollTop = currentTop;
+        if(!scrollingUp) return;
+        /* Don't pause during active streaming unless user has scrolled far */
+        if(isStreamingNow()){
+          var dist = box.scrollHeight - box.scrollTop - box.clientHeight;
+          if(dist < 300) return;
         }
         userScrolling = true;
         clearTimeout(userScrollingTimer);
@@ -273,7 +284,7 @@
         }, 2500);
       }
       box.addEventListener('wheel', onUserScroll, {passive:true});
-      box.addEventListener('touchstart', onUserScroll, {passive:true});
+      box.addEventListener('touchstart', function(e){ lastScrollTop = box.scrollTop; onUserScroll(e); }, {passive:true});
       box.addEventListener('touchmove', onUserScroll, {passive:true});
       box.addEventListener('scroll', function(){
         if(!userScrolling) return;
@@ -1636,7 +1647,11 @@
       box.classList.toggle('generating-space', !!hasScrollFocus);
       scheduleEnhanceRender();
       if(loadAutoScroll()){
-        scrollMessagesToBottomStable();
+        if(isStreamingNow() && hasScrollFocus){
+          forceScrollToStreamBottom();
+        }else{
+          scrollMessagesToBottomStable();
+        }
       }
     }
     function friendlyModelName(model){
@@ -1970,7 +1985,6 @@
             }
           }
           assistant.content += delta;
-          if(assistant.scrollFocus) forceScrollToStreamBottom();
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
           if(assistant.scrollFocus) forceScrollToStreamBottom();
