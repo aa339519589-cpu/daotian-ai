@@ -1,5 +1,5 @@
 /* Fix: keep the temporary “想一下” thinking row in the upper reading zone, not pinned to the bottom.
-   Root cause: the thinking row is the last message; without enough bottom scroll space, any scroll-to-bottom logic forces it down near the composer. */
+   Also harden rich/file/table rendering so long filenames, markdown tables and pasted file content never distort text layout. */
 
 .messages.generating-space{
   padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
@@ -11,7 +11,6 @@
   scroll-margin-bottom:72dvh!important;
 }
 
-/* Fix: long unbroken text / encoded filenames must never expand the page horizontally. */
 html,
 body,
 #app,
@@ -34,20 +33,54 @@ body,
 .bubble,
 .assistant-content,
 .assistant-render,
-.assistant-render p,
-.assistant-render div,
-.assistant-render li,
-.attach-chip{
+.assistant-render *{
   min-width:0!important;
+  box-sizing:border-box!important;
+}
+
+/* Normal assistant prose: collapse model/file spacing, do not preserve table-alignment spaces. */
+.assistant-render,
+.assistant-render p,
+.assistant-render div:not(.markdown-table-wrap):not(.artifact-card):not(.artifact-head):not(.artifact-body):not(.artifact-actions):not(.code-block):not(.code-head),
+.assistant-render li,
+.assistant-render blockquote{
+  white-space:normal!important;
+  text-align:left!important;
+  text-align-last:auto!important;
+  letter-spacing:normal!important;
+  word-spacing:normal!important;
+  word-break:normal!important;
+  line-break:auto!important;
+  overflow-wrap:break-word!important;
   max-width:100%!important;
-  overflow-x:hidden!important;
-  overflow-wrap:anywhere!important;
-  word-break:break-word!important;
-  line-break:anywhere!important;
+}
+
+/* Only true pre/code keeps preformatted spacing. */
+.assistant-render pre,
+.assistant-render code,
+.code-block pre,
+.code-block code{
+  white-space:pre!important;
+  overflow-x:auto!important;
+  word-break:normal!important;
+  overflow-wrap:normal!important;
+  line-break:auto!important;
+}
+
+.assistant-render p{
+  margin:.4em 0 .85em!important;
+}
+.assistant-render p:last-child{
+  margin-bottom:0!important;
 }
 
 .bubble{
   white-space:pre-wrap!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+  line-break:auto!important;
+  letter-spacing:normal!important;
+  word-spacing:normal!important;
 }
 
 .message.user .bubble{
@@ -55,7 +88,45 @@ body,
 }
 
 .message.assistant .assistant-content{
-  max-width:calc(100vw - 36px)!important;
+  max-width:min(720px, calc(100vw - 36px))!important;
+  width:fit-content!important;
+  overflow-x:hidden!important;
+}
+
+/* Tables/artifacts: scroll inside card instead of widening the whole page. */
+.artifact-card,
+.markdown-table-wrap,
+.artifact-body{
+  max-width:100%!important;
+  overflow-x:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+}
+
+.assistant-render table{
+  width:max-content!important;
+  min-width:100%!important;
+  max-width:none!important;
+  table-layout:auto!important;
+  white-space:normal!important;
+}
+
+.assistant-render th,
+.assistant-render td{
+  white-space:normal!important;
+  word-break:keep-all!important;
+  overflow-wrap:normal!important;
+  line-break:auto!important;
+  letter-spacing:normal!important;
+  word-spacing:normal!important;
+}
+
+.attach-chip,
+.file-chip,
+[data-file-name]{
+  max-width:100%!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+  line-break:auto!important;
 }
 
 @media(max-width:900px){
@@ -76,5 +147,9 @@ body,
   .message.assistant .assistant-content,
   .assistant-render{
     max-width:calc(100vw - 36px)!important;
+  }
+
+  .assistant-render table{
+    font-size:.92rem!important;
   }
 }
