@@ -1,0 +1,6 @@
+@media(max-width:900px){
+  body.keyboard-open .composer-wrap{
+    transform:translateY(var(--app-top,0px))!important;
+    will-change:transform!important;
+  }
+}
