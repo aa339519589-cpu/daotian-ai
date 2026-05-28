@@ -1,14 +1,19 @@
 // upload-hotfix.js — fixes file/PDF uploads lost before /chat fetch
-// Root cause: app.js clears the private _attachments array before callModelWithBody checks it,
-// so the request is sent as JSON instead of multipart/form-data. This script captures File objects
-// at selection time and converts the affected /chat JSON request back into FormData.
+// Also prevents the old 30s front-end timeout from turning a still-running assistant reply into a red error bubble.
 (function(){
   'use strict';
   if(window.__DAOTIAN_UPLOAD_HOTFIX__) return;
-  window.__DAOTIAN_UPLOAD_HOTFIX__ = 'v1-20260528';
+  window.__DAOTIAN_UPLOAD_HOTFIX__ = 'v2-20260528-pdf-timeout-guard';
 
   var CACHE_TTL = 10 * 60 * 1000;
   var fileCache = [];
+  var FILE_GUARD_PROMPT = [
+    '【文件读取硬规则】',
+    '本轮用户上传了文件。只有在后端明确注入了文件正文、OCR文字、页面文本或图片视觉内容时，才可以回答文件里的具体内容。',
+    '如果上下文里只有文件名、大小、页数未知、解析失败、OCR失败、扫描版、无法提取文字等信息，必须直接说明“我没有读到文件正文”，不能猜题目数量、章节、页数、题型、答案或内容。',
+    '不能根据文件名、教材章节名、常见讲义格式推断里面有多少题；不知道就说不知道。',
+    '如果用户要求数题、总结、做题，而正文未读到，只能要求用户上传清晰图片/截图/可复制文字层PDF。'
+  ].join('\n');
 
   function now(){ return Date.now(); }
   function safeDecode(s){ try{ return decodeURIComponent(String(s||'')); }catch(e){ return String(s||''); } }
@@ -45,6 +50,20 @@
     return null;
   }
 
+  function injectFileGuard(body){
+    if(!body || !Array.isArray(body.messages)) return body;
+    var exists = body.messages.some(function(m){ return m && m.role === 'system' && String(m.content||'').indexOf('【文件读取硬规则】') >= 0; });
+    if(!exists){
+      var sysIdx = body.messages.findIndex(function(m){ return m && m.role === 'system'; });
+      if(sysIdx >= 0){
+        body.messages[sysIdx] = Object.assign({}, body.messages[sysIdx], { content:String(body.messages[sysIdx].content||'') + '\n\n' + FILE_GUARD_PROMPT });
+      }else{
+        body.messages.unshift({ role:'system', content:FILE_GUARD_PROMPT });
+      }
+    }
+    return body;
+  }
+
   function pickFiles(marker){
     prune();
     if(!marker || !fileCache.length) return [];
@@ -59,6 +78,27 @@
     return selected.slice(-marker.count);
   }
 
+  // app.js has an internal 30s timer that mutates the same assistant message into role='error'.
+  // For scanned/OCR PDFs that is too short; when the upstream later streams real text, it stays red.
+  // Patch only that exact timeout callback and leave all other timers untouched.
+  try{
+    var rawSetTimeout = window.setTimeout.bind(window);
+    if(!window.__DAOTIAN_TIMEOUT_PATCHED__){
+      window.__DAOTIAN_TIMEOUT_PATCHED__ = true;
+      window.setTimeout = function(fn, delay){
+        try{
+          var src = typeof fn === 'function' ? Function.prototype.toString.call(fn) : '';
+          if(Number(delay) === 30000 && src.indexOf('请求超时，没有收到回复') >= 0 && src.indexOf("assistant.role='error'") >= 0){
+            return rawSetTimeout(function(){
+              console.warn('[upload-hotfix] suppressed stale 30s chat timeout; request is still allowed to finish');
+            }, 30000);
+          }
+        }catch(_e){}
+        return rawSetTimeout.apply(window, arguments);
+      };
+    }
+  }catch(e){ console.warn('[upload-hotfix] timeout patch skipped:', e && e.message ? e.message : e); }
+
   var originalFetch = window.fetch ? window.fetch.bind(window) : null;
   if(!originalFetch) return;
 
@@ -72,6 +112,7 @@
         var body = JSON.parse(init.body || '{}');
         var marker = looksLikeChatFileRequest(body);
         if(marker){
+          body = injectFileGuard(body);
           var files = pickFiles(marker);
           if(files.length){
             var fd = new FormData();
@@ -83,6 +124,7 @@
             init = Object.assign({}, init, { body:fd, headers:headers });
             console.log('[upload-hotfix] converted /chat to multipart, files:', files.map(function(x){ return x.name; }).join(', '));
           }else{
+            init = Object.assign({}, init, { body:JSON.stringify(body) });
             console.warn('[upload-hotfix] file marker found but no cached File object matched');
           }
         }
