@@ -90,11 +90,13 @@ button{border:0;background:none;cursor:pointer}
 .brand{font-weight:650;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .new-chat-btn{margin:10px 12px;padding:9px 12px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line);text-align:left;font-weight:540;font-size:14px;box-shadow:none}
 .chat-list{flex:1;overflow:auto;padding:0 10px 10px 10px;min-height:0}
-.chat-item{height:44px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border-radius:14px;color:var(--muted);position:relative}
-.chat-item:hover,.chat-item.active{background:rgba(220,128,98,.08);color:var(--text)}
-.chat-dot{width:7px;height:7px;border-radius:99px;border:1px solid currentColor;opacity:.75;flex:0 0 auto}
+.chat-item{height:44px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border-radius:16px;color:var(--muted);position:relative;transition:background .15s}
+.chat-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.chat-item.active{background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.06)}
+.chat-dot{width:6px;height:6px;border-radius:99px;background:transparent;opacity:.55;flex:0 0 auto;transition:opacity .15s}
+.chat-item.active .chat-dot{opacity:.85;background:var(--muted)}
 .chat-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
-.chat-time{font-size:12px;color:var(--muted);flex:0 0 auto}
+.chat-time{font-size:12px;color:rgba(255,255,255,.35);flex:0 0 auto}
 .delete-chat{width:26px;height:26px;border-radius:9px;display:none;color:var(--muted);font-size:18px;line-height:1}
 .chat-item:hover .delete-chat,.chat-item.active .delete-chat{display:grid;place-items:center}
 .delete-chat:hover{background:rgba(196,80,70,.14);color:#b84a42}
@@ -104,8 +106,9 @@ button{border:0;background:none;cursor:pointer}
 .sidebar .chat-item:hover,.sidebar .chat-item.active{color:var(--sidebar-text)}
 .sidebar .chat-time,.sidebar .chat-dot{color:var(--sidebar-muted)}
 .sidebar .side-bottom-btn{color:var(--sidebar-muted)}
-.side-bottom-btn{height:32px;border-radius:10px;padding:0 10px;text-align:left;color:var(--muted);font-size:13px}
-.side-bottom-btn:hover{background:rgba(220,128,98,.08);color:var(--text)}
+.side-bottom-btn{height:32px;border-radius:10px;padding:0 10px;text-align:left;color:var(--muted);font-size:13px;transition:background .15s}
+.side-bottom-btn:hover{background:rgba(255,255,255,.06);color:var(--text)}
+.side-bottom-btn.settings-only{font-weight:540;justify-content:center;text-align:center}
 .sidebar-label{color:var(--muted)}
 .settings-account{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:rgba(127,127,127,.06);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
 .settings-account-label{font-size:12px;color:var(--muted);line-height:1.2}

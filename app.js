@@ -788,7 +788,7 @@
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
           <div class="chat-list" id="chatList"></div>
-      <div class="sidebar-bottom"><button class="side-bottom-btn" id="openAccessCode">接入码</button><button class="side-bottom-btn" id="openProvider">模型提供方</button><button class="side-bottom-btn" id="openShare">分享给别人</button><button class="side-bottom-btn" id="openSettingsBtn">设置</button></div>
+      <div class="sidebar-bottom"><button class="side-bottom-btn settings-only" id="openSettingsBtn">设置</button></div>
         </aside>
         <main class="main">
           <div class="chat-topbar" id="chatTopbar">
@@ -3493,10 +3493,13 @@
       }
       syncLegacySettings();
     }
+    function isProviderSectionPage(){
+      return settingsPage === 'providerHub' || settingsPage === 'shareHub';
+    }
     function providerHubRoot(scope){
-      var hub = document.querySelector('#settingsModal .provider-hub');
-      if(!hub) return null;
-      return hub.querySelector('[data-provider-section="'+scope+'"]');
+      var modal = document.querySelector('#settingsModal');
+      if(!modal) return null;
+      return modal.querySelector('[data-provider-section="'+scope+'"]');
     }
     function renderProviderSection(scope){
       const providers = providerHubProviders(scope);
@@ -3572,8 +3575,10 @@
         persistModelSettingsStrict();
         if(scope === 'self') renderModelSwitcher();
         setProviderHubSaveState(scope, 'saved');
-        if(scope === 'share') toast('分享配置已保存');
-        else if(hasUsableModelConfig()) toast('配置已保存');
+        if(scope === 'share'){
+          toast('分享配置已保存');
+          renderSettingsPage();
+        }else if(hasUsableModelConfig()) toast('配置已保存');
         else toast('已保存，请先添加模型');
       }catch(err){
         console.error('[provider hub] save failed:', err);
@@ -3660,7 +3665,7 @@
       scope = scope === 'share' ? 'share' : 'self';
       __providerAddLock__ = true;
       try{
-        if(settingsPage === 'providerHub'){
+        if(isProviderSectionPage()){
           collectProviderHubSection(scope);
           var providers = providerHubProviders(scope).slice();
           var n = providers.length + 1;
@@ -3693,8 +3698,7 @@
             path:'/v1/chat/completions',
             models:[]
           }, n2));
-          if(settingsPage === 'providerHub') renderSettingsPage();
-          else renderProviderEditor();
+          renderProviderEditor();
           setSaveProviderButtonState('idle');
         }
       }catch(err){
@@ -3709,7 +3713,7 @@
     async function fetchModelsForProvider(scope, providerId){
       if(arguments.length === 1){ providerId = scope; scope = 'self'; }
       scope = scope === 'share' ? 'share' : 'self';
-      var scopeRoot = settingsPage === 'providerHub' ? providerHubRoot(scope) : providerEditorScope();
+      var scopeRoot = isProviderSectionPage() ? providerHubRoot(scope) : providerEditorScope();
       if(!scopeRoot){ toast('页面状态异常，请刷新重试'); return; }
       var card = scopeRoot.querySelector('[data-provider-id="'+providerId+'"]');
       if(!card) return;
@@ -3745,9 +3749,9 @@
             if(currentModels.indexOf(modelId) < 0) currentModels.push(modelId);
           });
           if(textarea) textarea.value = currentModels.join('\n');
-          if(settingsPage === 'providerHub') collectProviderHubSection(scope);
+          if(isProviderSectionPage()) collectProviderHubSection(scope);
           else collectProviderEditor();
-          if(settingsPage === 'providerHub' && scope === 'share'){
+          if(isProviderSectionPage() && scope === 'share'){
             var shareSelectEl = $('#sharePackageProviderSelect');
             if(shareSelectEl && shareSelectEl.value === providerId) syncPackageEditorModels(providerId);
           }
@@ -3783,7 +3787,7 @@
     function toggleModelInProvider(scope, providerId, modelName){
       if(arguments.length === 2){ modelName = providerId; providerId = scope; scope = 'self'; }
       scope = scope === 'share' ? 'share' : 'self';
-      var scopeRoot = settingsPage === 'providerHub' ? providerHubRoot(scope) : providerEditorScope();
+      var scopeRoot = isProviderSectionPage() ? providerHubRoot(scope) : providerEditorScope();
       var card = scopeRoot ? scopeRoot.querySelector('[data-provider-id="'+providerId+'"]') : null;
       if(!card) return;
       var textarea = card.querySelector('[data-provider-field="models"]');
@@ -3803,7 +3807,7 @@
         else{ btn.textContent = '−'; btn.classList.remove('add'); btn.classList.add('remove'); }
       }
       /* Save immediately */
-      if(settingsPage === 'providerHub'){
+      if(isProviderSectionPage()){
         collectProviderHubSection(scope);
         saveJSONStrict(KEYS.settings, settings);
         if(scope === 'share'){
@@ -3881,7 +3885,7 @@
     window.__saveSettings__ = saveSettings;
     function deleteProvider(providerId, scope){
       scope = scope === 'share' ? 'share' : 'self';
-      if(settingsPage === 'providerHub'){
+      if(isProviderSectionPage()){
         var list = providerHubProviders(scope).slice();
         var prov = list.find(function(p){ return p.id === providerId; });
         if(!prov) return;
@@ -4010,13 +4014,13 @@
       var authLabel = AUTH_USER && AUTH_USER.id ? '当前账号' : '游客模式';
       var authEmail = AUTH_USER && AUTH_USER.email ? AUTH_USER.email : '本地临时保存';
       return '<div class="settings-home">'+
-        settingsEntry('接入码','输入接入码获取可用模型','access','⌘')+
-        settingsEntry('模型提供方','配置私有模型并生成接入码','providerHub','◫')+
+        settingsEntry('接入码','输入别人提供的接入码，获取可用模型','access','�')+
+        settingsEntry('模型提供方','配置自己使用的模型','providerHub','◫')+
+        settingsEntry('分享给别人','配置分享用模型并生成接入码','shareHub','◎')+
         settingsEntry('外观与主题','跟随系统 / 浅色 / 深色','appearance','○')+
         settingsEntry('模型与参数','模型、Temperature、Top P','model','◇')+
-        settingsEntry('记忆设置','跨聊天记忆与提取','memory','□')+
-        settingsEntry('个性化','系统提示词与风格','personalization','▽')+
-        settingsEntry('聊天偏好','流式输出、自动滚动、Token','chatPrefs','≡')+
+        settingsEntry('记忆设置','跨聊天记忆与自动提取','memory','□')+
+        settingsEntry('个性化聊天偏好','系统提示词与回复风格','personalization','▽')+
         settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','♪')+
         '<div class="settings-account"><div><div class="settings-account-label">'+escapeHTML(authLabel)+'</div><div class="settings-account-email">'+escapeHTML(authEmail)+'</div></div>'+authActions+'</div>'+
       '</div>';
@@ -4728,7 +4732,7 @@
         var pid2 = manAdd.getAttribute('data-manual-toggle');
         var section2 = manAdd.closest('[data-provider-section]');
         var scope2 = section2 ? section2.getAttribute('data-provider-section') : 'self';
-        var root2 = settingsPage === 'providerHub' ? providerHubRoot(scope2) : providerEditorScope();
+        var root2 = isProviderSectionPage() ? providerHubRoot(scope2) : providerEditorScope();
         var card2 = root2 ? root2.querySelector('[data-provider-id="'+pid2+'"]') : null;
         if(card2){
           var modelName = prompt('输入模型名称（如 deepseek-v4-pro）：');
@@ -4737,11 +4741,15 @@
             if(ta){
               var currentModels = ta.value.trim();
               ta.value = currentModels ? currentModels + '\n' + modelName.trim() : modelName.trim();
-              if(settingsPage === 'providerHub') collectProviderHubSection(scope2);
-              else collectProviderEditor();
-              if(settingsPage === 'providerHub' && scope2 === 'share'){
-                var shareSelectEl3 = $('#sharePackageProviderSelect');
-                if(shareSelectEl3 && shareSelectEl3.value === pid2) syncPackageEditorModels(pid2);
+              if(isProviderSectionPage()){
+                collectProviderHubSection(scope2);
+                saveJSONStrict(KEYS.settings, settings);
+                if(scope2 === 'share'){
+                  var shareSelectEl3 = $('#sharePackageProviderSelect');
+                  if(shareSelectEl3 && shareSelectEl3.value === pid2) syncPackageEditorModels(pid2);
+                }
+              }else{
+                collectProviderEditor();
               }
               renderModelSwitcher();
               toast('已添加 ' + modelName.trim());
