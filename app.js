@@ -174,6 +174,36 @@
     function saveAutoExtract(v){
       saveJSON(KEYS.autoExtract, v === true);
     }
+
+    /* ── Server Memory API helpers ── */
+    var _memoriesMigrated = false;
+    async function migrateMemoriesToServer(){
+      if(_memoriesMigrated) return;
+      var oldMems = loadMemories();
+      if(!oldMems.length) return;
+      try{
+        var res = await authFetch('/api/memory/migrate', {method:'POST', body:JSON.stringify({memories:oldMems})});
+        if(res && res.ok){ _memoriesMigrated = true; console.log('[Mem] migrated '+res.imported+' memories to server'); }
+      }catch(e){ console.warn('[Mem] migration deferred:', e.message); }
+    }
+    async function retrieveMemories(query){
+      try{
+        var res = await authFetch('/api/memory/retrieve', {method:'POST', body:JSON.stringify({query:query, limit:5})});
+        if(res && res.ok && Array.isArray(res.memories)) return res.memories;
+      }catch(e){ console.warn('[Mem] retrieve failed:', e.message); }
+      return [];
+    }
+    function ingestMemoryFacts(facts){
+      if(!facts || !facts.length) return;
+      authFetch('/api/memory/ingest', {method:'POST', body:JSON.stringify({facts:facts})}).catch(function(e){
+        console.warn('[Mem] ingest failed:', e.message);
+      });
+    }
+    function formatMemoryContext(memories){
+      if(!memories || !memories.length) return '';
+      var lines = memories.map(function(m){ return '- ' + m.fact; });
+      return '\n\n[User Profile]\n' + lines.join('\n');
+    }
     function loadAccessPackages(){
       var v = readJSON(KEYS.accessPackages, []);
       return Array.isArray(v) ? v : [];
@@ -462,6 +492,10 @@
       try{
         var me = await authFetch('/api/auth/me', {method:'GET', headers:{}});
         AUTH_USER = me.user;
+        /* Migrate old localStorage memories to server on login */
+        if(AUTH_USER && AUTH_USER.id){ setTimeout(function(){ migrateMemoriesToServer().catch(function(){}); }, 2000); }
+
+
         AUTH_DATA = {};
         try{
           var data = await authFetch('/api/user/data', {method:'GET', headers:{}});
@@ -1848,7 +1882,22 @@
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       var params = getModelParams(cfg.id);
       var requestMessages=c.messages.filter(m=>m.role==='user'||m.role==='assistant'||m.role==='system').map(m=>({role:m.role,content:m.content}));
+      /* Retrieve server memories asynchronously — inject into system prompt */
+      var retrievedMems = [];
+      try{
+        if(AUTH_USER && AUTH_USER.id){
+          retrievedMems = await retrieveMemories(text);
+        }else{
+          // Guest: fallback to old localStorage retrieval
+          try{ var _store=loadStore(); var _ret=retrieve(text,4,_store); if(_ret&&_ret.length) retrievedMems=_ret.map(function(r){return{fact:r.memory?r.memory.text:r.text,id:r.memory?r.memory.id:''};}); }catch(_g){}
+        }
+      }catch(_r){ console.warn('[Mem] pre-send retrieval error:', _r.message); }
+      var memoryContext = formatMemoryContext(retrievedMems);
       var systemText = (params && params.systemPrompt && params.systemPrompt.trim()) ? params.systemPrompt.trim() : defaultModelParams.systemPrompt;
+      if(memoryContext){
+        systemText += memoryContext;
+        console.log('[Mem] injecting '+retrievedMems.length+' memories into prompt');
+      }
       if(!requestMessages.some(function(m){ return m.role === 'system'; }) && systemText){
         requestMessages.unshift({role:'system', content:systemText});
       }else if(systemText){
@@ -1950,17 +1999,28 @@
         var _msgId = makeTtsMsgId(assistant._chatId||c.id, assistant._msgIdx||0);
         preGenerateVoice(_msgId, assistant.content);
       }
-      if(willExtract){
-        try{
+      /* Async memory ingest — fire-and-forget to server, never blocks chat */
+      try{
+        var _facts = [];
+        if(willExtract){
           var _extracted = quickExtract(text);
-          if(_extracted){
-            var _mems = loadMemories();
-            _mems.unshift({ id: uid(), content: _extracted, tags: [], createdAt: Date.now(), updatedAt: Date.now(), enabled: true });
-            if(_mems.length > 200) _mems = _mems.slice(0,200);
-            saveMemories(_mems);
-          }
-        }catch(_e){}
-      }
+          if(_extracted) _facts.push({fact:_extracted, category:'auto', confidence:0.7});
+        }
+        // Also push old localStorage for migration
+        var _oldMems = loadMemories();
+        if(_oldMems.length && (!_memoriesMigrated) && AUTH_USER && AUTH_USER.id){
+          migrateMemoriesToServer().catch(function(){});
+        }
+        if(_facts.length && AUTH_USER && AUTH_USER.id){
+          ingestMemoryFacts(_facts);
+        }else if(_facts.length){
+          // Guest: fallback to localStorage
+          var _mems = loadMemories();
+          _mems.unshift({ id: uid(), content: _facts[0].fact, tags: [], createdAt: Date.now(), updatedAt: Date.now(), enabled: true });
+          if(_mems.length > 200) _mems = _mems.slice(0,200);
+          saveMemories(_mems);
+        }
+      }catch(_e){ console.warn('[Mem] post-chat ingest error:', _e.message); }
     }
 
     async function callModelWithBody(requestMessages, body, cfg, onDelta){
@@ -5838,6 +5898,8 @@
     syncModelState();
     applyFontSize(loadFontSize());
     APP_READY = true;
+    /* Trigger memory migration from localStorage to server if logged in */
+    if(AUTH_USER && AUTH_USER.id){ setTimeout(function(){ migrateMemoriesToServer().catch(function(){}); }, 3000); }
     updateSearchVisual();
     setupMobileViewport();
     initUserScrollDetection();

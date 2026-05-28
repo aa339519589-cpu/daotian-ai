@@ -18,6 +18,7 @@ const publicChatLimits = new Map();
 const DATA_DIR = process.env.DATA_DIR || join(ROOT, "data");
 const AUTH_FILE = join(DATA_DIR, "auth.json");
 const ACCESS_FILE = join(DATA_DIR, "access.json");
+const MEMORY_FILE = join(DATA_DIR, "memories.json");
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_DAYS || 30) * 24 * 60 * 60 * 1000;
 
 /* Edge TTS — Microsoft Read Aloud, free, xiaoxiao neural voice */
@@ -133,6 +134,200 @@ async function readAccessStore(){
     return emptyAccessStore();
   }
 }
+/* ── Memory Store ── */
+function hexId(){ return crypto.randomBytes(8).toString("hex"); }
+function simpleKeywordScore(query, fact){
+  var q = String(query||'').toLowerCase();
+  var f = String(fact||'').toLowerCase();
+  if(!q||!f) return 0;
+  var score = 0;
+  var words = q.split(/[\s,，。！？、]+/).filter(function(w){return w.length>=1;});
+  for(var i=0;i<words.length;i++){
+    if(f.indexOf(words[i])>=0) score += words[i].length >= 3 ? 2 : 1;
+  }
+  return score;
+}
+async function readMemoryStore(){
+  try{
+    var raw = await readFile(MEMORY_FILE, "utf8");
+    var parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  }catch(e){ return {}; }
+}
+async function writeMemoryStore(store){
+  await mkdir(DATA_DIR, {recursive:true});
+  var tmp = MEMORY_FILE + "." + process.pid + "." + Date.now() + ".tmp";
+  await writeFile(tmp, JSON.stringify(store, null, 2));
+  await rename(tmp, MEMORY_FILE);
+}
+function getUserMemories(store, userId){
+  if(!store[userId]) store[userId] = [];
+  return store[userId];
+}
+
+/* ── Memory API Handlers ── */
+async function handleMemoryIngest(req, res, userId){
+  var body = await readJsonBody(req);
+  var facts = Array.isArray(body.facts) ? body.facts : [];
+  if(!facts.length) return sendJson(res, 400, {ok:false, error:"no_facts"});
+
+  var store = await readMemoryStore();
+  var mems = getUserMemories(store, userId);
+  var results = {added:0, updated:0, skipped:0, ids:[]};
+
+  for(var fi=0; fi<facts.length; fi++){
+    var fact = facts[fi];
+    var factText = String(fact.fact||'').trim();
+    if(!factText) continue;
+
+    // Check for similar existing memory (keyword overlap)
+    var bestMatch = null; var bestScore = 0;
+    for(var mi=0; mi<mems.length; mi++){
+      if(mems[mi].status !== 'active') continue;
+      var score = simpleKeywordScore(factText, mems[mi].fact);
+      if(score > bestScore){ bestScore = score; bestMatch = mems[mi]; }
+    }
+
+    if(bestMatch && bestScore >= 3){
+      // Update existing
+      bestMatch.fact = factText;
+      bestMatch.category = fact.category || bestMatch.category;
+      bestMatch.confidence = typeof fact.confidence === 'number' ? fact.confidence : bestMatch.confidence;
+      bestMatch.updatedAt = nowIso();
+      bestMatch.lastUsedAt = nowIso();
+      results.updated++;
+      results.ids.push(bestMatch.id);
+    }else{
+      // Add new
+      var mem = {
+        id: 'mem_'+hexId(),
+        userId: userId,
+        fact: factText,
+        category: fact.category || 'general',
+        confidence: typeof fact.confidence === 'number' ? fact.confidence : 0.7,
+        status: 'active',
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        lastUsedAt: nowIso()
+      };
+      mems.push(mem);
+      results.added++;
+      results.ids.push(mem.id);
+    }
+  }
+
+  await writeMemoryStore(store);
+  console.log('[MemAPI] ingest user='+userId+' added='+results.added+' updated='+results.updated);
+  return sendJson(res, 200, {ok:true, ...results});
+}
+
+async function handleMemoryRetrieve(req, res, userId){
+  var body = await readJsonBody(req);
+  var query = String(body.query||'').trim();
+  if(!query) return sendJson(res, 400, {ok:false, error:"no_query"});
+  var limit = Math.min(Number(body.limit)||5, 10);
+
+  var store = await readMemoryStore();
+  var mems = getUserMemories(store, userId);
+  var actives = mems.filter(function(m){return m.status==='active';});
+
+  // Score and rank
+  var scored = actives.map(function(m){
+    var s = simpleKeywordScore(query, m.fact);
+    // Boost by category match
+    if(m.category && query.toLowerCase().indexOf(m.category.toLowerCase())>=0) s += 2;
+    // Boost by recency
+    var daysSince = m.lastUsedAt ? (Date.now()-new Date(m.lastUsedAt).getTime())/(86400000) : 30;
+    var recency = Math.max(0, 1 - daysSince/60); // decay over 60 days
+    s += recency * 2;
+    return {mem:m, score:s};
+  });
+
+  scored.sort(function(a,b){return b.score-a.score;});
+  var top = scored.slice(0, limit).filter(function(s){return s.score>0;});
+
+  // Mark as used
+  for(var ti=0; ti<top.length; ti++){
+    top[ti].mem.lastUsedAt = nowIso();
+  }
+  writeMemoryStore(store).catch(function(){});
+
+  var results = top.map(function(s){return {id:s.mem.id, fact:s.mem.fact, category:s.mem.category, confidence:s.mem.confidence, score:s.score};});
+  return sendJson(res, 200, {ok:true, memories:results});
+}
+
+async function handleMemoryList(req, res, userId){
+  var store = await readMemoryStore();
+  var mems = getUserMemories(store, userId);
+  var urlObj = new URL(req.url, 'http://localhost');
+  var statusFilter = urlObj.searchParams.get('status') || 'active';
+  var filtered = mems.filter(function(m){return m.status===statusFilter;});
+  return sendJson(res, 200, {ok:true, memories:filtered, total:filtered.length});
+}
+
+async function handleMemoryPatch(req, res, userId, memoryId){
+  var body = await readJsonBody(req);
+  var store = await readMemoryStore();
+  var mems = getUserMemories(store, userId);
+  var found = mems.find(function(m){return m.id===memoryId;});
+  if(!found) return sendJson(res, 404, {ok:false, error:"not_found"});
+  if(body.fact !== undefined) found.fact = String(body.fact);
+  if(body.category !== undefined) found.category = String(body.category);
+  if(body.status !== undefined) found.status = String(body.status);
+  if(typeof body.confidence === 'number') found.confidence = body.confidence;
+  found.updatedAt = nowIso();
+  await writeMemoryStore(store);
+  return sendJson(res, 200, {ok:true, memory:found});
+}
+
+async function handleMemoryDelete(req, res, userId, memoryId){
+  var store = await readMemoryStore();
+  var mems = getUserMemories(store, userId);
+  var found = mems.find(function(m){return m.id===memoryId;});
+  if(!found) return sendJson(res, 404, {ok:false, error:"not_found"});
+  found.status = 'deleted';
+  found.updatedAt = nowIso();
+  await writeMemoryStore(store);
+  return sendJson(res, 200, {ok:true});
+}
+
+async function handleMemoryMigrate(req, res, userId){
+  var body = await readJsonBody(req);
+  var oldMemories = Array.isArray(body.memories) ? body.memories : [];
+  var store = await readMemoryStore();
+  var mems = getUserMemories(store, userId);
+  var count = 0;
+
+  for(var oi=0; oi<oldMemories.length; oi++){
+    var old = oldMemories[oi];
+    var content = String(old.content||old.fact||'').trim();
+    if(!content) continue;
+    // Skip if similar already exists
+    var exists = false;
+    for(var mi=0; mi<mems.length; mi++){
+      if(simpleKeywordScore(content, mems[mi].fact) >= 3){ exists=true; break; }
+    }
+    if(!exists){
+      mems.push({
+        id: 'mem_'+hexId(),
+        userId: userId,
+        fact: content,
+        category: old.tags && old.tags.length ? old.tags[0] : 'migrated',
+        confidence: 0.6,
+        status: 'active',
+        createdAt: old.createdAt ? new Date(old.createdAt).toISOString() : nowIso(),
+        updatedAt: nowIso(),
+        lastUsedAt: nowIso()
+      });
+      count++;
+    }
+  }
+
+  await writeMemoryStore(store);
+  console.log('[MemAPI] migrate user='+userId+' imported='+count+' skipped='+(oldMemories.length-count));
+  return sendJson(res, 200, {ok:true, imported:count});
+}
+
 async function writeAccessStore(store){
   await mkdir(DATA_DIR, { recursive:true });
   const tmp = ACCESS_FILE + "." + process.pid + "." + Date.now() + ".tmp";
@@ -1278,6 +1473,24 @@ const server = http.createServer(async (req, res)=>{
     if(req.method === "POST" && pathname === "/models/list") return await handleModelsList(req, res);
     if(req.method === "POST" && pathname === "/file/parse") return await handleFileParse(req, res);
     if(req.method === "POST" && pathname === "/api/tts") return await handleTts(req, res);
+    /* ── Memory API ── */
+    if(pathname.startsWith("/api/memory")){
+      const auth = await requireAuth(req, res);
+      if(!auth) return;
+      const uid = auth.user.id;
+      if(req.method === "POST" && pathname === "/api/memory/ingest") return await handleMemoryIngest(req, res, uid);
+      if(req.method === "POST" && pathname === "/api/memory/retrieve") return await handleMemoryRetrieve(req, res, uid);
+      if(req.method === "GET" && pathname === "/api/memory/list") return await handleMemoryList(req, res, uid);
+      if(req.method === "POST" && pathname === "/api/memory/migrate") return await handleMemoryMigrate(req, res, uid);
+      // PATCH/DELETE with ID
+      var memMatch = pathname.match(/^\/api\/memory\/(mem_[a-f0-9]+)$/);
+      if(memMatch){
+        if(req.method === "PATCH") return await handleMemoryPatch(req, res, uid, memMatch[1]);
+        if(req.method === "DELETE") return await handleMemoryDelete(req, res, uid, memMatch[1]);
+      }
+      return sendJson(res, 404, {ok:false, error:"not_found"});
+    }
+
     if(req.method === "POST" && pathname === "/memories/sync"){
       try{
         const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
