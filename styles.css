@@ -89,17 +89,17 @@ button{border:0;background:none;cursor:pointer}
 .icon-btn:hover{background:rgba(220,128,98,.08);color:var(--text)}
 .brand{font-weight:650;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .new-chat-btn{margin:10px 12px;padding:9px 12px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line);text-align:left;font-weight:540;font-size:14px;box-shadow:none}
-.chat-list{flex:1;overflow:auto;padding:0 10px 10px 10px;min-height:0}
-.chat-item{height:44px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border-radius:16px;color:var(--muted);position:relative;transition:background .15s}
-.chat-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
-.chat-item.active{background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.06)}
-.chat-dot{width:6px;height:6px;border-radius:99px;background:transparent;opacity:.55;flex:0 0 auto;transition:opacity .15s}
-.chat-item.active .chat-dot{opacity:.85;background:var(--muted)}
-.chat-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
-.chat-time{font-size:12px;color:rgba(255,255,255,.35);flex:0 0 auto}
-.delete-chat{width:26px;height:26px;border-radius:9px;display:none;color:var(--muted);font-size:18px;line-height:1}
+.chat-list{flex:1;overflow:auto;padding:0;min-height:0;width:100%;display:flex;flex-direction:column;gap:0}
+.chat-item{width:100%;min-height:56px;border-radius:0;margin:0;padding:0 18px;box-sizing:border-box;display:flex;align-items:center;gap:10px;background:transparent;border-bottom:1px solid rgba(255,255,255,.06);box-shadow:none;color:var(--muted);position:relative;transition:background .15s}
+.chat-item:hover{background:rgba(255,255,255,.035);color:var(--text)}
+.chat-item.active{background:rgba(255,255,255,.055);color:var(--text);border-bottom:1px solid rgba(255,255,255,.08);box-shadow:none}
+.chat-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.38);flex:0 0 auto;opacity:1}
+.chat-item.active .chat-dot{background:rgba(255,255,255,.62)}
+.chat-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:14px}
+.chat-time{flex:0 0 auto;margin-left:auto;font-size:13px;color:rgba(255,255,255,.45)}
+.delete-chat{width:26px;height:26px;border-radius:6px;display:none;color:rgba(255,255,255,.55);font-size:18px;line-height:1;background:transparent;border:0;opacity:.45}
 .chat-item:hover .delete-chat,.chat-item.active .delete-chat{display:grid;place-items:center}
-.delete-chat:hover{background:rgba(196,80,70,.14);color:#b84a42}
+.delete-chat:hover{opacity:1;background:rgba(255,255,255,.08);color:rgba(255,255,255,.85)}
 .sidebar-bottom{border-top:1px solid var(--sidebar-border);padding:8px 10px 12px;display:flex;flex-direction:column;gap:4px;background:transparent}
 .sidebar .chat-list{background:transparent}
 .sidebar .chat-item{color:var(--sidebar-text)}
@@ -402,7 +402,7 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
     padding:0 10px 12px;
   }
 
-  .chat-item{height:50px;border-radius:18px;padding:0 10px 0 12px}
+  .chat-item{min-height:58px;border-radius:0;padding:0 14px}
   .chat-title{font-size:15px}
   .chat-time{font-size:12px}
   .delete-chat{display:grid;place-items:center;width:32px;height:32px;font-size:20px;opacity:.85}

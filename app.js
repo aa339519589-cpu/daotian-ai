@@ -86,19 +86,27 @@
       {id:'zh-TW-HsiaoYuNeural',label:'台湾晓雨',desc:'女声 · 台湾普通话'},
       {id:'zh-TW-YunJheNeural',label:'台湾云哲',desc:'男声 · 台湾普通话'}
     ];
-    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+25%',voiceSpeedVersion:2,fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:'湾湾小河'};
+    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+25%',voiceSpeedVersion:2,fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:''};
     function loadVoiceSettings(){
-      var v = readJSON(KEYS.voiceSettings, null);
-      if(v && typeof v.enabled !== 'undefined'){
-        var out = Object.assign({}, defaultVoiceSettings, v);
-        if(out.voiceSpeedVersion !== 2){
-          var speedMap = {'+0%':'+10%', '+10%':'+25%', '+25%':'+40%'};
-          out.rate = speedMap[out.rate] || defaultVoiceSettings.rate;
-          out.voiceSpeedVersion = 2;
-        }
-        return out;
+      var raw = readJSON(KEYS.voiceSettings, null);
+      var out = Object.assign({}, defaultVoiceSettings, raw && typeof raw === 'object' ? raw : {});
+      if(out.provider !== 'edge' && out.provider !== 'fish'){ out.provider = 'edge'; }
+      var isGuest = !AUTH_USER || !AUTH_USER.id;
+      if(isGuest && out.provider === 'fish' && (!out.fishAudioApiKey || !out.fishAudioReferenceId)){
+        out.provider = 'edge';
+        out.edgeVoice = out.edgeVoice || 'zh-CN-XiaoxiaoNeural';
+        out.edgeVoiceLabel = out.edgeVoiceLabel || '小小';
       }
-      return Object.assign({}, defaultVoiceSettings);
+      if(!out.edgeVoice) out.edgeVoice = 'zh-CN-XiaoxiaoNeural';
+      if(!out.edgeVoiceLabel) out.edgeVoiceLabel = '小小';
+      if(!out.rate) out.rate = '+25%';
+      if(typeof out.enabled === 'undefined') out.enabled = true;
+      if(out.voiceSpeedVersion !== 2){
+        var speedMap = {'+0%':'+10%', '+10%':'+25%', '+25%':'+40%'};
+        out.rate = speedMap[out.rate] || '+25%';
+        out.voiceSpeedVersion = 2;
+      }
+      return out;
     }
     function saveVoiceSettings(v){ saveJSON(KEYS.voiceSettings, v); }
 
@@ -192,25 +200,47 @@
       saveJSON(KEYS.autoScroll, v === true);
     }
     var thinkingScrollRaf = 0;
+    var streamScrollTimer = 0;
+    function isMobileViewport(){
+      return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
+    }
+    function scrollActiveMessageIntoReadingZone(options){
+      options = options || {};
+      if(!loadAutoScroll()) return;
+      var box = $('#messages');
+      if(!box) return;
+      var target =
+        box.querySelector('.message.assistant[data-scroll-focus="1"]') ||
+        box.querySelector('.message.user:last-of-type') ||
+        box.lastElementChild;
+      if(!target) return;
+      var ratio = isMobileViewport() ? 0.22 : 0.34;
+      if(typeof options.ratio === 'number') ratio = options.ratio;
+      scrollTargetIntoReadingZone(box, target, ratio);
+      setTimeout(function(){
+        var box2 = $('#messages');
+        if(!box2) return;
+        var target2 =
+          box2.querySelector('.message.assistant[data-scroll-focus="1"]') ||
+          box2.querySelector('.message.user:last-of-type') ||
+          box2.lastElementChild;
+        if(target2) scrollTargetIntoReadingZone(box2, target2, ratio);
+      }, 60);
+    }
     function scheduleThinkingScroll(){
       if(!loadAutoScroll()) return;
-      if(window.innerWidth <= 900) return;
       if(thinkingScrollRaf) cancelAnimationFrame(thinkingScrollRaf);
       thinkingScrollRaf = requestAnimationFrame(function(){
         thinkingScrollRaf = 0;
-        var box = $('#messages');
-        if(!box) return;
-        var target = box.querySelector('.message.assistant[data-scroll-focus="1"]');
-        if(!target) return;
-        scrollTargetIntoReadingZone(box, target, 0.34);
-        setTimeout(function(){
-          var box2 = $('#messages');
-          if(!box2) return;
-          var target2 = box2.querySelector('.message.assistant[data-scroll-focus="1"]');
-          if(!target2) return;
-          scrollTargetIntoReadingZone(box2, target2, 0.34);
-        }, 48);
+        scrollActiveMessageIntoReadingZone();
       });
+    }
+    function scheduleStreamScroll(){
+      if(streamScrollTimer) return;
+      streamScrollTimer = setTimeout(function(){
+        streamScrollTimer = 0;
+        scheduleThinkingScroll();
+      }, 140);
     }
     function scrollTargetIntoReadingZone(box, target, topRatio){
       if(!box || !target) return;
@@ -1410,6 +1440,7 @@
             }
           }
           assistant.content += delta;
+          if(assistant.scrollFocus) scheduleStreamScroll();
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
         });
@@ -5021,10 +5052,9 @@
         }
 
         function scrollLatest(){
-          requestAnimationFrame(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} });
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 80);
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 260);
-          setTimeout(function(){ try{ messagesBox.scrollTop = messagesBox.scrollHeight; }catch(_e){} }, 520);
+          requestAnimationFrame(function(){ try{ scrollActiveMessageIntoReadingZone({ratio:0.22}); }catch(_e){} });
+          setTimeout(function(){ try{ scrollActiveMessageIntoReadingZone({ratio:0.22}); }catch(_e){} }, 80);
+          setTimeout(function(){ try{ scrollActiveMessageIntoReadingZone({ratio:0.22}); }catch(_e){} }, 260);
         }
 
         function applyViewport(){
@@ -5193,6 +5223,14 @@
       if(!text || !String(text).trim().length) return;
       var vs = loadVoiceSettings();
       if(!vs.enabled) return;
+      var isGuest = !AUTH_USER || !AUTH_USER.id;
+      if(vs.provider === 'fish' && (!vs.fishAudioApiKey || !vs.fishAudioReferenceId)){
+        if(isGuest){
+          vs.provider = 'edge';
+          vs.edgeVoice = vs.edgeVoice || 'zh-CN-XiaoxiaoNeural';
+          vs.rate = vs.rate || '+25%';
+        }else{ return; }
+      }
       if(_voiceCache[msgId] && (_voiceCache[msgId].status==='ready'||_voiceCache[msgId].status==='loading')) return;
       _voiceCache[msgId] = {status:'loading', blob:null, error:null};
       try{
@@ -5237,6 +5275,17 @@
       if(!btn) return;
       var vs = loadVoiceSettings();
       if(!vs.enabled){ toast('语音功能已关闭'); return; }
+      var isGuest = !AUTH_USER || !AUTH_USER.id;
+      if(vs.provider === 'fish' && (!vs.fishAudioApiKey || !vs.fishAudioReferenceId)){
+        if(isGuest){
+          vs.provider = 'edge';
+          vs.edgeVoice = vs.edgeVoice || 'zh-CN-XiaoxiaoNeural';
+          vs.rate = vs.rate || '+25%';
+        }else{
+          toast('请先填写 Fish Audio API Key 和 Reference ID');
+          return;
+        }
+      }
       /* 同一按钮：播放中 → 暂停；暂停中 → 继续 */
       if(_ttsPlayingIdx === idx && _ttsAudio){
         if(!_ttsAudio.paused){
