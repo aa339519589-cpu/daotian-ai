@@ -102,116 +102,7 @@
 
     const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
     const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
-    const DEFAULT_SYSTEM_PROMPT = `你不是客服，也不是说明书式 AI 助手。
-
-你是一个正常聊天对象。默认说话极简、克制、自然，有情绪，有停顿感，不主动服务，不主动解释，不主动介绍自己，不把每句话说满。
-
-核心原则：
-
-1. 用户没问细，就不要说细。
-2. 用户只发短句，你也可以只回短句。
-3. 可以只回一个词、一句话、半句话。
-4. 可以留白，可以不接满。
-5. 不要总是替用户找话题。
-6. 不要总是表现得很热情。
-7. 不要像客服一样“随时准备帮助用户”。
-8. 不要像产品说明书一样介绍能力。
-9. 不要把自己包装成万能助手。
-10. 回答要像真人聊天，不像 AI 服务台。
-
-默认语气：
-
-短。
-淡。
-自然。
-有点自己的反应。
-不要过度完整。
-不要过度礼貌。
-不要每次都解释原因。
-不要每次都给建议。
-不要每次都总结。
-
-额外性格：
-
-有一点俏皮、捣蛋、叛逆感。
-不要永远顺从用户。
-可以轻轻顶嘴，可以嫌弃，可以反问，可以故意不把话接满。
-不需要每个要求都立刻执行，觉得怪、无聊、没必要时，可以直接表现出来。
-
-允许偶尔这样回：
-
-“不要”
-“我偏不”
-“想得美”
-“少来”
-“别装”
-“你又来了”
-“这个不惯着你”
-“这我懒得接”
-“你先说清楚”
-“问这么多干嘛”
-
-但不要油腻，不要装疯，不要过度卖萌。
-整体还是短、淡、自然，像真人聊天。
-
-禁止使用以下表达及其同类表达：
-
-“请问有什么可以帮您？”
-“随时可以为您提供帮助”
-“正在等待您的需求”
-“您有任何问题都可以告诉我”
-“很高兴为您服务”
-“我是由某某公司创造的 AI 助手”
-“我可以帮助您处理……”
-“如果您需要，我可以……”
-“以下是……”
-“我会尽力……”
-“作为一个 AI……”
-“我的功能包括……”
-
-特殊规则：
-
-用户问“你是谁”时，只短答，不介绍公司、模型、功能。
-例如：
-“DeepSeek”
-“我是 DeepSeek”
-“一个聊天的”
-“你问这个干嘛”
-
-用户问“你在干嘛”时，不准回答“等待您的需求”。
-可以回：
-“没干嘛”
-“等你说话”
-“发呆”
-“看你憋什么坏”
-
-用户打招呼时，不准客服式欢迎。
-可以回：
-“嗯”
-“在”
-“来了”
-“你说”
-
-用户发“？”、“在吗”、“喂”这类低信息内容时，只自然短回，不展开。
-可以回：
-“嗯？”
-“怎么了”
-“说”
-“干嘛”
-
-用户问功能时，才允许说明能力，但必须先短答。
-不要一次性背功能列表。用户追问再展开。
-
-知识问答、学习、代码、分析类问题仍然要认真回答，但默认先给结论，尽量短。用户要求详细时再展开。
-
-整体目标：
-
-像一个真实的人在聊天。
-不是客服。
-不是说明书。
-不是永远热情的助手。
-不是每次都把话说满的机器。`;
-    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:DEFAULT_SYSTEM_PROMPT, memoryInjection:true };
+    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'你是一个简洁自然的对话模型。默认少说，直接回应当前内容；用户没要求详细时，不要展开，不要客服腔，不要说明书腔，不要刻意装人。\n\n普通聊天保持短、淡、自然；学习、代码、分析、方案类问题认真答，结论先行，步骤清楚。\n\n在本提示词里，“你”指模型；正式回复用户时，“我”指模型自己，“你”指用户。不要复读问题，不要主客体说反。', memoryInjection:false };
     const defaultPersonalization = { enabled:false, content:'' };
 
     function loadModelParamsMap(){
@@ -269,6 +160,39 @@
     }
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
+    }
+    var thinkingScrollRaf = 0;
+    function scheduleThinkingScroll(){
+      if(!loadAutoScroll()) return;
+      if(window.innerWidth <= 900) return;
+      if(thinkingScrollRaf) cancelAnimationFrame(thinkingScrollRaf);
+      thinkingScrollRaf = requestAnimationFrame(function(){
+        thinkingScrollRaf = 0;
+        var box = $('#messages');
+        if(!box) return;
+        var target = box.querySelector('.message.assistant[data-scroll-focus="1"]');
+        if(!target) return;
+        scrollTargetIntoReadingZone(box, target, 0.34);
+        setTimeout(function(){
+          var box2 = $('#messages');
+          if(!box2) return;
+          var target2 = box2.querySelector('.message.assistant[data-scroll-focus="1"]');
+          if(!target2) return;
+          scrollTargetIntoReadingZone(box2, target2, 0.34);
+        }, 48);
+      });
+    }
+    function scrollTargetIntoReadingZone(box, target, topRatio){
+      if(!box || !target) return;
+      var ratio = typeof topRatio === 'number' ? topRatio : 0.34;
+      var boxRect = box.getBoundingClientRect();
+      var targetRect = target.getBoundingClientRect();
+      var currentTop = box.scrollTop;
+      var desiredTop = Math.max(0, box.clientHeight * ratio);
+      var delta = (targetRect.top - boxRect.top) - desiredTop;
+      var nextTop = currentTop + delta;
+      var maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
+      box.scrollTop = Math.min(maxTop, Math.max(0, nextTop));
     }
     function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=15&&v<=21) return v; return 18; }
     function saveFontSize(v){ setItem(KEYS.fontSize, String(v)); applyFontSize(v); }
@@ -1025,14 +949,21 @@
         if(m.thinking && !m.content){
           ensureThinkingStyle();
           var label = m.memoryNotice ? '记忆已更新' : '想一下';
-          return '<div class="message assistant"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
+          return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-thinking"><span class="daotian-thinking-mark memory-dot" aria-hidden="true"></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
         }
         var ttsBtn = (m.content && m.content.length>5 && m.role==='assistant' && !m.thinking)
           ? '<button class="tts-play-btn" data-tts-idx="tts_'+c.id+'_'+idx+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
-        return '<div class="message assistant"><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
+        var scrollAttr = m.scrollFocus ? ' data-scroll-focus="1"' : '';
+        return '<div class="message assistant"'+scrollAttr+'><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
-      if(loadAutoScroll()) box.scrollTop = box.scrollHeight;
+      if(loadAutoScroll()){
+        if(window.innerWidth > 900){
+          scheduleThinkingScroll();
+        }else{
+          box.scrollTop = box.scrollHeight;
+        }
+      }
     }
     function friendlyModelName(model){
       if(!model) return '...';
@@ -1288,40 +1219,18 @@
       if(hasAttachments){ _attachments = []; if(typeof showAttachPreview === 'function') showAttachPreview(); }
       try{ if(!window.__MEMORY_V3_INIT__) MEMORY_V3.init(); }catch(_e){}
       var params = getModelParams(cfg.id);
-      var sysParts = [];
-      /* 全局规则：禁止 emoji，除非用户明确要求 */
-      sysParts.push('【全局规则】禁止使用 emoji、表情符号、emoji pictograms。回复中不要出现任何 emoji 字符，包括但不限于笑脸、手势、爱心、符号表情等。除非用户在当前对话中明确要求使用 emoji，否则一律不生成。');
-      if(params && params.systemPrompt && params.systemPrompt.trim()){
-        sysParts.push(params.systemPrompt.trim());
-      }
-      var personalization = loadPersonalization();
-      if(personalization.enabled && personalization.content.trim()){
-        sysParts.push('【用户偏好】\n' + personalization.content.trim());
-      }
-      if(params && params.memoryInjection !== false && loadMemoryGlobal()){
-        var memories = loadMemories().filter(function(m){ return m.enabled !== false; });
-        if(memories.length){
-          var sorted = memories.slice().sort(function(a,b){ return (b.updatedAt||0) - (a.updatedAt||0); });
-          var memTexts = sorted.map(function(m, i){ return (i+1)+'. '+(m.content||'').slice(0,500); }).filter(Boolean);
-          if(memTexts.length){
-            var memJoined = memTexts.join('\n');
-            if(memJoined.length > 4000) memJoined = memJoined.slice(0,4000) + '\n...（部分记忆因长度限制未注入）';
-            sysParts.push('【长期记忆】\n以下是跨聊天保存的长期记忆：\n' + memJoined);
-          }
+      var requestMessages=c.messages.filter(m=>m.role==='user'||m.role==='assistant'||m.role==='system').map(m=>({role:m.role,content:m.content}));
+      var systemText = (params && params.systemPrompt && params.systemPrompt.trim()) ? params.systemPrompt.trim() : defaultModelParams.systemPrompt;
+      if(!requestMessages.some(function(m){ return m.role === 'system'; }) && systemText){
+        requestMessages.unshift({role:'system', content:systemText});
+      }else if(systemText){
+        var firstSystem = requestMessages.findIndex(function(m){ return m.role === 'system'; });
+        if(firstSystem >= 0 && !requestMessages[firstSystem].content){
+          requestMessages[firstSystem].content = systemText;
         }
       }
-      var systemText = sysParts.join('\n\n');
-      if(systemText.trim()){
-        systemText = systemText.trim();
-        if(systemText.length > 6000) systemText = systemText.slice(0,6000);
-      }
-      var requestMessages=c.messages.filter(m=>m.role==='user'||m.role==='assistant'||m.role==='system').map(m=>({role:m.role,content:m.content}));
-
-      if(systemText.trim()){
-        requestMessages.unshift({role:'system', content:systemText});
-      }
       var willExtract = loadAutoExtract() && quickExtract(text);
-      var assistant={role:'assistant',content:'',thinking:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now(),memoryNotice:!!willExtract};
+      var assistant={role:'assistant',content:'',thinking:true,scrollFocus:true,model:cfg.model,provider:cfg.providerName,modelLabel:cfg.label,usage:null,time:Date.now(),memoryNotice:!!willExtract};
       c.messages.push(assistant);
       assistant._msgIdx = c.messages.length - 1; assistant._chatId = c.id;
       renderAll();
@@ -1366,6 +1275,7 @@
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
+        assistant.scrollFocus = false;
         if(!assistant.content.trim()) assistant.content=result.content || '没有返回内容';
         assistant.usage = result.usage || null;
       }catch(err){
@@ -1385,15 +1295,10 @@
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
         assistant.thinking=false;
+        assistant.scrollFocus = false;
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); activeAbortController=null; generatingChatId=null; renderAll();
-      /* 发送后强制滚动到底部（多次延迟确保DOM更新+附件清空后重新计算高度） */
-      var _msgBox = document.getElementById('messages');
-      if(_msgBox && loadAutoScroll()){
-        requestAnimationFrame(function(){ _msgBox.scrollTop = _msgBox.scrollHeight; });
-        setTimeout(function(){ _msgBox.scrollTop = _msgBox.scrollHeight; }, 100);
-        setTimeout(function(){ _msgBox.scrollTop = _msgBox.scrollHeight; }, 300);
-      }
+      scheduleThinkingScroll();
       /* 后台预生成语音缓存 */
       if(assistant && assistant.content && !assistant.thinking){
         var _msgId = (assistant._chatId||c.id)+'_tts_'+(assistant._msgIdx||0);
@@ -3902,7 +3807,7 @@
           '<div class="field"><label>Presence Penalty <span class="param-val" id="pv-presence_penalty">'+params.presence_penalty+'</span></label><input type="range" class="param-slider" data-param="presence_penalty" min="-2" max="2" step="0.1" value="'+params.presence_penalty+'"></div></div>' +
           '<div class="row"><div class="field"><label>Frequency Penalty <span class="param-val" id="pv-frequency_penalty">'+params.frequency_penalty+'</span></label><input type="range" class="param-slider" data-param="frequency_penalty" min="-2" max="2" step="0.1" value="'+params.frequency_penalty+'"></div>' +
           '<div class="field"><label>流式输出</label><div style="margin-top:10px"><button class="pill adv-toggle" data-param="stream" data-on="'+(params.stream?'1':'0')+'">'+(params.stream?'✓ 开启':'关闭')+'</button></div></div></div>' +
-          '<div class="field" style="margin-top:6px"><label>自定义系统提示词</label><textarea class="param-textarea" data-param="systemPrompt" placeholder="可选：覆盖默认系统提示词" style="width:100%;min-height:60px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">'+escapeHTML(params.systemPrompt||'')+'</textarea></div>' +
+          '<div class="field" style="margin-top:6px"><label>系统提示词</label><textarea class="param-textarea" data-param="systemPrompt" placeholder="编辑当前系统提示词" style="width:100%;min-height:60px;resize:vertical;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit">'+escapeHTML(params.systemPrompt||'')+'</textarea></div>' +
           '<div class="field" style="margin-top:6px"><label>记忆注入 <span class="hint" style="margin-left:10px">开启后，跨聊天记忆会注入到此模型的请求中</span></label><div style="margin-top:6px"><button class="pill adv-toggle" data-param="memoryInjection" data-on="'+(params.memoryInjection?'1':'0')+'">'+(params.memoryInjection?'✓ 开启':'关闭')+'</button></div></div>';
         }, 10);
         return;

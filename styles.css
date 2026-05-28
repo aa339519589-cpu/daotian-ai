@@ -151,6 +151,41 @@ textarea{flex:1 1 auto;min-width:0;resize:none;height:44px;min-height:44px;max-h
 body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility:hidden;pointer-events:none}
 .modal-backdrop{position:fixed;inset:0;background:var(--backdrop);display:none;align-items:center;justify-content:center;z-index:1200;padding:22px}.modal-backdrop.show{display:flex}.modal{width:min(760px,100%);max-height:86vh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--panel-2);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}.modal-head{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);font-weight:650}.modal-body{padding:22px;display:grid;gap:14px}.field{display:grid;gap:7px}.field label{font-size:13px;color:var(--muted)}.field input,.field select{height:46px;border-radius:14px;border:1px solid var(--line);background:var(--input-bg);padding:0 14px;outline:0}.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.hint{font-size:14px;font-weight:400;color:var(--muted);line-height:1.45;opacity:.58}.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}.btn{height:42px;border-radius:14px;padding:0 18px;background:var(--panel);border:1px solid var(--line)}.btn.primary{background:var(--accent);border-color:var(--accent);color:white}.danger{color:#b84a42}.status{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-text);padding:12px 22px;border-radius:999px;font-size:14px;display:none;z-index:9999}.status.show{display:block}
 
+@media(min-width:901px){
+  .messages{
+    width:min(100%,940px);
+    margin:0 auto;
+    padding:4px clamp(24px,4vw,56px) calc(52px + env(safe-area-inset-bottom,0px));
+  }
+
+  .message{
+    width:100%;
+    max-width:760px;
+    padding:0 10px;
+    box-sizing:border-box;
+  }
+
+  .message.assistant{
+    justify-content:flex-start;
+  }
+
+  .message.user{
+    justify-content:flex-end;
+  }
+
+  .bubble{
+    max-width:min(640px,76%);
+  }
+
+  .message.user .bubble{
+    max-width:min(600px,72%);
+  }
+
+  .daotian-thinking-message{
+    max-width:760px;
+  }
+}
+
 @media(max-width:900px){
   :root{
     --sidebar:min(82vw,340px);
