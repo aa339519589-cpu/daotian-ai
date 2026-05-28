@@ -435,6 +435,64 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
   .modal-foot{padding:14px 18px calc(14px + env(safe-area-inset-bottom))}
 }
 
+/* ── 生成中底部缓冲 ── */
+.messages.generating-space{
+  padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
+  scroll-padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
+}
+body.keyboard-open .messages.generating-space{
+  padding-bottom:38vh!important;
+  scroll-padding-bottom:38vh!important;
+}
+@media(min-width:901px){
+  .messages.generating-space{
+    padding-bottom:max(36vh, 180px)!important;
+    scroll-padding-bottom:max(36vh, 180px)!important;
+  }
+}
+
+/* ── Assistant 内容容器（修复窄列问题） ── */
+.message.assistant{
+  width:100%;
+}
+.assistant-content{
+  max-width:min(720px,88%);
+  min-width:min(220px,70vw);
+  width:fit-content;
+  box-sizing:border-box;
+}
+.assistant-render{
+  max-width:100%;
+  white-space:pre-wrap;
+  word-break:normal;
+  overflow-wrap:break-word;
+  line-break:auto;
+}
+.assistant-render p{
+  margin:0 0 0.85em;
+}
+.assistant-render p:last-child{
+  margin-bottom:0;
+}
+@media(min-width:901px){
+  .assistant-content{
+    max-width:min(720px,82%);
+    min-width:260px;
+  }
+}
+@media(max-width:900px){
+  .assistant-content{
+    max-width:88%;
+    min-width:120px;
+  }
+}
+.daotian-thinking-message{
+  width:100%;
+}
+.daotian-thinking{
+  min-width:120px;
+  max-width:min(720px,88%);
+}
 
 /* ── 品牌展示区 ── */
 .empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--accent)}

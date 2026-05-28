@@ -241,7 +241,7 @@
         box.querySelector('.message.user:last-of-type') ||
         box.lastElementChild;
       if(!target) return;
-      var ratio = isMobileViewport() ? 0.16 : 0.34;
+      var ratio = isMobileViewport() ? 0.16 : 0.28;
       if(typeof options.ratio === 'number') ratio = options.ratio;
       scrollTargetIntoReadingZone(box, target, ratio);
       setTimeout(function(){
@@ -1119,6 +1119,7 @@
     function renderMessages(){
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
       const msgs = Array.isArray(c.messages) ? c.messages : [];
+      var hasScrollFocus = msgs.some(function(m){ return m && m.role === 'assistant' && m.scrollFocus; });
       if(msgs.length===0){
         box.innerHTML = `<div class="empty"><div class="empty-center"><div class="brand-main-row"><svg class="empty-logo" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" stroke-width="3"/><path d="M34 32 C43 31 49 36 56 46 C61 52 62 62 58 88 C62 63 64 53 70 46 C77 37 84 31 92 32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="brand-name">稻田 AI</div></div><div class="empty-prompt">${escapeHTML(pickEmptyPrompt())}</div></div></div>`;
         return;
@@ -1140,8 +1141,9 @@
         var ttsBtn = (m.role==='assistant' && !m.thinking && ttsText.length>0)
           ? '<button class="tts-play-btn" data-tts-idx="'+makeTtsMsgId(c.id,idx)+'" title="朗读"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>' : '';
         var scrollAttr = m.scrollFocus ? ' data-scroll-focus="1"' : '';
-        return '<div class="message assistant"'+scrollAttr+'><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
+        return '<div class="message assistant"'+scrollAttr+'><div class="assistant-content"><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
+      box.classList.toggle('generating-space', !!hasScrollFocus);
       scheduleEnhanceRender();
       if(loadAutoScroll() && !shouldSuppressStreamScrollForKeyboard()){
         scheduleThinkingScroll();
