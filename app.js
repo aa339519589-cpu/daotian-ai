@@ -218,6 +218,19 @@
     function isMobileViewport(){
       return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
     }
+    function isInputFocused(){
+      var inp = $('#input');
+      return !!inp && document.activeElement === inp;
+    }
+    function isKeyboardMode(){
+      return isMobileViewport() && (document.body.classList.contains('keyboard-open') || isInputFocused());
+    }
+    function isStreamingNow(){
+      return !!(typeof sending !== 'undefined' && sending) || !!(typeof generatingChatId !== 'undefined' && generatingChatId);
+    }
+    function shouldSuppressStreamScrollForKeyboard(){
+      return isKeyboardMode() && isStreamingNow();
+    }
     function scrollActiveMessageIntoReadingZone(options){
       options = options || {};
       if(!loadAutoScroll()) return;
@@ -228,7 +241,7 @@
         box.querySelector('.message.user:last-of-type') ||
         box.lastElementChild;
       if(!target) return;
-      var ratio = isMobileViewport() ? 0.22 : 0.34;
+      var ratio = isMobileViewport() ? 0.16 : 0.34;
       if(typeof options.ratio === 'number') ratio = options.ratio;
       scrollTargetIntoReadingZone(box, target, ratio);
       setTimeout(function(){
@@ -1048,7 +1061,7 @@
           body.keyboard-open #app{position:fixed!important;left:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;transform:none!important;}
           body.keyboard-open .app-shell{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;}
           body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
-          body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:14px 18px 10px!important;scroll-padding-bottom:18px!important;}
+          body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:14px 18px 10px!important;scroll-padding-bottom:18px!important;overflow-anchor:none!important;scroll-behavior:auto!important;contain:layout paint;}
           body.keyboard-open .composer-wrap{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;flex:0 0 auto!important;width:100vw!important;z-index:100!important;transform:none!important;padding:4px 14px 4px!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;}
           body.keyboard-open .empty{display:none!important;}
           body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}
@@ -1130,12 +1143,8 @@
         return '<div class="message assistant"'+scrollAttr+'><div><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       scheduleEnhanceRender();
-      if(loadAutoScroll()){
-        if(window.innerWidth > 900){
-          scheduleThinkingScroll();
-        }else{
-          box.scrollTop = box.scrollHeight;
-        }
+      if(loadAutoScroll() && !shouldSuppressStreamScrollForKeyboard()){
+        scheduleThinkingScroll();
       }
     }
     function friendlyModelName(model){
@@ -1454,7 +1463,7 @@
             }
           }
           assistant.content += delta;
-          if(assistant.scrollFocus) scheduleStreamScroll();
+          if(assistant.scrollFocus && !shouldSuppressStreamScrollForKeyboard()) scheduleStreamScroll();
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
         });
@@ -5066,9 +5075,13 @@
         }
 
         function scrollLatest(){
-          requestAnimationFrame(function(){ try{ scrollActiveMessageIntoReadingZone({ratio:0.22}); }catch(_e){} });
-          setTimeout(function(){ try{ scrollActiveMessageIntoReadingZone({ratio:0.22}); }catch(_e){} }, 80);
-          setTimeout(function(){ try{ scrollActiveMessageIntoReadingZone({ratio:0.22}); }catch(_e){} }, 260);
+          if(shouldSuppressStreamScrollForKeyboard()) return;
+          requestAnimationFrame(function(){
+            try{ scrollActiveMessageIntoReadingZone({ratio:0.18}); }catch(_e){}
+          });
+          setTimeout(function(){
+            try{ scrollActiveMessageIntoReadingZone({ratio:0.18}); }catch(_e){}
+          }, 120);
         }
 
         function applyViewport(){
@@ -5090,7 +5103,7 @@
           if(focused){
             if(sidebarOpen){ sidebarOpen = false; renderSidebar(); }
             try{ window.scrollTo(0, 0); }catch(_e){}
-            scrollLatest();
+            if(!isStreamingNow()) scrollLatest();
           }
         }
 
@@ -5116,7 +5129,7 @@
           }, 180);
         });
 
-        input.addEventListener('input', function(){ schedule(20); scrollLatest(); autoResizeTextarea(this); });
+        input.addEventListener('input', function(){ autoResizeTextarea(this); schedule(60); });
     function autoResizeTextarea(ta){
       ta.style.height='44px';
       var maxH=120;
@@ -5128,8 +5141,12 @@
         window.addEventListener('orientationchange', function(){ setTimeout(applyViewport, 260); }, {passive:true});
 
         if(window.visualViewport){
-          window.visualViewport.addEventListener('resize', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
-          window.visualViewport.addEventListener('scroll', function(){ schedule(keyboardActive ? 5 : 25); }, {passive:true});
+          window.visualViewport.addEventListener('resize', function(){
+            schedule(shouldSuppressStreamScrollForKeyboard() ? 80 : (keyboardActive ? 25 : 60));
+          }, {passive:true});
+          window.visualViewport.addEventListener('scroll', function(){
+            schedule(shouldSuppressStreamScrollForKeyboard() ? 120 : (keyboardActive ? 40 : 80));
+          }, {passive:true});
         }
 
         setInterval(function(){
