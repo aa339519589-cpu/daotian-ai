@@ -1,23 +1,61 @@
 @media(max-width:900px){
+  /*
+    Keyboard seam fix:
+    Keep the composer anchored to the resized visual viewport, remove safe-area padding
+    while the keyboard is open, and cover the last few pixels below the composer so
+    iOS/Android browser rounding does not expose a visible crack.
+  */
+  body.keyboard-open .main{
+    position:relative!important;
+    height:var(--app-height,100dvh)!important;
+    min-height:var(--app-height,100dvh)!important;
+    overflow:hidden!important;
+  }
+
   body.keyboard-open .composer-wrap{
     position:absolute!important;
     left:0!important;
     right:0!important;
-    bottom:-2px!important;
-    padding-bottom:0!important;
-    margin-bottom:0!important;
-    transform:none!important;
-    will-change:auto!important;
-    background:transparent!important;
+    bottom:0!important;
+    width:100%!important;
+    padding:0!important;
+    margin:0!important;
+    background:var(--bg)!important;
+    z-index:80!important;
+    transform:translate3d(0,0,0)!important;
+    will-change:transform!important;
+  }
+
+  body.keyboard-open .composer-wrap::after{
+    content:"";
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:-40px;
+    height:40px;
+    background:var(--bg);
+    pointer-events:none;
   }
 
   body.keyboard-open .composer{
+    width:calc(100% - 44px)!important;
+    max-width:none!important;
+    margin:0 auto!important;
     margin-bottom:0!important;
+    transform:translateY(1px)!important;
+  }
+
+  body.keyboard-open .attach-preview{
+    display:none!important;
   }
 
   body.keyboard-open .messages{
+    position:absolute!important;
+    left:0!important;
+    right:0!important;
+    top:0!important;
     bottom:64px!important;
-    padding-bottom:6px!important;
+    padding:10px 18px 6px!important;
     scroll-padding-bottom:6px!important;
   }
 }
