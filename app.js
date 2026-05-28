@@ -1469,19 +1469,19 @@
       if(document.getElementById('daotianMobileKeyboardStyle')) return;
       const style=document.createElement('style');
       style.id='daotianMobileKeyboardStyle';
-      style.textContent = `
-        @media (max-width:900px){
-          body.keyboard-open{overflow:hidden!important;overscroll-behavior:none!important;}
-          body.keyboard-open #app{position:fixed!important;left:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;transform:none!important;}
-          body.keyboard-open .app-shell{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;}
-          body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
-          body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:14px 18px 10px!important;scroll-padding-bottom:18px!important;overflow-anchor:none!important;scroll-behavior:auto!important;contain:layout paint;}
-          body.keyboard-open .composer-wrap{position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;flex:0 0 auto!important;width:100vw!important;z-index:100!important;transform:none!important;padding:4px 14px 4px!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;}
-          body.keyboard-open .empty{display:none!important;}
-          body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}
-          body.keyboard-open .sidebar:not(.closed){transform:translateX(-105%)!important;opacity:0!important;pointer-events:none!important;}
-        }
-      `;
+      style.textContent = `\
+@media (max-width:900px){\
+  body.keyboard-open{overflow:hidden!important;overscroll-behavior:none!important;}\
+  body.keyboard-open #app{position:fixed!important;left:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;transform:none!important;}\
+  body.keyboard-open .app-shell{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;}\
+  body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}\
+  body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:10px 18px calc(72px + var(--keyboard-accessory-offset,0px))!important;scroll-padding-bottom:calc(72px + var(--keyboard-accessory-offset,0px))!important;}\
+  body.keyboard-open .messages.generating-space{padding-bottom:calc(72px + var(--keyboard-accessory-offset,0px))!important;scroll-padding-bottom:calc(72px + var(--keyboard-accessory-offset,0px))!important;}\
+  body.keyboard-open .composer-wrap{position:relative!important;flex:0 0 auto!important;width:100vw!important;padding:4px 14px calc(4px + var(--keyboard-accessory-offset,0px))!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;z-index:100!important;}\
+  body.keyboard-open .empty{display:none!important;}\
+  body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}\
+  body.keyboard-open .sidebar:not(.closed){transform:translateX(-105%)!important;opacity:0!important;pointer-events:none!important;}\
+}`;
       document.head.appendChild(style);
     }
 
@@ -5472,6 +5472,7 @@
 
     function setupMobileViewport(){
       try{
+        ensureMobileKeyboardStyle();
         const root = document.documentElement;
         const input = $('#input');
         const messagesBox = $('#messages');
@@ -5509,13 +5510,20 @@
             baselineHeight = window.innerHeight;
             document.body.classList.remove('keyboard-open');
             root.style.removeProperty('--keyboard-inset');
+            root.style.removeProperty('--keyboard-accessory-offset');
+            root.style.removeProperty('--app-height');
+            root.style.removeProperty('--app-top');
             if(lastInset !== 0){ lastInset = 0; }
             return;
           }
 
           /* keyboard is open */
-          var accOffset = isIOS() ? 44 : 0;
+          var accOffset = isIOS() && inset > 80 ? 44 : 0;
           var totalInset = inset + accOffset;
+
+          root.style.setProperty('--app-height', vvHeight + 'px');
+          root.style.setProperty('--app-top', vvTop + 'px');
+          root.style.setProperty('--keyboard-accessory-offset', accOffset + 'px');
 
           if(Math.abs(totalInset - lastInset) > 6){
             root.style.setProperty('--keyboard-inset', totalInset + 'px');
