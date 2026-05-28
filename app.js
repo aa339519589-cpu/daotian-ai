@@ -215,6 +215,37 @@
     }
     var thinkingScrollRaf = 0;
     var streamScrollTimer = 0;
+    var userScrolling = false;
+    var userScrollingTimer = 0;
+    function isNearBottom(box){
+      if(!box) return true;
+      return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    }
+    function shouldAutoFollowStream(){
+      return !userScrolling && isNearBottom($('#messages'));
+    }
+    var _scrollDetectInited = false;
+    function initUserScrollDetection(){
+      if(_scrollDetectInited) return; _scrollDetectInited = true;
+      var box = $('#messages'); if(!box) return;
+      function onUserScroll(){
+        userScrolling = true;
+        clearTimeout(userScrollingTimer);
+        userScrollingTimer = setTimeout(function(){
+          userScrolling = false;
+          if(isNearBottom($('#messages'))){
+            scheduleThinkingScroll();
+          }
+        }, 2500);
+      }
+      box.addEventListener('wheel', onUserScroll, {passive:true});
+      box.addEventListener('touchstart', onUserScroll, {passive:true});
+      box.addEventListener('touchmove', onUserScroll, {passive:true});
+      box.addEventListener('scroll', function(){
+        if(!userScrolling) return;
+        if(isNearBottom(box)){ userScrolling = false; clearTimeout(userScrollingTimer); }
+      }, {passive:true});
+    }
     function isMobileViewport(){
       return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
     }
@@ -256,6 +287,7 @@
     }
     function scheduleThinkingScroll(){
       if(!loadAutoScroll()) return;
+      if(!shouldAutoFollowStream()) return;
       if(thinkingScrollRaf) cancelAnimationFrame(thinkingScrollRaf);
       thinkingScrollRaf = requestAnimationFrame(function(){
         thinkingScrollRaf = 0;
@@ -263,6 +295,7 @@
       });
     }
     function scheduleStreamScroll(){
+      if(!shouldAutoFollowStream()) return;
       if(streamScrollTimer) return;
       streamScrollTimer = setTimeout(function(){
         streamScrollTimer = 0;
@@ -746,9 +779,11 @@
     let chats = loadChats();
     let activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
     let sidebarOpen = true;
-    let searchOn = false;
+    let searchOn = (function(){ var v = readJSON('daotian.searchOn.v1', null); return v === null ? true : !!v; })();
+    function saveSearchOn(v){ saveJSON('daotian.searchOn.v1', !!v); }
     let sending = false;
     let activeAbortController = null;
+    let lastSendAt = 0;
     let generatingChatId = null;
     if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
 
@@ -936,76 +971,452 @@
       document.head.appendChild(style);
     }
 
-    function renderInlineMarkdown(text){
-      let html = escapeHTML(text);
-      html = html.replace(/`([^`]+)`/g, function(_m, code){ return '<code>' + code + '</code>'; });
-      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-      html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    /* ── Markdown Rendering System ── */
+    var _md = null;
+    function getMd(){
+      if(_md) return _md;
+      if(typeof window.markdownit === 'function'){
+        _md = window.markdownit({ html:false, linkify:true, breaks:false, typographer:false });
+        /* disable default HTML rendering */
+        _md.renderer.rules.html_block = function(){ return ''; };
+        _md.renderer.rules.html_inline = function(){ return ''; };
+        /* code fence → use highlight.js if available */
+        _md.renderer.rules.fence = function(tokens, idx){
+          var token = tokens[idx];
+          var lang = (token.info || '').trim().toLowerCase();
+          var code = token.content;
+          var safe = escapeHTML(code);
+          var langLabel = lang || 'text';
+          if(!lang) langLabel = 'text';
+          if(typeof hljs !== 'undefined' && hljs.getLanguage && hljs.getLanguage(lang)){
+            try{ safe = hljs.highlight(code, {language:lang, ignoreIllegals:true}).value; }catch(_e){}
+          }
+          return '<div class="code-block" data-lang="'+escapeAttr(langLabel)+'">'+
+            '<div class="code-head"><span class="code-lang">'+escapeAttr(langLabel)+'</span>'+
+            '<button class="code-copy-btn" data-code="'+escapeAttr(code)+'">复制</button></div>'+
+            '<pre><code class="language-'+escapeAttr(langLabel)+'">'+safe+'</code></pre></div>';
+        };
+        return _md;
+      }
+      return null;
+    }
+
+    function protectMath(text){
+      var placeholders = [];
+      var idx = 0;
+      /* protect $$...$$ and \[...\] */
+      text = text.replace(/(\$\$|\\\[)([\s\S]*?)(\$\$|\\\])/g, function(m, open, body, close){
+        var ph = ' MATHBLOCK'+idx+' ';
+        placeholders.push(m);
+        idx++;
+        return ph;
+      });
+      /* protect \(...\) and $...$ (inline) */
+      text = text.replace(/(\\\(|\$)([^\n$]+?)(\\\)|\$)/g, function(m, open, body, close){
+        if(open === '$' && close === '$' && m.indexOf('$$')===0) return m; /* skip display */
+        var ph = 'MATHINLINE'+idx+'';
+        placeholders.push(m);
+        idx++;
+        return ph;
+      });
+      return {text:text, placeholders:placeholders};
+    }
+    function restoreMath(html, placeholders){
+      for(var i=0;i<placeholders.length;i++){
+        html = html.replace(' MATHBLOCK'+i+' ', placeholders[i]);
+        html = html.replace('MATHINLINE'+i+'', placeholders[i]);
+      }
       return html;
     }
 
-    function renderMarkdownText(text){
-      const lines = String(text || '').split('\n');
-      let out = '';
-      let list = null;
-      let para = [];
-      function flushPara(){
-        if(para.length){
-          out += '<p>' + renderInlineMarkdown(para.join('\n')).replace(/\n/g,'<br>') + '</p>';
-          para = [];
-        }
+    function wrapArtifactCards(container){
+      /* Wrap tables */
+      var tables = container.querySelectorAll('table');
+      for(var ti=0;ti<tables.length;ti++){
+        var tbl = tables[ti];
+        if(tbl.closest('.artifact-card')) continue;
+        var wrap = document.createElement('div'); wrap.className = 'artifact-card';
+        var head = '<div class="artifact-head"><span class="artifact-title">表格</span>'+
+          '<div class="artifact-actions">'+
+          '<button data-artifact-action="copy">复制</button>'+
+          '<button data-artifact-action="download">CSV</button>'+
+          '<button data-artifact-action="fullscreen">全屏</button>'+
+          '</div></div>';
+        var body = document.createElement('div'); body.className = 'artifact-body';
+        var tblWrap = document.createElement('div'); tblWrap.className = 'markdown-table-wrap';
+        tbl.parentNode.insertBefore(wrap, tbl);
+        wrap.innerHTML = head;
+        wrap.appendChild(body);
+        tblWrap.appendChild(tbl);
+        body.appendChild(tblWrap);
+        wrap.setAttribute('data-artifact-id', 'tbl_'+Date.now()+'_'+ti);
       }
-      function closeList(){ if(list){ out += '</' + list + '>'; list = null; } }
-      lines.forEach(function(line){
-        if(/^\s*$/.test(line)){ flushPara(); closeList(); return; }
-        if(/^\s{0,3}([-*_])\s*\1\s*\1[\s\1]*$/.test(line)){ flushPara(); closeList(); out += '<hr>'; return; }
-        const heading = line.match(/^(#{1,3})\s+(.+)$/);
-        if(heading){ flushPara(); closeList(); const level=heading[1].length; out += '<h'+level+'>'+renderInlineMarkdown(heading[2])+'</h'+level+'>'; return; }
-        const quote = line.match(/^>\s?(.+)$/);
-        if(quote){ flushPara(); closeList(); out += '<blockquote>'+renderInlineMarkdown(quote[1])+'</blockquote>'; return; }
-        const bullet = line.match(/^\s*[-*+]\s+(.+)$/);
-        if(bullet){ flushPara(); if(list !== 'ul'){ closeList(); list='ul'; out += '<ul>'; } out += '<li>'+renderInlineMarkdown(bullet[1])+'</li>'; return; }
-        const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
-        if(ordered){ flushPara(); if(list !== 'ol'){ closeList(); list='ol'; out += '<ol>'; } out += '<li>'+renderInlineMarkdown(ordered[1])+'</li>'; return; }
-        closeList();
-        para.push(line);
-      });
-      flushPara(); closeList();
-      return out;
+      /* Wrap code blocks into code cards */
+      var codeBlocks = container.querySelectorAll('.code-block');
+      for(var ci=0;ci<codeBlocks.length;ci++){
+        var cb = codeBlocks[ci];
+        if(cb.closest('.artifact-card')) continue;
+        var lang = cb.getAttribute('data-lang') || 'text';
+        var codeEl = cb.querySelector('code');
+        var rawCode = codeEl ? (codeEl.textContent||'') : '';
+        var wrap = document.createElement('div'); wrap.className = 'artifact-card';
+        wrap.setAttribute('data-artifact-id', 'code_'+Date.now()+'_'+ci);
+        var extMap = {js:'.js',ts:'.ts',python:'.py',py:'.py',html:'.html',css:'.css',json:'.json',svg:'.svg',md:'.md'};
+        var ext = extMap[lang] || '.txt';
+        var head = '<div class="artifact-head"><span class="artifact-title">代码 '+escapeHTML(lang)+'</span>'+
+          '<div class="artifact-actions">'+
+          '<button data-artifact-action="copy" data-code="'+escapeAttr(rawCode)+'">复制</button>'+
+          '<button data-artifact-action="download" data-ext="'+ext+'" data-code="'+escapeAttr(rawCode)+'">下载</button>'+
+          '<button data-artifact-action="fullscreen">全屏</button>'+
+          '</div></div>';
+        var body = document.createElement('div'); body.className = 'artifact-body';
+        cb.parentNode.insertBefore(wrap, cb);
+        wrap.innerHTML = head;
+        wrap.appendChild(body);
+        body.appendChild(cb);
+      }
+      /* Wrap mermaid blocks */
+      var mermaids = container.querySelectorAll('.mermaid');
+      for(var mi=0;mi<mermaids.length;mi++){
+        var mm = mermaids[mi];
+        if(mm.closest('.artifact-card')) continue;
+        var rawMmd = mm.textContent || '';
+        var wrap = document.createElement('div'); wrap.className = 'artifact-card';
+        wrap.setAttribute('data-artifact-id', 'mermaid_'+Date.now()+'_'+mi);
+        var head = '<div class="artifact-head"><span class="artifact-title">图表</span>'+
+          '<div class="artifact-actions">'+
+          '<button data-artifact-action="fullscreen">全屏</button>'+
+          '</div></div>'+
+          '<div class="artifact-tabs">'+
+          '<button class="active" data-artifact-tab="preview" data-target="mermaid">图表</button>'+
+          '<button data-artifact-tab="code" data-target="mermaid">代码</button>'+
+          '</div>';
+        wrap.innerHTML = head;
+        var body = document.createElement('div'); body.className = 'artifact-body';
+        var previewDiv = document.createElement('div'); previewDiv.appendChild(mm.cloneNode(true));
+        body.appendChild(previewDiv);
+        var codeDiv = document.createElement('div'); codeDiv.style.display = 'none';
+        codeDiv.innerHTML = '<pre><code>'+escapeHTML(rawMmd)+'</code></pre>';
+        body.appendChild(codeDiv);
+        mm.parentNode.insertBefore(wrap, mm);
+        wrap.appendChild(body);
+      }
+      /* Wrap HTML/SVG preview iframes */
+      var htmlPreviews = container.querySelectorAll('.html-preview-frame');
+      for(var hi=0;hi<htmlPreviews.length;hi++){
+        var hp = htmlPreviews[hi];
+        if(hp.closest('.artifact-card')) continue;
+        var details = hp.nextElementSibling;
+        var rawSrc = '';
+        if(details && details.tagName==='DETAILS'){
+          var codeIn = details.querySelector('code');
+          if(codeIn) rawSrc = codeIn.textContent || '';
+          details.parentNode.removeChild(details);
+        }
+        var wrap = document.createElement('div'); wrap.className = 'artifact-card';
+        wrap.setAttribute('data-artifact-id', 'html_'+Date.now()+'_'+hi);
+        var head = '<div class="artifact-head"><span class="artifact-title">HTML/SVG 预览</span>'+
+          '<div class="artifact-actions">'+
+          '<button data-artifact-action="fullscreen">全屏</button>'+
+          '</div></div>'+
+          '<div class="artifact-tabs">'+
+          '<button class="active" data-artifact-tab="preview" data-target="html">预览</button>'+
+          '<button data-artifact-tab="code" data-target="html">代码</button>'+
+          '</div>';
+        wrap.innerHTML = head;
+        var body = document.createElement('div'); body.className = 'artifact-body';
+        var previewDiv2 = document.createElement('div'); previewDiv2.appendChild(hp.cloneNode(true));
+        body.appendChild(previewDiv2);
+        var codeDiv2 = document.createElement('div'); codeDiv2.style.display = 'none';
+        codeDiv2.innerHTML = '<pre><code>'+escapeHTML(rawSrc)+'</code></pre>';
+        body.appendChild(codeDiv2);
+        hp.parentNode.insertBefore(wrap, hp);
+        wrap.appendChild(body);
+      }
     }
 
-    function renderAssistantContent(raw){
-      ensureRenderStyle();
-      const text = String(raw || '');
-      const re = /```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g;
-      let out = '';
-      let last = 0;
-      let match;
+    function renderWithMarkdownIt(text){
+      var md = getMd();
+      if(!md) return renderLegacyAssistantContent(text);
+      var mathProtected = protectMath(text);
+      var html = md.render(mathProtected.text);
+      html = restoreMath(html, mathProtected.placeholders);
+      /* sanitize */
+      if(typeof DOMPurify !== 'undefined'){
+        html = DOMPurify.sanitize(html, {
+          ALLOWED_TAGS:['p','br','strong','em','del','s','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','hr','h1','h2','h3','h4','h5','h6','a','span','div','details','summary','input','iframe','button','img'],
+          ALLOWED_ATTR:['class','href','target','rel','title','data-lang','data-artifact-id','data-artifact-action','data-artifact-tab','data-target','data-code','data-ext','checked','disabled','type','sandbox','srcdoc','allow','loading','src','alt','id']
+        });
+      }
+      /* fix links: add target rel */
+      html = html.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
+      /* convert task list items */
+      html = html.replace(/<li>\[ \]\s*/g, '<li class="task-list-item"><input type="checkbox" disabled> ');
+      html = html.replace(/<li>\[[xX]\]\s*/g, '<li class="task-list-item"><input type="checkbox" checked disabled> ');
+      /* table wrapper for mobile scroll */
+      html = html.replace(/(<table[\s\S]*?<\/table>)/g, '<div class="markdown-table-wrap">$1</div>');
+      /* Post-process: artifact cards */
+      var tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      wrapArtifactCards(tmp);
+      return tmp.innerHTML;
+    }
+
+    function renderLegacyAssistantContent(raw){
+      var text = String(raw || '');
+      var re = /```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g;
+      var out = ''; var last = 0; var match;
       while((match = re.exec(text))){
         out += renderMarkdownText(text.slice(last, match.index));
-        const lang = (match[1] || '').trim().toLowerCase();
-        const code = match[2] || '';
-        const safeCode = escapeHTML(code);
-        if(lang === 'mermaid'){
-          out += '<pre class="mermaid">' + safeCode + '</pre>';
-        }else if(lang === 'html' || lang === 'svg'){
-          const srcdoc = lang === 'svg' ? '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;display:grid;place-items:center;min-height:100vh">' + code + '</body>' : code;
-          out += '<iframe class="html-preview-frame" sandbox="allow-scripts allow-same-origin" srcdoc="' + escapeAttr(srcdoc) + '"></iframe>';
-          out += '<details><summary>源码</summary><pre><code class="language-' + escapeAttr(lang) + '">' + safeCode + '</code></pre></details>';
+        var lang2 = (match[1]||'').trim().toLowerCase();
+        var code2 = match[2]||'';
+        var safeCode2 = escapeHTML(code2);
+        if(lang2==='mermaid'){
+          out += '<pre class="mermaid">'+safeCode2+'</pre>';
+        }else if(lang2==='html'||lang2==='svg'){
+          var srcdoc3 = lang2==='svg'?'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;display:grid;place-items:center;min-height:100vh">'+code2+'</body>':code2;
+          out += '<iframe class="html-preview-frame artifact-preview-frame" sandbox="allow-scripts" srcdoc="'+escapeAttr(srcdoc3)+'"></iframe>';
+          out += '<details><summary>源码</summary><pre><code class="language-'+escapeAttr(lang2)+'">'+safeCode2+'</code></pre></details>';
         }else{
-          out += '<pre><code class="language-' + escapeAttr(lang || 'text') + '">' + safeCode + '</code></pre>';
+          out += '<div class="code-block" data-lang="'+(lang2||'text')+'"><div class="code-head"><span class="code-lang">'+(lang2||'text')+'</span><button class="code-copy-btn" data-code="'+escapeAttr(code2)+'">复制</button></div><pre><code>'+safeCode2+'</code></pre></div>';
         }
         last = re.lastIndex;
       }
       out += renderMarkdownText(text.slice(last));
       out = out.replace(/<p>\s*\$\$([\s\S]*?)\$\$\s*<\/p>/g, '<div class="math-block">$$$1$$</div>');
-      return out || '';
+      return out||'';
     }
+
+    function renderInlineMarkdown(text){
+      var html = escapeHTML(text);
+      html = html.replace(/`([^`]+)`/g,function(_m,code){return '<code>'+code+'</code>';});
+      html = html.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+      html = html.replace(/__([^_]+)__/g,'<strong>$1</strong>');
+      html = html.replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      return html;
+    }
+
+    function renderMarkdownText(text){
+      var lines = String(text||'').split('\n');
+      var out=''; var list=null; var para=[];
+      function flushPara(){
+        if(para.length){
+          out += '<p>'+renderInlineMarkdown(para.join('\n')).replace(/\n/g,'<br>')+'</p>';
+          para=[];
+        }
+      }
+      function closeList(){ if(list){ out+='</'+list+'>'; list=null; } }
+      /* detect table */
+      var isTable = false; var tableRows = [];
+      for(var li=0;li<lines.length;li++){
+        var l = lines[li];
+        if(l.indexOf('|')>=0 && /^\s*\|?[\s\S]*?\|\s*$/.test(l)){
+          if(!isTable){ flushPara(); closeList(); isTable=true; }
+          tableRows.push(l);
+        }else{
+          if(isTable){
+            isTable=false;
+            if(tableRows.length>=2){
+              out += buildTable(tableRows);
+            }else{
+              tableRows.forEach(function(tr){ out+='<p>'+renderInlineMarkdown(tr)+'</p>'; });
+            }
+            tableRows=[];
+          }
+          if(/^\s*$/.test(l)){ flushPara(); closeList(); continue; }
+          if(/^\s{0,3}([-*_])\s*\1\s*\1[\s\1]*$/.test(l)){ flushPara(); closeList(); out+='<hr>'; continue; }
+          var heading2 = l.match(/^(#{1,3})\s+(.+)$/);
+          if(heading2){ flushPara(); closeList(); var lv=heading2[1].length; out+='<h'+lv+'>'+renderInlineMarkdown(heading2[2])+'</h'+lv+'>'; continue; }
+          var quote2 = l.match(/^>\s?(.+)$/);
+          if(quote2){ flushPara(); closeList(); out+='<blockquote>'+renderInlineMarkdown(quote2[1])+'</blockquote>'; continue; }
+          var bullet2 = l.match(/^\s*[-*+]\s+(.+)$/);
+          if(bullet2){ flushPara(); if(list!=='ul'){ closeList(); list='ul'; out+='<ul>'; } out+='<li>'+renderInlineMarkdown(bullet2[1])+'</li>'; continue; }
+          var ordered2 = l.match(/^\s*\d+[.)]\s+(.+)$/);
+          if(ordered2){ flushPara(); if(list!=='ol'){ closeList(); list='ol'; out+='<ol>'; } out+='<li>'+renderInlineMarkdown(ordered2[1])+'</li>'; continue; }
+          closeList(); para.push(l);
+        }
+      }
+      if(isTable&&tableRows.length>=2){ out+=buildTable(tableRows); tableRows=[]; }
+      flushPara(); closeList();
+      return out;
+    }
+
+    function buildTable(rows){
+      if(rows.length<2) return renderMarkdownText(rows.join('\n'));
+      var out = '<div class="markdown-table-wrap"><table><thead>';
+      /* header */
+      var hdr = rows[0].split('|').filter(function(c){return c.trim();});
+      out += '<tr>';
+      hdr.forEach(function(c){ out+='<th>'+renderInlineMarkdown(c.trim())+'</th>'; });
+      out += '</tr></thead>';
+      /* detect separator */
+      var bodyStart = 1;
+      if(/^[\s|:\-]+$/.test(rows[1].replace(/\|/g,'').trim())) bodyStart=2;
+      out += '<tbody>';
+      for(var ri=bodyStart;ri<rows.length;ri++){
+        var cells = rows[ri].split('|').filter(function(c){return c.trim();});
+        out += '<tr>';
+        cells.forEach(function(c){ out+='<td>'+renderInlineMarkdown(c.trim())+'</td>'; });
+        out += '</tr>';
+      }
+      out += '</tbody></table></div>';
+      return out;
+    }
+
+    function renderAssistantContent(raw){
+      ensureRenderStyle();
+      var text = String(raw||'');
+      /* Prefer markdown-it */
+      if(typeof window.markdownit === 'function'){
+        return renderWithMarkdownIt(text);
+      }
+      return renderLegacyAssistantContent(text);
+    }
+
+    var _fullscreenOverlay = null;
+    function getFullscreenOverlay(){
+      if(_fullscreenOverlay) return _fullscreenOverlay;
+      var div = document.createElement('div');
+      div.id = 'artifactFullscreen';
+      div.className = 'artifact-fullscreen';
+      div.innerHTML = '<div class="artifact-fullscreen-close">&times;</div><div class="artifact-fullscreen-body"></div>';
+      div.addEventListener('click', function(e){
+        if(e.target === div || e.target.classList.contains('artifact-fullscreen-close')) closeFullscreen();
+      });
+      document.body.appendChild(div);
+      _fullscreenOverlay = div;
+      return div;
+    }
+    function openFullscreen(content){
+      var ov = getFullscreenOverlay();
+      ov.querySelector('.artifact-fullscreen-body').innerHTML = content;
+      ov.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeFullscreen(){
+      if(!_fullscreenOverlay) return;
+      _fullscreenOverlay.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    /* Event delegation for artifact actions */
+    document.addEventListener('click', function(e){
+      /* Copy */
+      var copyBtn = e.target.closest('[data-artifact-action="copy"]');
+      if(copyBtn){
+        e.preventDefault(); e.stopPropagation();
+        var code = copyBtn.getAttribute('data-code') || '';
+        /* If no data-code, copy the closest code block or table content */
+        if(!code){
+          var card = copyBtn.closest('.artifact-card');
+          if(card){
+            var tblEl = card.querySelector('table');
+            if(tblEl){
+              var tsv = ''; var tableRows2 = tblEl.querySelectorAll('tr');
+              tableRows2.forEach(function(tr){
+                var cells = []; tr.querySelectorAll('th,td').forEach(function(td){ cells.push(td.textContent.trim()); });
+                tsv += cells.join('\t')+'\n';
+              });
+              code = tsv;
+            }else{
+              var preEl = card.querySelector('pre code');
+              if(preEl) code = preEl.textContent||'';
+            }
+          }
+        }
+        try{
+          if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(code).then(function(){ toast('已复制'); }).catch(function(){ toast('复制失败'); });
+          }else{
+            var ta = document.createElement('textarea'); ta.value = code;
+            ta.style.position='fixed';ta.style.opacity='0';
+            document.body.appendChild(ta);ta.select();
+            document.execCommand('copy');document.body.removeChild(ta);
+            toast('已复制');
+          }
+        }catch(_e2){ toast('复制失败'); }
+        return;
+      }
+      /* Download */
+      var dloadBtn = e.target.closest('[data-artifact-action="download"]');
+      if(dloadBtn){
+        e.preventDefault(); e.stopPropagation();
+        var dcode = dloadBtn.getAttribute('data-code') || '';
+        var ext = dloadBtn.getAttribute('data-ext') || '.txt';
+        if(!dcode){
+          var card2 = dloadBtn.closest('.artifact-card');
+          if(card2){
+            var tblEl2 = card2.querySelector('table');
+            if(tblEl2){
+              var csv = ''; var rows3 = tblEl2.querySelectorAll('tr');
+              rows3.forEach(function(tr){
+                var cells = []; tr.querySelectorAll('th,td').forEach(function(td){ cells.push('"'+String(td.textContent).replace(/"/g,'""')+'"'); });
+                csv += cells.join(',')+'\n';
+              });
+              dcode = csv; ext = '.csv';
+            }else{
+              var preEl2 = card2.querySelector('pre code');
+              if(preEl2) dcode = preEl2.textContent||'';
+            }
+          }
+        }
+        var blob = new Blob([dcode], {type:'text/plain'});
+        var url2 = URL.createObjectURL(blob);
+        var a2 = document.createElement('a'); a2.href = url2; a2.download = 'download'+ext;
+        a2.click(); URL.revokeObjectURL(url2); toast('已下载');
+        return;
+      }
+      /* Fullscreen */
+      var fsBtn = e.target.closest('[data-artifact-action="fullscreen"]');
+      if(fsBtn){
+        e.preventDefault(); e.stopPropagation();
+        var card3 = fsBtn.closest('.artifact-card');
+        if(!card3) return;
+        var body3 = card3.querySelector('.artifact-body');
+        if(body3) openFullscreen(body3.innerHTML);
+        return;
+      }
+      /* Tab switch */
+      var tabBtn = e.target.closest('[data-artifact-tab]');
+      if(tabBtn){
+        e.preventDefault(); e.stopPropagation();
+        var card4 = tabBtn.closest('.artifact-card');
+        if(!card4) return;
+        var targetTab = tabBtn.getAttribute('data-artifact-tab');
+        /* Update active tab button */
+        card4.querySelectorAll('[data-artifact-tab]').forEach(function(b){ b.classList.remove('active'); });
+        tabBtn.classList.add('active');
+        /* Show/hide body children */
+        var body4 = card4.querySelector('.artifact-body');
+        if(!body4) return;
+        var children = body4.children;
+        if(targetTab==='preview'){
+          for(var ci4=0;ci4<children.length;ci4++){
+            if(ci4===0) children[ci4].style.display = '';
+            else children[ci4].style.display = 'none';
+          }
+        }else if(targetTab==='code'){
+          for(var ci42=0;ci42<children.length;ci42++){
+            if(ci42===children.length-1) children[ci42].style.display = '';
+            else children[ci42].style.display = 'none';
+          }
+        }
+        return;
+      }
+    });
+
+    /* Keyboard: ESC close fullscreen */
+    document.addEventListener('keydown', function(e){
+      if(e.key==='Escape' && _fullscreenOverlay && _fullscreenOverlay.classList.contains('open')){
+        closeFullscreen();
+      }
+    });
 
     let enhanceTimer = null;
     function scheduleEnhanceRender(){
+      /* skip during streaming — full render on completion */
+      if(isStreamingNow()) return;
       clearTimeout(enhanceTimer);
       enhanceTimer = setTimeout(function(){
         const box = document.getElementById('messages');
@@ -1014,7 +1425,10 @@
           if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
         }catch(_e){}
         try{
-          if(window.mermaid && window.mermaid.run){ window.mermaid.run({nodes: box.querySelectorAll('.mermaid')}).catch(function(){}); }
+          if(window.mermaid && window.mermaid.run){
+            var ms = box.querySelectorAll('.mermaid');
+            if(ms.length) window.mermaid.run({nodes: ms}).catch(function(){});
+          }
         }catch(_e){}
       }, 220);
     }
@@ -1496,6 +1910,18 @@
         assistant.scrollFocus = false;
       }
       sending=false; $('#sendBtn').disabled=false; c.updatedAt=Date.now(); activeAbortController=null; generatingChatId=null; renderAll();
+      lastSendAt = Date.now();
+      /* 移动端键盘发送后重新 focus 输入框，防止输入栏下沉 */
+      if(isMobileViewport() && document.body.classList.contains('keyboard-open')){
+        try{
+          var inp2 = $('#input');
+          if(inp2){
+            requestAnimationFrame(function(){
+              try{ inp2.focus({preventScroll:true}); }catch(_e){ inp2.focus(); }
+            });
+          }
+        }catch(_e){}
+      }
       scheduleThinkingScroll();
       /* 后台预生成语音缓存 */
       if(assistant && assistant.content && !assistant.thinking){
@@ -5124,6 +5550,9 @@
 
         input.addEventListener('blur', function(){
           setTimeout(function(){
+            if(sending || (lastSendAt && Date.now() - lastSendAt < 1200)){
+              return; // keep keyboard-open during send/just-after-send
+            }
             keyboardActive = false;
             document.body.classList.remove('keyboard-open');
             root.style.setProperty('--app-top','0px');
@@ -5383,6 +5812,7 @@
     APP_READY = true;
     updateSearchVisual();
     setupMobileViewport();
+    initUserScrollDetection();
     /* 预初始化记忆引擎（后台加载向量模型） */
     initMemoryEngine();
 
@@ -5486,7 +5916,7 @@
         if(action === 'camera'){ var ci = document.getElementById('cameraInput'); if(ci) ci.click(); }
         else if(action === 'image'){ var ii = document.getElementById('imageInput'); if(ii) ii.click(); }
         else if(action === 'file'){ var fi = document.getElementById('fileInput'); if(fi) fi.click(); }
-        else if(action === 'search'){ searchOn=!searchOn; updateSearchVisual(); }
+        else if(action === 'search'){ searchOn=!searchOn; saveSearchOn(searchOn); updateSearchVisual(); }
         return;
       }
       if(_plusOpen && !e.target.closest('#plusMenu') && !e.target.closest('#plusBtn')){

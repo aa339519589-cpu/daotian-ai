@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#282826" media="(prefers-color-scheme: dark)" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>稻田 Ai</title>
-  <link rel="stylesheet" href="./styles.css?v=v515" />
+  <link rel="stylesheet" href="./styles.css?v=v520" />
   <script>
     window.MathJax = {
       tex: {
@@ -23,6 +23,11 @@
   <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" onload="try{mermaid.initialize({startOnLoad:false,theme:'dark'});}catch(e){}"></script>
   <script src="https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.3/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
   <script type="module">
     import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.0/dist/transformers.min.js';
     window.__HF = window.__HF || {};
@@ -44,6 +49,6 @@
   <div id="app">
     <div style="padding:24px;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#222">稻田 Ai 正在加载...</div>
   </div>
-  <script src="./app.js?v=v515"></script>
+  <script src="./app.js?v=v520"></script>
 </body>
 </html>
