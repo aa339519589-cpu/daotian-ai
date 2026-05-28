@@ -320,8 +320,12 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 
 
   body.keyboard-open .composer-wrap{
-    padding:4px 14px 4px;
+    position:fixed;
+    left:0;right:0;bottom:var(--keyboard-inset,0px);
+    padding:4px 14px calc(4px + env(safe-area-inset-bottom,0px));
     background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0));
+    transform:none;
+    z-index:30;
   }
 
   body.keyboard-open .composer{
@@ -530,8 +534,8 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
   scroll-padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
 }
 body.keyboard-open .messages.generating-space{
-  padding-bottom:38vh!important;
-  scroll-padding-bottom:38vh!important;
+  padding-bottom:80px!important;
+  scroll-padding-bottom:80px!important;
 }
 @media(min-width:901px){
   .messages.generating-space{
@@ -573,6 +577,17 @@ body.keyboard-open .messages.generating-space{
   .assistant-content{
     max-width:88%;
     min-width:120px;
+  }
+  /* 大内容卡片使用全宽 */
+  .assistant-content:has(.code-block),
+  .assistant-content:has(pre),
+  .assistant-content:has(table),
+  .assistant-content:has(.markdown-table-wrap),
+  .assistant-content:has(.artifact-card),
+  .assistant-content:has(.html-preview-frame),
+  .assistant-content:has(.artifact-preview-frame){
+    max-width:calc(100vw - 36px);
+    min-width:calc(100vw - 36px);
   }
 }
 .daotian-thinking-message{

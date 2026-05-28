@@ -5472,122 +5472,113 @@
 
     function setupMobileViewport(){
       try{
-        ensureMobileKeyboardStyle();
         const root = document.documentElement;
-        const appEl = document.getElementById('app');
         const input = $('#input');
         const messagesBox = $('#messages');
-        if(!root || !appEl || !input || !messagesBox) return;
+        if(!root || !input || !messagesBox) return;
 
-        let timer = null;
-        let keyboardActive = false;
-        let lastHeight = 0;
-        let lastTop = 0;
+        var baselineHeight = window.innerHeight;
+        var lastInset = 0;
+        var rafPending = false;
 
         function isMobile(){
           return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
         }
-
-        function metrics(){
-          const vv = window.visualViewport;
-          const height = vv && vv.height ? vv.height : window.innerHeight;
-          const top = vv && typeof vv.offsetTop === 'number' ? vv.offsetTop : 0;
-          return {height: Math.max(320, Math.round(height)), top: Math.max(0, Math.round(top))};
+        function isIOS(){
+          return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         }
 
-        function setVars(m){
-          lastHeight = m.height;
-          lastTop = m.top;
-          root.style.setProperty('--app-height', m.height + 'px');
-          root.style.setProperty('--app-top', m.top + 'px');
-        }
-
-        function scrollLatest(){
-          if(shouldSuppressStreamScrollForKeyboard()) return;
-          requestAnimationFrame(function(){
-            try{ scrollActiveMessageIntoReadingZone({ratio:0.18}); }catch(_e){}
-          });
-          setTimeout(function(){
-            try{ scrollActiveMessageIntoReadingZone({ratio:0.18}); }catch(_e){}
-          }, 120);
-        }
-
-        function applyViewport(){
+        function updateKeyboard(){
           if(!isMobile()){
-            keyboardActive = false;
             document.body.classList.remove('keyboard-open');
-            root.style.removeProperty('--app-height');
-            root.style.removeProperty('--app-top');
+            root.style.removeProperty('--keyboard-inset');
+            lastInset = 0;
             return;
           }
 
-          const focused = document.activeElement === input;
-          const m = metrics();
-          setVars(m);
+          var vv = window.visualViewport;
+          if(!vv){ return; }
 
-          document.body.classList.toggle('keyboard-open', focused);
-          keyboardActive = focused;
+          var vvHeight = Math.round(vv.height);
+          var vvTop = typeof vv.offsetTop === 'number' ? Math.round(vv.offsetTop) : 0;
+          var inset = baselineHeight - vvHeight - vvTop;
+          var focused = document.activeElement === input;
 
-          if(focused){
+          if(inset < 30 || !focused){
+            /* keyboard closed or input not focused → reset */
+            baselineHeight = window.innerHeight;
+            document.body.classList.remove('keyboard-open');
+            root.style.removeProperty('--keyboard-inset');
+            if(lastInset !== 0){ lastInset = 0; }
+            return;
+          }
+
+          /* keyboard is open */
+          var accOffset = isIOS() ? 44 : 0;
+          var totalInset = inset + accOffset;
+
+          if(Math.abs(totalInset - lastInset) > 6){
+            root.style.setProperty('--keyboard-inset', totalInset + 'px');
+            lastInset = totalInset;
+          }
+
+          if(!document.body.classList.contains('keyboard-open')){
+            document.body.classList.add('keyboard-open');
             if(sidebarOpen){ sidebarOpen = false; renderSidebar(); }
             try{ window.scrollTo(0, 0); }catch(_e){}
-            if(!isStreamingNow()) scrollLatest();
+            if(!isStreamingNow()){
+              requestAnimationFrame(function(){
+                try{ scrollActiveMessageIntoReadingZone({ratio:0.18}); }catch(_e){}
+              });
+            }
           }
         }
 
-        function schedule(delay){
-          clearTimeout(timer);
-          timer = setTimeout(applyViewport, delay || 30);
+        function scheduleUpdate(){
+          if(rafPending) return;
+          rafPending = true;
+          requestAnimationFrame(function(){
+            rafPending = false;
+            updateKeyboard();
+          });
+        }
+
+        /* Track baseline when viewport changes without keyboard */
+        window.addEventListener('resize', function(){
+          if(!document.body.classList.contains('keyboard-open')){
+            baselineHeight = window.innerHeight;
+          }
+          scheduleUpdate();
+        }, {passive:true});
+
+        if(window.visualViewport){
+          window.visualViewport.addEventListener('resize', scheduleUpdate, {passive:true});
+          window.visualViewport.addEventListener('scroll', scheduleUpdate, {passive:true});
         }
 
         input.addEventListener('focus', function(){
-          schedule(0);
-          setTimeout(applyViewport, 80);
-          setTimeout(applyViewport, 180);
-          setTimeout(applyViewport, 360);
-          setTimeout(applyViewport, 650);
+          baselineHeight = window.innerHeight;
+          scheduleUpdate();
         });
 
         input.addEventListener('blur', function(){
           setTimeout(function(){
-            if(sending || (lastSendAt && Date.now() - lastSendAt < 1200)){
-              return; // keep keyboard-open during send/just-after-send
-            }
-            keyboardActive = false;
-            document.body.classList.remove('keyboard-open');
-            root.style.setProperty('--app-top','0px');
-            applyViewport();
-          }, 180);
+            if(sending || (lastSendAt && Date.now() - lastSendAt < 1200)) return;
+            if(document.activeElement !== input) updateKeyboard();
+          }, 300);
         });
 
-        input.addEventListener('input', function(){ autoResizeTextarea(this); schedule(60); });
+        input.addEventListener('input', function(){ autoResizeTextarea(this); });
+
+        updateKeyboard();
+      }catch(_err){}
+    }
     function autoResizeTextarea(ta){
       ta.style.height='44px';
       var maxH=120;
       var nh=Math.min(ta.scrollHeight, maxH);
       ta.style.height=nh+'px';
       ta.style.overflowY=ta.scrollHeight > maxH ? 'auto' : 'hidden';
-    }
-        window.addEventListener('resize', function(){ schedule(20); }, {passive:true});
-        window.addEventListener('orientationchange', function(){ setTimeout(applyViewport, 260); }, {passive:true});
-
-        if(window.visualViewport){
-          window.visualViewport.addEventListener('resize', function(){
-            schedule(shouldSuppressStreamScrollForKeyboard() ? 80 : (keyboardActive ? 25 : 60));
-          }, {passive:true});
-          window.visualViewport.addEventListener('scroll', function(){
-            schedule(shouldSuppressStreamScrollForKeyboard() ? 120 : (keyboardActive ? 40 : 80));
-          }, {passive:true});
-        }
-
-        setInterval(function(){
-          if(!keyboardActive) return;
-          const m = metrics();
-          if(Math.abs(m.height - lastHeight) > 2 || Math.abs(m.top - lastTop) > 2) applyViewport();
-        }, 180);
-
-        applyViewport();
-      }catch(_err){}
     }
 
 
