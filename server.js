@@ -272,6 +272,7 @@ async function handleCreateAccessPackage(req, res){
   if(!auth) return;
   let body = {};
   try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
+  const providerScope = String(body.providerScope || "share").trim();
   const providerId = String(body.providerId || "").trim();
   const packageName = String(body.packageName || "").trim();
   const models = Array.isArray(body.models) ? body.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
@@ -281,8 +282,17 @@ async function handleCreateAccessPackage(req, res){
   if(!providerId) return sendJson(res, 400, { ok:false, error:"provider_required", message:"请选择一个模型提供方" });
   if(!packageName) return sendJson(res, 400, { ok:false, error:"package_name_required", message:"请填写模型包名称" });
   if(!models.length) return sendJson(res, 400, { ok:false, error:"models_required", message:"请至少选择一个模型" });
-  const providers = parseUserProviders(auth.store.userData[auth.user.id] || {});
+  const userData = auth.store.userData[auth.user.id] || {};
+  const providers = providerScope === "self"
+    ? parseSelfProviders(userData)
+    : providerScope === "share"
+      ? parseShareProviders(userData)
+      : parseUserProviders(userData);
   const provider = providers.find(p=>p.id === providerId);
+  if(!provider && providerScope !== "self"){
+    const fallbackProvider = parseSelfProviders(userData).find(p=>p.id === providerId);
+    if(fallbackProvider) return sendJson(res, 404, { ok:false, error:"provider_scope_mismatch", message:"请选择“分享给别人”中的提供方" });
+  }
   if(!provider) return sendJson(res, 404, { ok:false, error:"provider_not_found", message:"未找到该模型提供方" });
   const store = await readAccessStore();
   const existing = store.packages.find(p=>p.providerUserId === auth.user.id && p.providerId === providerId && p.packageName === packageName);
@@ -380,24 +390,36 @@ async function handleClaimAccessCode(req, res){
   }});
 }
 
-function parseUserProviders(userData){
+function parseUserSettings(userData){
   const raw = userData && typeof userData === "object" ? userData["daotian.settings.v323"] || userData["daotian.settings.v322"] || userData["daotian.settings"] : "";
-  if(!raw) return [];
+  if(!raw) return {};
   try{
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    const providers = Array.isArray(parsed?.modelProviders) ? parsed.modelProviders : [];
-    return providers.map(p=>({
-      id:String(p.id || "").trim(),
-      providerType:String(p.providerType || "openai").trim(),
-      providerName:String(p.providerName || "").trim(),
-      baseUrl:String(p.baseUrl || "").trim(),
-      apiKey:String(p.apiKey || "").trim(),
-      path:String(p.path || p.requestPath || "/v1/chat/completions").trim() || "/v1/chat/completions",
-      models:Array.isArray(p.models) ? p.models.map(v=>String(v||"").trim()).filter(Boolean) : []
-    })).filter(p=>p.baseUrl && p.apiKey && p.models.length);
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
   }catch{
-    return [];
+    return {};
   }
+}
+function parseProvidersFromSettings(userData, field){
+  const parsed = parseUserSettings(userData);
+  const providers = Array.isArray(parsed?.[field]) ? parsed[field] : [];
+  return providers.map(p=>({
+    id:String(p.id || "").trim(),
+    providerType:String(p.providerType || "openai").trim(),
+    providerName:String(p.providerName || "").trim(),
+    baseUrl:String(p.baseUrl || "").trim(),
+    apiKey:String(p.apiKey || "").trim(),
+    path:String(p.path || p.requestPath || "/v1/chat/completions").trim() || "/v1/chat/completions",
+    models:Array.isArray(p.models) ? p.models.map(v=>String(v||"").trim()).filter(Boolean) : []
+  })).filter(p=>p.baseUrl && p.apiKey && p.models.length);
+}
+function parseSelfProviders(userData){
+  return parseProvidersFromSettings(userData, "modelProviders");
+}
+function parseShareProviders(userData){
+  return parseProvidersFromSettings(userData, "shareModelProviders");
+}
+function parseUserProviders(userData){
+  return parseSelfProviders(userData).concat(parseShareProviders(userData));
 }
 
 function normalizeAccessPackage(pkg){
@@ -556,8 +578,14 @@ async function resolveUpstreamFromRequest(req, body){
   }
   const auth = await authFromRequest(req);
   const providerId = String(body.providerId || "").trim();
+  const providerScope = String(body.providerScope || "").trim();
   if(auth && providerId){
-    const providers = parseUserProviders(auth.store.userData[auth.user.id] || {});
+    const userData = auth.store.userData[auth.user.id] || {};
+    const providers = providerScope === "self"
+      ? parseSelfProviders(userData)
+      : providerScope === "share"
+        ? parseShareProviders(userData)
+        : parseUserProviders(userData);
     const provider = providers.find(p=>p.id === providerId);
     if(provider && provider.baseUrl && provider.apiKey){
       return {
@@ -883,6 +911,7 @@ async function handleModelsList(req, res){
   const apiKey = String(body.apiKey || "").trim();
   const accessCode = String(body.accessCode || "").trim();
   const providerId = String(body.providerId || "").trim();
+  const providerScope = String(body.providerScope || "").trim();
 
   if(accessCode){
     const hit = await findAccessPackageByCode(accessCode);
@@ -896,7 +925,12 @@ async function handleModelsList(req, res){
   if(providerId){
     const auth = await authFromRequest(req);
     if(!auth) return sendJson(res, 401, { ok:false, error:"unauthorized", message:"请先登录" });
-    const providers = parseUserProviders(auth.store.userData[auth.user.id] || {});
+    const userData = auth.store.userData[auth.user.id] || {};
+    const providers = providerScope === "self"
+      ? parseSelfProviders(userData)
+      : providerScope === "share"
+        ? parseShareProviders(userData)
+        : parseUserProviders(userData);
     const provider = providers.find(p=>p.id === providerId);
     if(!provider) return sendJson(res, 404, { ok:false, error:"not_found", message:"未找到模型提供方" });
     return sendJson(res, 200, { ok:true, models:provider.models.map(id=>({ id, name:id, owned_by: provider.providerName || "" })), providerName:provider.providerName, providerId });
@@ -927,12 +961,12 @@ async function handleModelsList(req, res){
 
     if(!response.ok){
       if(response.status === 401 || response.status === 403){
-        return sendJson(res, 200, { ok:false, error:"获取失败，API Key 无效或无权限" });
+        return sendJson(res, 200, { ok:false, error:"获取失败，API Key 无效或无权限（请检查 Key 是否正确、是否过期）" });
       }
       if(response.status === 404){
-        return sendJson(res, 200, { ok:false, error:"获取失败，该 Base URL 未提供 /models 接口，可使用手动添加模型" });
+        return sendJson(res, 200, { ok:false, error:"获取失败，该 Base URL 未提供 /models 接口（请求地址："+modelsUrl+"），可使用手动添加模型" });
       }
-      return sendJson(res, 200, { ok:false, error:`获取失败 (HTTP ${response.status})，请检查 Base URL / API Key / 供应商是否支持 /models` });
+      return sendJson(res, 200, { ok:false, error:"获取失败 (HTTP "+response.status+")，请求地址："+modelsUrl+"，请检查 Base URL / API Key 是否正确" });
     }
 
     if(!data){
@@ -971,9 +1005,9 @@ async function handleModelsList(req, res){
     sendJson(res, 200, { ok:true, models, providerName, baseUrl, modelsUrl });
   }catch(error){
     if(error?.name === "AbortError"){
-      return sendJson(res, 200, { ok:false, error:"获取失败，请求超时，网络或供应商接口异常" });
+      return sendJson(res, 200, { ok:false, error:"获取失败，请求超时（请求地址："+modelsUrl+"），请检查网络或供应商接口状态" });
     }
-    sendJson(res, 200, { ok:false, error:`获取失败，网络或供应商接口异常：${error.message}` });
+    sendJson(res, 200, { ok:false, error:"获取失败: "+((error&&error.message)||'网络错误')+"（请求地址："+modelsUrl+"）" });
   }
 }
 

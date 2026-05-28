@@ -169,8 +169,7 @@
     async function refreshAccessPackages(){
       if(!AUTH_USER || !AUTH_USER.id) return loadAccessPackages();
       try{
-        var res = await authFetch('/api/access/packages', {method:'GET', headers:{}});
-        var data = await res.json();
+        var data = await authFetch('/api/access/packages', {method:'GET', headers:{}});
         if(data && data.ok && Array.isArray(data.packages)){
           saveAccessPackages(data.packages);
           return data.packages;
@@ -463,6 +462,11 @@
       for(var i=0; i<providers.length; i++){
         var p = providers[i]; if(!p) continue;
         var key = (p.providerName||'').trim().toLowerCase() + '||' + (p.baseUrl||'').trim().toLowerCase();
+        var meaningful = !!((p.providerName||'').trim() || (p.baseUrl||'').trim());
+        if(!meaningful){
+          merged.push({id:p.id, providerType:p.providerType, providerName:p.providerName, baseUrl:p.baseUrl, apiKey:p.apiKey, path:p.path, models:p.models.slice()});
+          continue;
+        }
         if(seen[key] !== undefined){
           var existing = merged[seen[key]];
           if(p.apiKey && p.apiKey.trim()) existing.apiKey = p.apiKey;
@@ -619,8 +623,10 @@
     }
     function ensureSettingsShape(raw){
       var hasProviderList = raw && typeof raw === 'object' && Array.isArray(raw.modelProviders);
+      var hasShareProviderList = raw && typeof raw === 'object' && Array.isArray(raw.shareModelProviders);
       var hasPresetList = raw && typeof raw === 'object' && Array.isArray(raw.modelPresets);
       var base = Object.assign({}, defaultSettings, raw || {});
+      base.sharePackageProviderId = String(base.sharePackageProviderId || '').trim();
       var providers = [];
       if(hasProviderList){
         providers = base.modelProviders.map(normalizeProvider).filter(providerHasConfig);
@@ -630,7 +636,13 @@
         providers = providersFromPresets(base.modelPresets);
       }
       if(!providers.length && !hasProviderList && !hasPresetList) providers = legacyProviders(base);
+      var shareProviders = [];
+      if(hasShareProviderList){
+        shareProviders = base.shareModelProviders.map(normalizeProvider).filter(providerHasConfig);
+        shareProviders = normalizeProviders(shareProviders);
+      }
       base.modelProviders = providers;
+      base.shareModelProviders = shareProviders;
       base.modelPresets = providersToPresets(providers);
       if(!base.activePresetId || !base.modelPresets.some(function(p){return p.id===base.activePresetId;})){
         var hit = base.modelPresets[0];
@@ -673,7 +685,7 @@
     await ensureAuthenticated();
 
     let theme = resolveTheme();
-    let settings = ensureSettingsShape(readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
+    let settings = ensureSettingsShape(readJSON(scopedStorageKey(KEYS.settings),null) || readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
     let chats = loadChats();
     let activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
     let sidebarOpen = true;
@@ -3404,6 +3416,136 @@
       </div>`;
     }
 
+    function providerHubScopeKey(scope){
+      return scope === 'share' ? 'shareModelProviders' : 'modelProviders';
+    }
+    function providerHubSectionId(scope){
+      return scope === 'share' ? 'shareProviderSection' : 'selfProviderSection';
+    }
+    function providerHubListId(scope){
+      return scope === 'share' ? 'shareProviderList' : 'selfProviderList';
+    }
+    function providerHubAddBtnId(scope){
+      return scope === 'share' ? 'shareAddProvider' : 'selfAddProvider';
+    }
+    function providerHubSaveBtnId(scope){
+      return scope === 'share' ? 'shareSaveProvider' : 'selfSaveProvider';
+    }
+    function providerHubSaveLabel(scope){
+      return scope === 'share' ? '保存分享配置' : '保存';
+    }
+    function providerHubTitle(scope){
+      return scope === 'share' ? '分享给别人' : '自己使用';
+    }
+    function providerHubDesc(scope){
+      return scope === 'share'
+        ? '配置给别人用的模型，保存后可独立生成接入码'
+        : '配置自己的模型，保存后仅当前用户可见';
+    }
+    function providerHubProviders(scope){
+      settings = ensureSettingsShape(settings);
+      const key = providerHubScopeKey(scope);
+      if(!Array.isArray(settings[key])) settings[key] = [];
+      return settings[key];
+    }
+    function setProviderHubProviders(scope, providers){
+      settings = ensureSettingsShape(settings);
+      const key = providerHubScopeKey(scope);
+      settings[key] = normalizeProviders(Array.isArray(providers) ? providers : []);
+      if(scope === 'self'){
+        settings.modelPresets = providersToPresets(settings.modelProviders);
+      }
+      syncLegacySettings();
+    }
+    function providerHubRoot(scope){
+      var hub = document.querySelector('#settingsModal .provider-hub');
+      if(!hub) return null;
+      return hub.querySelector('[data-provider-section="'+scope+'"]');
+    }
+    function renderProviderSection(scope){
+      const providers = providerHubProviders(scope);
+      const listId = providerHubListId(scope);
+      const addBtnId = providerHubAddBtnId(scope);
+      const saveBtnId = providerHubSaveBtnId(scope);
+      return '<div class="settings-card provider-section" data-provider-section="'+scope+'">'+
+        '<div class="settings-card-title">'+escapeHTML(providerHubTitle(scope))+'</div>'+
+        '<div class="settings-muted">'+escapeHTML(providerHubDesc(scope))+'</div>'+
+        '<div id="'+listId+'" class="preset-list">'+providers.map(function(provider, index){ return providerTemplate(provider, index); }).join('')+'</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
+          '<button class="settings-btn" id="'+addBtnId+'" type="button">＋ 添加提供方</button>'+
+          '<button class="settings-btn primary" id="'+saveBtnId+'" type="button">'+escapeHTML(providerHubSaveLabel(scope))+'</button>'+
+        '</div>'+
+      '</div>';
+    }
+    function collectProviderHubSection(scope){
+      const root = providerHubRoot(scope);
+      if(!root) return [];
+      const cards = Array.from(root.querySelectorAll('[data-provider-id]'));
+      const providers = cards.map(function(card, i){
+        function val(name){ const el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
+        var rawModels = splitModels(val('models'));
+        var seen = {}; var deduped = [];
+        for(var mi=0; mi<rawModels.length; mi++){
+          var m = rawModels[mi];
+          if(m && !seen[m]){ seen[m]=true; deduped.push(m); }
+        }
+        return normalizeProvider({
+          id: card.getAttribute('data-provider-id') || makeProviderId(val('providerName'), val('baseUrl'), i),
+          providerType: val('providerType'),
+          providerName: val('providerName'),
+          baseUrl: val('baseUrl'),
+          apiKey: val('apiKey'),
+          path: val('path'),
+          models: deduped
+        }, i);
+      }).filter(providerHasConfig);
+      setProviderHubProviders(scope, providers);
+      return providers;
+    }
+    function setProviderHubSaveState(scope, state){
+      const btn = document.getElementById(providerHubSaveBtnId(scope));
+      if(!btn) return;
+      if(window.__providerHubSaveTimers__ && window.__providerHubSaveTimers__[scope]){
+        clearTimeout(window.__providerHubSaveTimers__[scope]);
+        window.__providerHubSaveTimers__[scope] = null;
+      }
+      btn.dataset.saveState = state || 'idle';
+      if(state === 'saving'){
+        btn.textContent = scope === 'share' ? '保存中...' : '保存中...';
+        btn.disabled = true;
+      }else if(state === 'saved'){
+        btn.textContent = '已保存 ✓';
+        btn.disabled = false;
+        window.__providerHubSaveTimers__ = window.__providerHubSaveTimers__ || {};
+        window.__providerHubSaveTimers__[scope] = setTimeout(function(){
+          if(btn.dataset.saveState === 'saved') setProviderHubSaveState(scope, 'idle');
+        }, 1000);
+      }else if(state === 'error'){
+        btn.textContent = '保存失败';
+        btn.disabled = false;
+      }else{
+        btn.textContent = providerHubSaveLabel(scope);
+        btn.disabled = false;
+      }
+    }
+    async function saveProviderHubSection(scope){
+      setProviderHubSaveState(scope, 'saving');
+      try{
+        collectProviderHubSection(scope);
+        syncLegacySettings();
+        persistModelSettingsStrict();
+        if(scope === 'self') renderModelSwitcher();
+        setProviderHubSaveState(scope, 'saved');
+        if(scope === 'share') toast('分享配置已保存');
+        else if(hasUsableModelConfig()) toast('配置已保存');
+        else toast('已保存，请先添加模型');
+      }catch(err){
+        console.error('[provider hub] save failed:', err);
+        setProviderHubSaveState(scope, 'error');
+        toast('保存失败：' + (err && err.message ? err.message : '未知错误'));
+      }
+    }
+
     function renderProviderEditor(){
       ensureModelStyle();
       const box = $('#presetList');
@@ -3414,11 +3556,10 @@
     }
 
     function providerEditorScope(){
-      var hub = document.querySelector('#settingsModal .provider-hub');
-      if(settingsPage === 'providerHub' && hub) return hub;
+      if(settingsPage === 'providerHub') return null;
       var old = document.getElementById('providerModal');
       if(old && old.classList.contains('show')) return old;
-      return document;
+      return null;
     }
 
     function setSaveProviderButtonState(state){
@@ -3449,6 +3590,7 @@
 
     function collectProviderEditor(){
       const scope = providerEditorScope();
+      if(!scope) return;
       const cards = Array.from(scope.querySelectorAll('[data-provider-id]'));
       var providers = cards.map(function(card, i){
         function val(name){ const el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
@@ -3476,33 +3618,64 @@
       syncLegacySettings();
     }
 
-    function addProviderEditorCard(){
+    var __providerAddLock__ = false;
+    function addProviderEditorCard(scope){
+      if(__providerAddLock__) return;
+      scope = scope === 'share' ? 'share' : 'self';
+      __providerAddLock__ = true;
       try{
-        collectProviderEditor();
-        if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
-        var n = settings.modelProviders.length + 1;
-        settings.modelProviders.push(normalizeProvider({
-          id:'p_custom_' + Date.now(),
-          providerType:'openai',
-          providerName:'新提供方 ' + n,
-          baseUrl:'',
-          apiKey:'',
-          path:'/v1/chat/completions',
-          models:[]
-        }, n));
-        if(settingsPage === 'providerHub') renderSettingsPage();
-        else renderProviderEditor();
-        setSaveProviderButtonState('idle');
+        if(settingsPage === 'providerHub'){
+          collectProviderHubSection(scope);
+          var providers = providerHubProviders(scope).slice();
+          var n = providers.length + 1;
+          providers.push(normalizeProvider({
+            id: scope + '_p_custom_' + Date.now(),
+            providerType:'openai',
+            providerName:'新提供方 ' + n,
+            baseUrl:'',
+            apiKey:'',
+            path:'/v1/chat/completions',
+            models:[]
+          }, n));
+          setProviderHubProviders(scope, providers);
+          if(scope === 'share'){
+            settings.sharePackageProviderId = providers[providers.length - 1] ? providers[providers.length - 1].id : settings.sharePackageProviderId;
+          }
+          saveJSONStrict(KEYS.settings, settings);
+          renderSettingsPage();
+          setProviderHubSaveState(scope, 'idle');
+        }else{
+          collectProviderEditor();
+          if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
+          var n2 = settings.modelProviders.length + 1;
+          settings.modelProviders.push(normalizeProvider({
+            id:'p_custom_' + Date.now(),
+            providerType:'openai',
+            providerName:'新提供方 ' + n2,
+            baseUrl:'',
+            apiKey:'',
+            path:'/v1/chat/completions',
+            models:[]
+          }, n2));
+          if(settingsPage === 'providerHub') renderSettingsPage();
+          else renderProviderEditor();
+          setSaveProviderButtonState('idle');
+        }
       }catch(err){
         console.error('[provider] add failed:', err);
         toast('添加提供方失败：' + (err.message || '未知错误'));
+      }finally{
+        __providerAddLock__ = false;
       }
     }
 
     /* ── 通用获取模型列表 ── */
-    async function fetchModelsForProvider(providerId){
-      var scope = providerEditorScope();
-      var card = scope.querySelector('[data-provider-id="'+providerId+'"]');
+    async function fetchModelsForProvider(scope, providerId){
+      if(arguments.length === 1){ providerId = scope; scope = 'self'; }
+      scope = scope === 'share' ? 'share' : 'self';
+      var scopeRoot = settingsPage === 'providerHub' ? providerHubRoot(scope) : providerEditorScope();
+      if(!scopeRoot){ toast('页面状态异常，请刷新重试'); return; }
+      var card = scopeRoot.querySelector('[data-provider-id="'+providerId+'"]');
       if(!card) return;
       function val(name){ var el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
       var baseUrl = val('baseUrl');
@@ -3511,21 +3684,23 @@
       if(!baseUrl){ toast('请先填写 Base URL'); return; }
       if(!apiKey){ toast('请先填写 API Key'); return; }
 
+      var path = val('path') || '/v1/chat/completions';
       var statusEl = card.querySelector('[data-fetch-status="'+providerId+'"]');
       var resultsEl = card.querySelector('[data-fetch-results="'+providerId+'"]');
       var btn = card.querySelector('[data-fetch-models="'+providerId+'"]');
       if(statusEl) statusEl.textContent = '获取中...';
       if(btn){ btn.textContent = '获取中...'; btn.disabled = true; }
+      if(resultsEl) resultsEl.style.display = 'none';
 
       try{
-        var payload = { providerName: providerName, baseUrl: baseUrl, apiKey: apiKey };
+        var payload = { providerName: providerName, baseUrl: baseUrl, apiKey: apiKey, path: path };
+        payload.providerScope = scope;
         if(AUTH_USER && AUTH_USER.id) payload.providerId = providerId;
-        var res = await authFetch('/models/list', {
+        var data = await authFetch('/models/list', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify(payload)
         });
-        var data = await res.json();
         if(data.ok && data.models && data.models.length){
           var fetchedModels = data.models.map(function(m){ return String(m.id || m.name || '').trim(); }).filter(Boolean);
           var textarea = card.querySelector('[data-provider-field="models"]');
@@ -3534,9 +3709,14 @@
             if(currentModels.indexOf(modelId) < 0) currentModels.push(modelId);
           });
           if(textarea) textarea.value = currentModels.join('\n');
-          collectProviderEditor();
+          if(settingsPage === 'providerHub') collectProviderHubSection(scope);
+          else collectProviderEditor();
+          if(settingsPage === 'providerHub' && scope === 'share'){
+            var shareSelectEl = $('#sharePackageProviderSelect');
+            if(shareSelectEl && shareSelectEl.value === providerId) syncPackageEditorModels(providerId);
+          }
           if(statusEl) statusEl.textContent = '已获取并加入 ' + fetchedModels.length + ' 个模型';
-          if(btn){ btn.textContent = '已获取'; btn.disabled = false; }
+          setTimeout(function(){ if(btn){ btn.textContent = '获取模型'; btn.disabled = false; } }, 1500);
           var listHtml = data.models.map(function(m){
             var modelId = String(m.id || m.name || '').trim();
             var added = currentModels.indexOf(modelId) >= 0;
@@ -3545,20 +3725,30 @@
           var listEl = card.querySelector('[data-model-list="'+providerId+'"]');
           if(listEl) listEl.innerHTML = listHtml;
           if(resultsEl) resultsEl.style.display = 'block';
+        }else if(data.models && !data.models.length){
+          if(statusEl) statusEl.textContent = '该 Base URL 返回了空的模型列表';
+          if(btn){ btn.textContent = '获取模型'; btn.disabled = false; }
         }else{
-          if(statusEl) statusEl.textContent = data.error || '获取失败，点此重试';
+          var errMsg = data.error || data.message || '获取失败';
+          if(statusEl) statusEl.textContent = errMsg;
           if(btn){ btn.textContent = '获取失败，点此重试'; btn.disabled = false; }
         }
       }catch(err){
         console.error('[models] fetch failed:', err);
-        if(statusEl) statusEl.textContent = '网络错误，点此重试';
+        var detail = (err && err.message) ? err.message : '网络错误';
+        if(detail.indexOf('Failed to fetch') >= 0 || detail.indexOf('NetworkError') >= 0){
+          detail = '网络连接失败，请检查 Base URL 是否正确：' + baseUrl;
+        }
+        if(statusEl) statusEl.textContent = detail;
         if(btn){ btn.textContent = '获取失败，点此重试'; btn.disabled = false; }
       }
     }
 
-    function toggleModelInProvider(providerId, modelName){
-      var scope = providerEditorScope();
-      var card = scope.querySelector('[data-provider-id="'+providerId+'"]');
+    function toggleModelInProvider(scope, providerId, modelName){
+      if(arguments.length === 2){ modelName = providerId; providerId = scope; scope = 'self'; }
+      scope = scope === 'share' ? 'share' : 'self';
+      var scopeRoot = settingsPage === 'providerHub' ? providerHubRoot(scope) : providerEditorScope();
+      var card = scopeRoot ? scopeRoot.querySelector('[data-provider-id="'+providerId+'"]') : null;
       if(!card) return;
       var textarea = card.querySelector('[data-provider-field="models"]');
       if(!textarea) return;
@@ -3577,7 +3767,17 @@
         else{ btn.textContent = '−'; btn.classList.remove('add'); btn.classList.add('remove'); }
       }
       /* Save immediately */
-      collectProviderEditor(); persist(); renderModelSwitcher();
+      if(settingsPage === 'providerHub'){
+        collectProviderHubSection(scope);
+        saveJSONStrict(KEYS.settings, settings);
+        if(scope === 'share'){
+          var shareSelectEl2 = $('#sharePackageProviderSelect');
+          if(shareSelectEl2 && shareSelectEl2.value === providerId) syncPackageEditorModels(providerId);
+        }
+        if(scope === 'self') renderModelSwitcher();
+      }else{
+        collectProviderEditor(); persist(); renderModelSwitcher();
+      }
     }
 
     /* ── 模型提供方草稿管理 ── */
@@ -3586,6 +3786,8 @@
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
     function openSettingsModalPage(page){
       closeModelPopover();
+      var legacyProviderModal = $('#providerModal');
+      if(legacyProviderModal) legacyProviderModal.classList.remove('show');
       sidebarOpen = false;
       renderSidebar();
       settingsPage = page || 'home';
@@ -3600,6 +3802,7 @@
     function openAccessPage(){ openSettingsModalPage('access'); }
     function openProviderHub(){ openSettingsModalPage('providerHub'); }
     async function saveSettings(){
+      if(settingsPage === 'providerHub') return;
       setSaveProviderButtonState('saving');
       try{
         await new Promise(function(resolve){ setTimeout(resolve, 250); });
@@ -3639,7 +3842,27 @@
       };
     }
     window.__saveSettings__ = saveSettings;
-    function deleteProvider(providerId){
+    function deleteProvider(providerId, scope){
+      scope = scope === 'share' ? 'share' : 'self';
+      if(settingsPage === 'providerHub'){
+        var list = providerHubProviders(scope).slice();
+        var prov = list.find(function(p){ return p.id === providerId; });
+        if(!prov) return;
+        var name = prov.providerName || '模型提供方';
+        if(!confirm('确认删除 '+name+'？\n\n删除后该供应商下的所有模型都会从模型列表中移除。')) return;
+        list = list.filter(function(p){ return p.id !== providerId; });
+        setProviderHubProviders(scope, list);
+        if(scope === 'share' && settings.sharePackageProviderId === providerId){
+          settings.sharePackageProviderId = list[0] ? list[0].id : '';
+        }
+        saveJSONStrict(KEYS.settings, settings);
+        if(scope === 'self') renderModelSwitcher();
+        var bodyEl = $('#settingsBody');
+        if(bodyEl) renderSettingsPage();
+        else console.error('[deleteProvider] settingsBody not found, skip re-render');
+        toast('已删除 '+name);
+        return;
+      }
       var prov = settings.modelProviders.find(function(p){return p.id===providerId;});
       if(!prov) return;
       var name = prov.providerName || '模型提供方';
@@ -3883,35 +4106,44 @@
     function renderProviderHubPage(){
       settings = ensureSettingsShape(settings);
       if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
-      var ownList = '<div id="presetList">'+settings.modelProviders.map(providerTemplate).join('')+'</div>';
+      if(!Array.isArray(settings.shareModelProviders)) settings.shareModelProviders = [];
+      var ownSection = renderProviderSection('self');
+      var shareSection = renderProviderSection('share');
       var packageList = accessPackagesToPresets(loadAccessPackages()).map(function(p){
         var pkg = p.accessPackage || {};
         return '<div class="settings-card"><div class="settings-card-title">'+escapeHTML(p.packageName || p.providerName || '模型包')+'</div><div class="settings-muted">接入码：'+escapeHTML(p.accessCode || '')+'</div><div class="settings-muted">模型：'+escapeHTML((p.models||[]).join('、'))+'</div><div class="settings-muted">状态：'+escapeHTML(p.accessStatus || 'active')+'</div></div>';
       }).join('');
       return '<div class="settings-page provider-hub">'+
-        '<div class="settings-card"><div class="settings-card-title">自己使用</div><div class="settings-muted">配置自己的模型，保存后仅当前用户可见</div>'+ownList+'<div style="display:flex;gap:8px;margin-top:12px"><button class="settings-btn" id="addProvider">＋ 添加提供方</button><button class="settings-btn primary" id="saveProvider">保存</button></div></div>'+
-        '<div class="settings-card"><div class="settings-card-title">分享给别人</div><div class="settings-muted">选择自己的模型包，生成接入码分享给别人</div><div id="packageEditor">'+renderPackageEditor()+'</div></div>'+
+        ownSection+
+        shareSection+
+        '<div class="settings-card"><div class="settings-card-title">生成接入码</div><div class="settings-muted">选择分享用的模型，生成接入码发给别人</div><div id="packageEditor">'+renderPackageEditor()+'</div></div>'+
         (packageList ? '<div class="settings-card"><div class="settings-card-title">已生成的接入码</div><div class="package-grid">'+packageList+'</div></div>' : '')+
       '</div>';
     }
 
     function renderPackageEditor(){
-      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
-      var opts = providers.map(function(p){ return '<option value="'+escapeHTML(p.id)+'">'+escapeHTML(p.providerName || '模型提供方')+'</option>'; }).join('');
-      var firstProvider = providers[0] || null;
-      var models = firstProvider ? firstProvider.models : [];
+      var providers = Array.isArray(settings.shareModelProviders) ? settings.shareModelProviders : [];
+      var selectedId = settings.sharePackageProviderId || '';
+      var opts = providers.map(function(p){
+        return '<option value="'+escapeHTML(p.id)+'"'+(p.id === selectedId ? ' selected' : '')+'>'+escapeHTML(p.providerName || '模型提供方')+'</option>';
+      }).join('');
+      var selectedProvider = providers[0] || null;
+      selectedId = selectedId || ($('#sharePackageProviderSelect') ? $('#sharePackageProviderSelect').value : '') || (selectedProvider ? selectedProvider.id : '');
+      if(selectedId) selectedProvider = providers.find(function(p){ return p.id === selectedId; }) || selectedProvider;
+      var models = selectedProvider ? selectedProvider.models : [];
+      var emptyHint = providers.length ? '' : '<div class="settings-muted" style="margin-top:10px">先在“分享给别人”里添加一个提供方</div>';
       return '<div class="package-editor">'+
-        '<div class="row"><div class="field"><label>选择模型提供方</label><select id="packageProviderSelect" class="settings-select">'+opts+'</select></div><div class="field"><label>模型包名称</label><input id="packageNameInput" class="settings-input" placeholder="例如：团队共享包"></div></div>'+
-        '<div class="row"><div class="field"><label>有效期（天）</label><input id="packageExpiryInput" class="settings-input" type="number" min="1" step="1" value="30"></div><div class="field"><label>额度（0 为不限）</label><input id="packageQuotaInput" class="settings-input" type="number" min="0" step="1" value="0"></div></div>'+
-        '<div class="field"><label>可分享模型</label><textarea id="packageModelsInput" class="settings-textarea" placeholder="一行一个模型名">'+escapeHTML(models.join('\n'))+'</textarea></div>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="settings-btn primary" id="createPackageBtn">生成接入码</button><button class="settings-btn" id="refreshPackageBtn" type="button">刷新列表</button></div>'+
-        '<div id="packageCreateStatus" class="settings-muted" style="margin-top:8px"></div>'+
+        '<div class="row"><div class="field"><label>选择模型提供方</label><select id="sharePackageProviderSelect" class="settings-select">'+opts+'</select></div><div class="field"><label>模型包名称</label><input id="sharePackageNameInput" class="settings-input" placeholder="例如：团队共享包"></div></div>'+
+        '<div class="row"><div class="field"><label>有效期（天）</label><input id="sharePackageExpiryInput" class="settings-input" type="number" min="1" step="1" value="30"></div><div class="field"><label>额度（0 为不限）</label><input id="sharePackageQuotaInput" class="settings-input" type="number" min="0" step="1" value="0"></div></div>'+
+        '<div class="field"><label>可分享模型</label><textarea id="sharePackageModelsInput" class="settings-textarea" placeholder="一行一个模型名">'+escapeHTML(models.join('\n'))+'</textarea>'+emptyHint+'</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="settings-btn primary" id="shareCreatePackageBtn">生成接入码</button><button class="settings-btn" id="shareRefreshPackageBtn" type="button">刷新列表</button></div>'+
+        '<div id="sharePackageStatus" class="settings-muted" style="margin-top:8px"></div>'+
       '</div>';
     }
     function syncPackageEditorModels(providerId){
-      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
+      var providers = Array.isArray(settings.shareModelProviders) ? settings.shareModelProviders : [];
       var provider = providers.find(function(p){ return p.id === providerId; }) || providers[0] || null;
-      var ta = $('#packageModelsInput');
+      var ta = $('#sharePackageModelsInput');
       if(ta && provider) ta.value = (provider.models || []).join('\n');
     }
 
@@ -4082,8 +4314,10 @@
       }
     });
     document.addEventListener('change', function(e){
-      var pkgSel = e.target.closest('#packageProviderSelect');
+      var pkgSel = e.target.closest('#sharePackageProviderSelect');
       if(pkgSel){
+        settings.sharePackageProviderId = pkgSel.value;
+        saveJSONStrict(KEYS.settings, settings);
         syncPackageEditorModels(pkgSel.value);
       }
     });
@@ -4404,11 +4638,24 @@
       if(!e.target.closest('#modelPopover') && !e.target.closest('#modelTopTrigger')) closeModelPopover();
       const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); deleteChat(del.getAttribute('data-del')); return; }
       const item=e.target.closest('.chat-item'); if(item){ activeId=item.getAttribute('data-id'); safeClearAttachments(); if(window.innerWidth<760) sidebarOpen=false; renderAll(); }
+      const selfSaveProviderBtn = e.target.closest('#selfSaveProvider');
+      if(selfSaveProviderBtn){
+        saveProviderHubSection('self');
+        return;
+      }
+      const shareSaveProviderBtn = e.target.closest('#shareSaveProvider');
+      if(shareSaveProviderBtn){
+        saveProviderHubSection('share');
+        return;
+      }
       const providerDel=e.target.closest('[data-provider-delete]');
       if(providerDel){
         e.stopPropagation();
         var id=providerDel.getAttribute('data-provider-delete');
-        deleteProvider(id);
+        var section = providerDel.closest('[data-provider-section]');
+        var scope = section ? section.getAttribute('data-provider-section') : 'self';
+        deleteProvider(id, scope);
+        return;
       }
       /* API Key 眼睛切换 */
       var eyeBtn = e.target.closest('.api-key-eye');
@@ -4425,7 +4672,10 @@
       var manAdd = e.target.closest('[data-manual-toggle]');
       if(manAdd){
         var pid2 = manAdd.getAttribute('data-manual-toggle');
-        var card2 = providerEditorScope().querySelector('[data-provider-id="'+pid2+'"]');
+        var section2 = manAdd.closest('[data-provider-section]');
+        var scope2 = section2 ? section2.getAttribute('data-provider-section') : 'self';
+        var root2 = settingsPage === 'providerHub' ? providerHubRoot(scope2) : providerEditorScope();
+        var card2 = root2 ? root2.querySelector('[data-provider-id="'+pid2+'"]') : null;
         if(card2){
           var modelName = prompt('输入模型名称（如 deepseek-v4-pro）：');
           if(modelName && modelName.trim()){
@@ -4433,7 +4683,12 @@
             if(ta){
               var currentModels = ta.value.trim();
               ta.value = currentModels ? currentModels + '\n' + modelName.trim() : modelName.trim();
-              collectProviderEditor();
+              if(settingsPage === 'providerHub') collectProviderHubSection(scope2);
+              else collectProviderEditor();
+              if(settingsPage === 'providerHub' && scope2 === 'share'){
+                var shareSelectEl3 = $('#sharePackageProviderSelect');
+                if(shareSelectEl3 && shareSelectEl3.value === pid2) syncPackageEditorModels(pid2);
+              }
               renderModelSwitcher();
               toast('已添加 ' + modelName.trim());
             }
@@ -4441,10 +4696,11 @@
         }
         return;
       }
-      var addProviderBtn = e.target.closest('#addPreset,#addProvider');
+      var addProviderBtn = e.target.closest('#addPreset,#addProvider,#selfAddProvider,#shareAddProvider');
       if(addProviderBtn){
         e.preventDefault();
-        addProviderEditorCard();
+        var addScope = addProviderBtn.getAttribute('data-provider-scope') || (addProviderBtn.id === 'shareAddProvider' ? 'share' : 'self');
+        addProviderEditorCard(addScope);
         return;
       }
       var claimBtn = e.target.closest('#claimAccessBtn');
@@ -4477,16 +4733,21 @@
         })();
         return;
       }
-      var createPkgBtn = e.target.closest('#createPackageBtn');
+      var createPkgBtn = e.target.closest('#shareCreatePackageBtn');
       if(createPkgBtn){
-        var providerSel = $('#packageProviderSelect');
-        var nameInput = $('#packageNameInput');
-        var expiryInput = $('#packageExpiryInput');
-        var quotaInput = $('#packageQuotaInput');
-        var modelsInput = $('#packageModelsInput');
-        var statusEl = $('#packageCreateStatus');
+        var providerSel = $('#sharePackageProviderSelect');
+        var nameInput = $('#sharePackageNameInput');
+        var expiryInput = $('#sharePackageExpiryInput');
+        var quotaInput = $('#sharePackageQuotaInput');
+        var modelsInput = $('#sharePackageModelsInput');
+        var statusEl = $('#sharePackageStatus');
         if(!providerSel || !nameInput || !modelsInput){ return; }
+        if(!providerSel.value){
+          if(statusEl) statusEl.textContent = '请先添加一个分享用提供方';
+          return;
+        }
         var pkgBody = {
+          providerScope: 'share',
           providerId: providerSel.value,
           packageName: nameInput.value.trim(),
           models: splitModels(modelsInput.value),
@@ -4497,11 +4758,11 @@
         createPkgBtn.disabled = true;
         createPkgBtn.textContent = '生成中...';
         if(statusEl) statusEl.textContent = '生成中...';
+        settings.sharePackageProviderId = providerSel.value;
+        saveJSONStrict(KEYS.settings, settings);
         (async function(){
           try{
-            var res = await authFetch('/api/access/packages', {method:'POST', body:JSON.stringify(pkgBody)});
-            if(!res.ok) throw new Error('生成失败');
-            var data = await res.json();
+            var data = await authFetch('/api/access/packages', {method:'POST', body:JSON.stringify(pkgBody)});
             if(!data.ok) throw new Error(data.message || '生成失败');
             await refreshAccessPackages();
             if(statusEl) statusEl.textContent = '接入码：' + data.package.code;
@@ -4518,13 +4779,22 @@
         })();
         return;
       }
-      var refreshPkgBtn = e.target.closest('#refreshPackageBtn');
+      var refreshPkgBtn = e.target.closest('#shareRefreshPackageBtn');
       if(refreshPkgBtn){ refreshAccessPackages(); return; }
+      var shareProviderSel = e.target.closest('#sharePackageProviderSelect');
+      if(shareProviderSel){
+        settings.sharePackageProviderId = shareProviderSel.value;
+        saveJSONStrict(KEYS.settings, settings);
+        syncPackageEditorModels(shareProviderSel.value);
+        return;
+      }
       /* Fetch models button */
       var fetchBtn = e.target.closest('[data-fetch-models]');
       if(fetchBtn){
         var pid = fetchBtn.getAttribute('data-fetch-models');
-        if(pid) fetchModelsForProvider(pid);
+        var fetchSection = fetchBtn.closest('[data-provider-section]');
+        var fetchScope = fetchSection ? fetchSection.getAttribute('data-provider-section') : 'self';
+        if(pid) fetchModelsForProvider(fetchScope, pid);
         return;
       }
       /* Model add/remove button */
@@ -4532,7 +4802,9 @@
       if(modelAddBtn){
         var mid = modelAddBtn.getAttribute('data-provider-id');
         var mname = modelAddBtn.getAttribute('data-model-name');
-        if(mid && mname) toggleModelInProvider(mid, mname);
+        var modelSection = modelAddBtn.closest('[data-provider-section]');
+        var modelScope = modelSection ? modelSection.getAttribute('data-provider-section') : 'self';
+        if(mid && mname) toggleModelInProvider(modelScope, mid, mname);
         return;
       }
     });
@@ -4549,6 +4821,13 @@
             row.style.display = !keyword || name.toLowerCase().indexOf(keyword) >= 0 ? '' : 'none';
           });
         }
+        return;
+      }
+    });
+    document.addEventListener('change', function(e){
+      var shareSelect = e.target.closest('#sharePackageProviderSelect');
+      if(shareSelect){
+        syncPackageEditorModels(shareSelect.value);
         return;
       }
     });
