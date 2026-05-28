@@ -4513,6 +4513,7 @@
         settingsEntry('模型与参数','模型、Temperature、Top P','model','◇')+
         settingsEntry('记忆设置','跨聊天记忆与自动提取','memory','□')+
         settingsEntry('个性化聊天偏好','系统提示词与回复风格','personalization','▽')+
+        settingsEntry('聊天偏好','字体大小 / 流式输出 / 自动滚动 / Token 显示','chatPrefs','✎')+
         settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','♪')+
         '<div class="settings-account"><div><div class="settings-account-label">'+escapeHTML(authLabel)+'</div><div class="settings-account-email">'+escapeHTML(authEmail)+'</div></div>'+authActions+'</div>'+
       '</div>';
@@ -4579,11 +4580,13 @@
     }
     function renderChatPrefsPage(){
       var fs = loadFontSize();
-      var fsLabel = fs <= 15 ? '小' : fs <= 17 ? '中' : fs >= 21 ? '大' : '中';
+      var ap = activePreset();
+      var mp = (ap && ap.id) ? getModelParams(ap.id) : {};
+      var streamOn = typeof mp.stream === 'boolean' ? mp.stream : true;
       return '<div class="settings-page">'+
         '<div class="settings-card"><div class="settings-card-title">字体大小 <span class="settings-slider-val" id="fontSizeVal">'+fs+'px</span></div>'+
         '<input type="range" id="fontSizeSlider" class="param-slider settings-range" min="15" max="21" step="1" value="'+fs+'"><div class="settings-slider-labels"><span>15px</span><span>21px</span></div></div>'+
-        settingsToggle('流式输出', '逐步显示模型回复', true, 'stream')+
+        settingsToggle('流式输出', '逐步显示模型回复', streamOn, 'stream')+
         settingsToggle('自动滚动跟随', '回复生成时自动跟随到底部', loadAutoScroll(), 'autoScroll')+
         settingsToggle('显示 Token 消耗', '在消息下方显示输入和输出消耗', loadTokenDisplay(), 'tokenDisplay')+
         settingsToggle('记忆注入', '发送请求时注入相关记忆', loadMemoryGlobal(), 'memoryGlobal')+
@@ -4761,8 +4764,12 @@
 
     function saveCurrentModelParams(){
       const select = $('#adv-model-select');
-      if(!select) return;
-      const presetId = select.value;
+      var presetId = select ? select.value : null;
+      if(!presetId){
+        var ap = activePreset();
+        if(ap && ap.id) presetId = ap.id;
+      }
+      if(!presetId) return;
       const params = getModelParams(presetId);
       document.querySelectorAll('#settingsBody [data-param], #adv-params-panel [data-param]').forEach(function(el){
         const name = el.getAttribute('data-param');
