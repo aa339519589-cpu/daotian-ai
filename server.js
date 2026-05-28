@@ -5,6 +5,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
+import { spawn } from "node:child_process";
 import { parseUploadedFile, buildFileContext } from "./fileParser.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
@@ -68,6 +69,32 @@ async function readJsonBody(req){
 function normalizeEmail(email){
   return String(email || "").trim().toLowerCase();
 }
+
+/* ── Python edge-tts fallback ── */
+function runCommand(cmd, args){
+  return new Promise((resolve, reject)=>{
+    const proc = spawn(cmd, args, { timeout: 30000 });
+    let stderr = "";
+    proc.stderr.on("data", c=>{ stderr += String(c); });
+    proc.on("close", code=>{
+      if(code === 0) resolve();
+      else reject(new Error(`exit ${code}: ${stderr.slice(0,200)}`));
+    });
+    proc.on("error", reject);
+  });
+}
+async function synthesizeEdgeWithPython(text, voice, rate, tmpFile){
+  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+  const args = ["-m", "edge_tts", "--text", text, "--voice", voice, "--write-media", tmpFile];
+  if(rate && rate !== "+0%") args.push("--rate", rate);
+  await runCommand(pythonCmd, args);
+  const { readFile, unlink } = await import("node:fs/promises");
+  const buf = await readFile(tmpFile);
+  unlink(tmpFile).catch(()=>{});
+  if(buf.length < 100) throw new Error("python tts too small: "+buf.length);
+  return buf;
+}
+
 function publicUser(user){
   return { id:user.id, email:user.email, createdAt:user.createdAt };
 }
@@ -1143,7 +1170,7 @@ async function handleTts(req, res){
   const voice = String(body.voice || EDGE_TTS_VOICE).trim();
   const rate = String(body.rate || "+0%").trim();
 
-  /* Provider: Edge TTS — node-edge-tts (pure JS, no Python) */
+  /* Provider: Edge TTS — node-edge-tts (pure JS), fallback to python edge_tts */
   if(provider === "edge"){
     try{
       const pkg = await import("node-edge-tts");
@@ -1158,8 +1185,17 @@ async function handleTts(req, res){
       res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(buf.length) });
       return res.end(buf);
     }catch(e){
-      console.error("[TTS:edge]", e.message);
-      return sendJson(res, 502, { ok:false, error:"语音暂时不可用" });
+      console.error("[TTS:edge] node-edge-tts failed, trying python fallback:", e.message);
+      try{
+        const tmpFile = `/tmp/daotian_tts_${Date.now()}.mp3`;
+        const buf = await synthesizeEdgeWithPython(text, voice, rate, tmpFile);
+        console.log(`[TTS:edge:python] ${voice} rate=${rate} ${text.length}c → ${buf.length}b`);
+        res.writeHead(200, { ...corsHeaders(), "Content-Type":"audio/mpeg", "Content-Length":String(buf.length) });
+        return res.end(buf);
+      }catch(e2){
+        console.error("[TTS:edge] python fallback also failed:", e2.message);
+        return sendJson(res, 502, { ok:false, error:"语音暂时不可用" });
+      }
     }
   }
 
