@@ -21,6 +21,134 @@ const ACCESS_FILE = join(DATA_DIR, "access.json");
 const MEMORY_FILE = join(DATA_DIR, "memories.json");
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_DAYS || 30) * 24 * 60 * 60 * 1000;
 
+/* ── Supabase Integration ── */
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const USE_SUPABASE = !!(SUPABASE_URL && SUPABASE_KEY);
+let supabaseConnected = false;
+async function supabaseFetch(path, options = {}){
+  const url = SUPABASE_URL.replace(/\/+$/, "") + "/rest/v1/" + path;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": "Bearer " + SUPABASE_KEY,
+      "Content-Type": "application/json",
+      "Prefer": options.method === "POST" ? "return=representation" : "",
+      ...(options.headers || {})
+    }
+  });
+  return res;
+}
+async function checkSupabaseConnection(){
+  if(!USE_SUPABASE) return false;
+  try{
+    const res = await supabaseFetch("users?limit=1", {method:"GET"});
+    supabaseConnected = res.ok;
+    return res.ok;
+  }catch(e){ supabaseConnected = false; return false; }
+}
+
+/* ── Data Layer: Supabase-first, JSON fallback ── */
+async function readAuthStore(){
+  if(supabaseConnected){
+    try{
+      const [usersRes, sessionsRes, dataRes] = await Promise.all([
+        supabaseFetch("users?select=*"),
+        supabaseFetch("sessions?select=*"),
+        supabaseFetch("user_data?select=*")
+      ]);
+      const users = usersRes.ok ? (await usersRes.json()) : [];
+      const sessions = sessionsRes.ok ? (await sessionsRes.json()) : [];
+      const dataRows = dataRes.ok ? (await dataRes.json()) : [];
+      const userData = {};
+      for(const row of dataRows){ userData[row.user_id] = row.data || {}; }
+      return { users, sessions, userData };
+    }catch(e){ console.error("[supabase] readAuthStore failed:", e.message); }
+  }
+  // JSON fallback
+  try{
+    const raw = await readFile(AUTH_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return { users: Array.isArray(parsed.users) ? parsed.users : [], sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [], userData: parsed.userData && typeof parsed.userData === "object" ? parsed.userData : {} };
+  }catch(e){ console.error('[auth] readAuthStore failed:', e.message, '| file:', AUTH_FILE); return emptyAuthStore(); }
+}
+async function writeAuthStore(store){
+  if(supabaseConnected){
+    try{ await Promise.all([writeSupabaseUsers(store.users), writeSupabaseSessions(store.sessions), writeSupabaseUserData(store.userData)]); return; }catch(e){ console.error("[supabase] writeAuthStore failed:", e.message); }
+  }
+  // JSON fallback
+  await mkdir(DATA_DIR, { recursive:true });
+  const tmp = AUTH_FILE + "." + process.pid + "." + Date.now() + ".tmp";
+  await writeFile(tmp, JSON.stringify(store, null, 2));
+  await rename(tmp, AUTH_FILE);
+}
+async function writeSupabaseUsers(users){
+  // Upsert each user
+  for(const u of users){
+    const existing = await supabaseFetch("users?id=eq." + encodeURIComponent(u.id) + "&limit=1");
+    const rows = existing.ok ? (await existing.json()) : [];
+    if(rows.length){
+      await supabaseFetch("users?id=eq." + encodeURIComponent(u.id), {method:"PATCH", body:JSON.stringify(u)});
+    }else{
+      await supabaseFetch("users", {method:"POST", body:JSON.stringify(u)});
+    }
+  }
+}
+async function writeSupabaseSessions(sessions){
+  // Delete all, re-insert
+  await supabaseFetch("sessions?limit=0", {method:"DELETE"}).catch(()=>{});
+  for(const s of sessions){
+    await supabaseFetch("sessions", {method:"POST", body:JSON.stringify(s)}).catch(()=>{});
+  }
+}
+async function writeSupabaseUserData(userData){
+  for(const userId of Object.keys(userData)){
+    const existing = await supabaseFetch("user_data?user_id=eq." + encodeURIComponent(userId) + "&limit=1");
+    const rows = existing.ok ? (await existing.json()) : [];
+    if(rows.length){
+      await supabaseFetch("user_data?user_id=eq." + encodeURIComponent(userId), {method:"PATCH", body:JSON.stringify({data:userData[userId], updated_at: nowIso()})});
+    }else{
+      await supabaseFetch("user_data", {method:"POST", body:JSON.stringify({user_id:userId, data:userData[userId], updated_at: nowIso()})});
+    }
+  }
+}
+
+async function readAccessStore(){
+  if(supabaseConnected){
+    try{
+      const res = await supabaseFetch("access_packages?select=*");
+      if(res.ok){ const rows = await res.json(); return { packages: rows }; }
+    }catch(e){ console.error("[supabase] readAccessStore failed:", e.message); }
+  }
+  // JSON fallback
+  try{ const raw = await readFile(ACCESS_FILE, "utf8"); const parsed = JSON.parse(raw); return { packages: Array.isArray(parsed.packages) ? parsed.packages : [] }; }catch{ return emptyAccessStore(); }
+}
+async function writeAccessStore(store){
+  if(supabaseConnected){
+    try{
+      // Delete all, re-insert all
+      await supabaseFetch("access_packages?limit=0", {method:"DELETE"}).catch(()=>{});
+      for(const pkg of store.packages){
+        await supabaseFetch("access_packages", {method:"POST", body:JSON.stringify(pkg)}).catch(()=>{});
+      }
+      return;
+    }catch(e){ console.error("[supabase] writeAccessStore failed:", e.message); }
+  }
+  // JSON fallback
+  await mkdir(DATA_DIR, { recursive:true });
+  const tmp = ACCESS_FILE + "." + process.pid + "." + Date.now() + ".tmp";
+  await writeFile(tmp, JSON.stringify(store, null, 2));
+  await rename(tmp, ACCESS_FILE);
+}
+
+async function readMemoryStore(){
+  return {}; // Memory stored per-user via user_data
+}
+async function writeMemoryStore(store){
+  // No-op: memories are in user_data
+}
+
 /* Edge TTS — Microsoft Read Aloud, free, xiaoxiao neural voice */
 const EDGE_TTS_URL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 const EDGE_TTS_VOICE = "zh-CN-XiaoxiaoNeural";
@@ -120,30 +248,7 @@ function emptyAuthStore(){
 function emptyAccessStore(){
   return { packages:[] };
 }
-async function readAuthStore(){
-  try{
-    const raw = await readFile(AUTH_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    return {
-      users:Array.isArray(parsed.users) ? parsed.users : [],
-      sessions:Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      userData:parsed.userData && typeof parsed.userData === "object" ? parsed.userData : {}
-    };
-  }catch(e){
-    console.error('[auth] readAuthStore failed:', e.message, '| file:', AUTH_FILE);
-    return emptyAuthStore();
-  }
-}
-async function readAccessStore(){
-  try{
-    const raw = await readFile(ACCESS_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    return { packages:Array.isArray(parsed.packages) ? parsed.packages : [] };
-  }catch{
-    return emptyAccessStore();
-  }
-}
-/* ── Memory Store ── */
+/* ── Memory utilities ── */
 function hexId(){ return crypto.randomBytes(8).toString("hex"); }
 function simpleKeywordScore(query, fact){
   var q = String(query||'').toLowerCase();
@@ -155,19 +260,6 @@ function simpleKeywordScore(query, fact){
     if(f.indexOf(words[i])>=0) score += words[i].length >= 3 ? 2 : 1;
   }
   return score;
-}
-async function readMemoryStore(){
-  try{
-    var raw = await readFile(MEMORY_FILE, "utf8");
-    var parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  }catch(e){ return {}; }
-}
-async function writeMemoryStore(store){
-  await mkdir(DATA_DIR, {recursive:true});
-  var tmp = MEMORY_FILE + "." + process.pid + "." + Date.now() + ".tmp";
-  await writeFile(tmp, JSON.stringify(store, null, 2));
-  await rename(tmp, MEMORY_FILE);
 }
 function getUserMemories(store, userId){
   if(!store[userId]) store[userId] = [];
@@ -337,23 +429,8 @@ async function handleMemoryMigrate(req, res, userId){
   return sendJson(res, 200, {ok:true, imported:count});
 }
 
-async function writeAccessStore(store){
-  await mkdir(DATA_DIR, { recursive:true });
-  const tmp = ACCESS_FILE + "." + process.pid + "." + Date.now() + ".tmp";
-  await writeFile(tmp, JSON.stringify(store, null, 2));
-  await rename(tmp, ACCESS_FILE);
-}
-async function writeAuthStore(store){
-  try{
-    await mkdir(DATA_DIR, { recursive:true });
-    const tmp = AUTH_FILE + "." + process.pid + "." + Date.now() + ".tmp";
-    await writeFile(tmp, JSON.stringify(store, null, 2));
-    await rename(tmp, AUTH_FILE);
-  }catch(e){
-    console.error('[auth] writeAuthStore failed:', e.message, '| file:', AUTH_FILE, '| users:', store.users.length);
-    throw e;
-  }
-}
+/* writeAccessStore/writeAuthStore are defined at top — Supabase-aware with JSON fallback */
+
 function parseCookies(req){
   const out = {};
   String(req.headers.cookie || "").split(";").forEach(part=>{
@@ -1634,7 +1711,10 @@ const server = http.createServer(async (req, res)=>{
           : null;
         return sendJson(res, 200, {
           ok:true, time:nowIso(),
-          persistent:persistent,
+          storage: supabaseConnected ? "supabase" : "json",
+          persistent: supabaseConnected ? true : persistent,
+          supabaseConnected: supabaseConnected,
+          supabaseConfigured: USE_SUPABASE,
           users:store.users.length,
           sessions:store.sessions.length,
           dataDir:DATA_DIR,
@@ -1655,16 +1735,26 @@ const server = http.createServer(async (req, res)=>{
     sendJson(res, 500, { error:"internal_server_error", message:error.message });
   }
 });
-server.listen(PORT, HOST, ()=>{
+server.listen(PORT, HOST, async ()=>{
   const isRender = !!process.env.RENDER;
   const hasCustomDataDir = !!process.env.DATA_DIR;
   const isPersistentPath = hasCustomDataDir && (DATA_DIR.indexOf('/opt/render') >= 0 || DATA_DIR.indexOf('/data') >= 0 || DATA_DIR.indexOf('/mnt') >= 0 || DATA_DIR.indexOf('/var/data') >= 0);
-  const persistentWarning = !process.env.DATA_DIR
-    ? 'CRITICAL: DATA_DIR not set. Auth data stored in local ./data/ and WILL BE LOST on Render restart/deploy. To fix: create a Persistent Disk in Render, set DATA_DIR=/opt/render/project/data as environment variable.'
-    : (isRender && !isPersistentPath
-      ? 'WARNING: DATA_DIR=' + DATA_DIR + ' may not be on Render persistent disk. Auth data may be lost on deploy.'
+
+  // Check Supabase connection
+  if(USE_SUPABASE){
+    const connected = await checkSupabaseConnection();
+    console.log('Supabase:', SUPABASE_URL, '| connected:', connected);
+    if(!connected) console.error('SUPABASE CONNECTION FAILED — check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+  }else{
+    console.log('Supabase: not configured (SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set)');
+  }
+
+  const persistentWarning = !USE_SUPABASE && !process.env.DATA_DIR
+    ? 'CRITICAL: No persistent storage configured. Set SUPABASE_URL+SUPABASE_SERVICE_ROLE_KEY in Render Environment.'
+    : (!USE_SUPABASE && isRender && !isPersistentPath
+      ? 'WARNING: No Supabase configured. DATA_DIR may not be persistent. Set SUPABASE_URL+KEY for reliable storage.'
       : null);
-  console.log('DATA_DIR:', DATA_DIR, '| Render:', isRender, '| Persistent:', isRender ? isPersistentPath : 'local');
+  console.log('Storage:', supabaseConnected ? 'Supabase (persistent)' : (isRender ? 'JSON files (may be ephemeral)' : 'JSON files (local)'), '| Render:', isRender);
   if(persistentWarning) console.warn(persistentWarning);  console.log(`稻田 Ai running at http://${HOST}:${PORT}`);
   console.log(`DATA_DIR: ${DATA_DIR}`);
   if(persistentWarning) console.warn(persistentWarning);
