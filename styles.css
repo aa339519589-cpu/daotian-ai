@@ -314,8 +314,8 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
   }
 
   body.keyboard-open .messages{
-    padding:10px 18px calc(72px + var(--keyboard-accessory-offset,0px));
-    scroll-padding-bottom:calc(72px + var(--keyboard-accessory-offset,0px));
+    padding:10px 18px 72px;
+    scroll-padding-bottom:72px;
   }
 
 
@@ -527,8 +527,8 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
   scroll-padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
 }
 body.keyboard-open .messages.generating-space{
-  padding-bottom:80px!important;
-  scroll-padding-bottom:80px!important;
+  padding-bottom:72px!important;
+  scroll-padding-bottom:72px!important;
 }
 @media(min-width:901px){
   .messages.generating-space{

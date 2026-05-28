@@ -258,7 +258,11 @@
     function initUserScrollDetection(){
       if(_scrollDetectInited) return; _scrollDetectInited = true;
       var box = $('#messages'); if(!box) return;
-      function onUserScroll(){
+      function onUserScroll(e){
+        /* Ignore touches on composer area — only real message scrolling counts */
+        if(e && e.target){
+          if(e.target.closest('.composer-wrap, textarea, input, #sendBtn, .plus-btn, .search-globe')) return;
+        }
         userScrolling = true;
         clearTimeout(userScrollingTimer);
         userScrollingTimer = setTimeout(function(){
@@ -293,8 +297,13 @@
       if(!loadAutoScroll()) return false;
       var box = $('#messages');
       if(!box) return false;
-      var distance = box.scrollHeight - box.scrollTop - box.clientHeight;
-      return distance <= 220;
+      /* During active streaming, only pause if user has scrolled far away */
+      if(isStreamingNow()){
+        var distance = box.scrollHeight - box.scrollTop - box.clientHeight;
+        return distance <= 400;
+      }
+      var distance2 = box.scrollHeight - box.scrollTop - box.clientHeight;
+      return distance2 <= 220;
     }
     function scrollMessagesToBottomStable(){
       if(!shouldKeepFollowing()) return;
@@ -302,6 +311,16 @@
       if(!box) return;
       requestAnimationFrame(function(){
         box.scrollTop = box.scrollHeight;
+      });
+    }
+    function forceScrollToStreamBottom(){
+      var box = document.getElementById('messages');
+      if(!box) return;
+      requestAnimationFrame(function(){
+        box.scrollTop = box.scrollHeight;
+        requestAnimationFrame(function(){
+          box.scrollTop = box.scrollHeight;
+        });
       });
     }
     function scrollActiveMessageIntoReadingZone(options){
@@ -1522,9 +1541,9 @@
   body.keyboard-open #app{position:fixed!important;left:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;transform:none!important;}\
   body.keyboard-open .app-shell{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;}\
   body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}\
-  body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:10px 18px calc(72px + var(--keyboard-accessory-offset,0px))!important;scroll-padding-bottom:calc(72px + var(--keyboard-accessory-offset,0px))!important;}\
-  body.keyboard-open .messages.generating-space{padding-bottom:calc(72px + var(--keyboard-accessory-offset,0px))!important;scroll-padding-bottom:calc(72px + var(--keyboard-accessory-offset,0px))!important;}\
-  body.keyboard-open .composer-wrap{position:relative!important;flex:0 0 auto!important;width:100vw!important;padding:4px 14px calc(4px + var(--keyboard-accessory-offset,0px))!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;z-index:100!important;}\
+  body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:10px 18px 72px!important;scroll-padding-bottom:72px!important;}\
+  body.keyboard-open .messages.generating-space{padding-bottom:72px!important;scroll-padding-bottom:72px!important;}\
+  body.keyboard-open .composer-wrap{position:relative!important;flex:0 0 auto!important;width:100vw!important;padding:4px 14px 8px!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;z-index:100!important;}\
   body.keyboard-open .empty{display:none!important;}\
   body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}\
   body.keyboard-open .sidebar:not(.closed){transform:translateX(-105%)!important;opacity:0!important;pointer-events:none!important;}\
@@ -1951,9 +1970,10 @@
             }
           }
           assistant.content += delta;
-          if(assistant.scrollFocus) scrollMessagesToBottomStable();
+          if(assistant.scrollFocus) forceScrollToStreamBottom();
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
+          if(assistant.scrollFocus) forceScrollToStreamBottom();
         });
         clearTimeout(timeoutId);
         clearTimeout(memoryNoticeTimer);
@@ -5608,16 +5628,13 @@
           }
 
           /* keyboard is open */
-          var accOffset = isIOS() && inset > 80 ? 44 : 0;
-          var totalInset = inset + accOffset;
-
           root.style.setProperty('--app-height', vvHeight + 'px');
           root.style.setProperty('--app-top', vvTop + 'px');
-          root.style.setProperty('--keyboard-accessory-offset', accOffset + 'px');
+          root.style.setProperty('--keyboard-accessory-offset', '0px');
 
-          if(Math.abs(totalInset - lastInset) > 6){
-            root.style.setProperty('--keyboard-inset', totalInset + 'px');
-            lastInset = totalInset;
+          if(Math.abs(inset - lastInset) > 6){
+            root.style.setProperty('--keyboard-inset', inset + 'px');
+            lastInset = inset;
           }
 
           if(!document.body.classList.contains('keyboard-open')){
