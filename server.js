@@ -1,9 +1,11 @@
 import http from "node:http";
 import { createReadStream } from "node:fs";
+import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 import { parseUploadedFile, buildFileContext } from "./fileParser.js";
-import { DAOTIAN_DEFAULT_SYSTEM_PROMPT } from "./config/prompts.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = ROOT;
@@ -12,6 +14,9 @@ const HOST = process.env.HOST || (process.env.RENDER || process.env.RAILWAY_ENVI
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || "";
 const PUBLIC_CHAT_DAILY_LIMIT = Number(process.env.PUBLIC_CHAT_DAILY_LIMIT || 100);
 const publicChatLimits = new Map();
+const DATA_DIR = process.env.DATA_DIR || join(ROOT, "data");
+const AUTH_FILE = join(DATA_DIR, "auth.json");
+const SESSION_TTL_MS = Number(process.env.SESSION_TTL_DAYS || 30) * 24 * 60 * 60 * 1000;
 
 /* Edge TTS — Microsoft Read Aloud, free, xiaoxiao neural voice */
 const EDGE_TTS_URL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -24,11 +29,12 @@ function corsHeaders(){
   return {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "authorization,content-type,x-api-key,x-admin-token"
+    "access-control-allow-headers": "authorization,content-type,x-api-key,x-admin-token",
+    "access-control-allow-credentials": "true"
   };
 }
-function sendJson(res, status, data){
-  res.writeHead(status, { ...JSON_HEADERS, ...corsHeaders() });
+function sendJson(res, status, data, extraHeaders={}){
+  res.writeHead(status, { ...JSON_HEADERS, ...corsHeaders(), ...extraHeaders });
   res.end(JSON.stringify(data, null, 2));
 }
 function openSse(res){
@@ -51,6 +57,193 @@ function readBody(req){
     req.on("end", ()=>resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+async function readJsonBody(req){
+  const raw = (await readBody(req)).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
+}
+
+function normalizeEmail(email){
+  return String(email || "").trim().toLowerCase();
+}
+function publicUser(user){
+  return { id:user.id, email:user.email, createdAt:user.createdAt };
+}
+function newId(prefix){
+  return prefix + "_" + crypto.randomBytes(12).toString("hex");
+}
+function tokenHash(token){
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
+}
+function emptyAuthStore(){
+  return { users:[], sessions:[], userData:{} };
+}
+async function readAuthStore(){
+  try{
+    const raw = await readFile(AUTH_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      users:Array.isArray(parsed.users) ? parsed.users : [],
+      sessions:Array.isArray(parsed.sessions) ? parsed.sessions : [],
+      userData:parsed.userData && typeof parsed.userData === "object" ? parsed.userData : {}
+    };
+  }catch{
+    return emptyAuthStore();
+  }
+}
+async function writeAuthStore(store){
+  await mkdir(DATA_DIR, { recursive:true });
+  const tmp = AUTH_FILE + "." + process.pid + "." + Date.now() + ".tmp";
+  await writeFile(tmp, JSON.stringify(store, null, 2));
+  await rename(tmp, AUTH_FILE);
+}
+function parseCookies(req){
+  const out = {};
+  String(req.headers.cookie || "").split(";").forEach(part=>{
+    const idx = part.indexOf("=");
+    if(idx < 0) return;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if(key) out[key] = decodeURIComponent(value);
+  });
+  return out;
+}
+function getBearerToken(req){
+  const auth = String(req.headers.authorization || "");
+  if(auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
+  return "";
+}
+function sessionCookie(req, token, maxAgeSeconds){
+  const secure = String(req.headers["x-forwarded-proto"] || "").includes("https") || Boolean(process.env.RENDER);
+  return [
+    "daotian_session=" + encodeURIComponent(token || ""),
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=" + maxAgeSeconds,
+    secure ? "Secure" : ""
+  ].filter(Boolean).join("; ");
+}
+async function createSession(req, store, userId){
+  const token = crypto.randomBytes(32).toString("base64url");
+  const now = Date.now();
+  store.sessions = store.sessions.filter(s=>s && s.expiresAt > now && s.userId !== userId);
+  store.sessions.push({ tokenHash:tokenHash(token), userId, createdAt:nowIso(), expiresAt:now + SESSION_TTL_MS });
+  return token;
+}
+async function authFromRequest(req, mutate=false){
+  const token = getBearerToken(req) || parseCookies(req).daotian_session || "";
+  if(!token) return null;
+  const store = await readAuthStore();
+  const now = Date.now();
+  const hashed = tokenHash(token);
+  let changed = false;
+  store.sessions = store.sessions.filter(s=>{
+    const keep = s && s.expiresAt > now;
+    if(!keep) changed = true;
+    return keep;
+  });
+  const session = store.sessions.find(s=>s.tokenHash === hashed);
+  if(!session){
+    if(changed || mutate) await writeAuthStore(store);
+    return null;
+  }
+  const user = store.users.find(u=>u.id === session.userId);
+  if(!user) return null;
+  if(changed || mutate) await writeAuthStore(store);
+  return { store, user, session, token };
+}
+async function requireAuth(req, res){
+  const auth = await authFromRequest(req);
+  if(!auth){
+    sendJson(res, 401, { ok:false, error:"unauthorized", message:"请先登录" });
+    return null;
+  }
+  return auth;
+}
+
+async function handleRegister(req, res){
+  let body = {};
+  try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
+  const email = normalizeEmail(body.email);
+  const password = String(body.password || "");
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return sendJson(res, 400, { ok:false, error:"invalid_email", message:"邮箱格式不正确" });
+  if(password.length < 6) return sendJson(res, 400, { ok:false, error:"weak_password", message:"密码至少 6 位" });
+
+  const store = await readAuthStore();
+  if(store.users.some(u=>u.email === email)) return sendJson(res, 409, { ok:false, error:"email_exists", message:"这个邮箱已经注册" });
+  const user = { id:newId("u"), email, passwordHash:await bcrypt.hash(password, 12), createdAt:nowIso() };
+  store.users.push(user);
+  store.userData[user.id] = store.userData[user.id] || {};
+  const token = await createSession(req, store, user.id);
+  await writeAuthStore(store);
+  sendJson(res, 200, { ok:true, user:publicUser(user) }, { "set-cookie":sessionCookie(req, token, Math.floor(SESSION_TTL_MS/1000)) });
+}
+
+async function handleLogin(req, res){
+  let body = {};
+  try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
+  const email = normalizeEmail(body.email);
+  const password = String(body.password || "");
+  const store = await readAuthStore();
+  const user = store.users.find(u=>u.email === email);
+  if(!user || !(await bcrypt.compare(password, user.passwordHash || ""))){
+    return sendJson(res, 401, { ok:false, error:"invalid_credentials", message:"邮箱或密码不正确" });
+  }
+  store.userData[user.id] = store.userData[user.id] || {};
+  const token = await createSession(req, store, user.id);
+  await writeAuthStore(store);
+  sendJson(res, 200, { ok:true, user:publicUser(user) }, { "set-cookie":sessionCookie(req, token, Math.floor(SESSION_TTL_MS/1000)) });
+}
+
+async function handleLogout(req, res){
+  const token = getBearerToken(req) || parseCookies(req).daotian_session || "";
+  if(token){
+    const store = await readAuthStore();
+    const hashed = tokenHash(token);
+    store.sessions = store.sessions.filter(s=>s.tokenHash !== hashed);
+    await writeAuthStore(store);
+  }
+  sendJson(res, 200, { ok:true }, { "set-cookie":sessionCookie(req, "", 0) });
+}
+
+async function handleMe(req, res){
+  const auth = await authFromRequest(req);
+  if(!auth) return sendJson(res, 401, { ok:false, error:"unauthorized" }, { "set-cookie":sessionCookie(req, "", 0) });
+  sendJson(res, 200, { ok:true, user:publicUser(auth.user) });
+}
+
+async function handleGetUserData(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
+  const data = auth.store.userData[auth.user.id] && typeof auth.store.userData[auth.user.id] === "object" ? auth.store.userData[auth.user.id] : {};
+  sendJson(res, 200, { ok:true, data });
+}
+
+async function handleSaveUserData(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
+  let body = {};
+  try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
+  const current = auth.store.userData[auth.user.id] && typeof auth.store.userData[auth.user.id] === "object" ? auth.store.userData[auth.user.id] : {};
+  if(body.data && typeof body.data === "object" && !Array.isArray(body.data)){
+    auth.store.userData[auth.user.id] = body.data;
+  }else if(body.items && typeof body.items === "object" && !Array.isArray(body.items)){
+    for(const [key, value] of Object.entries(body.items)){
+      if(value === null || typeof value === "undefined") delete current[key];
+      else current[key] = String(value);
+    }
+    auth.store.userData[auth.user.id] = current;
+  }else if(typeof body.key === "string"){
+    if(body.value === null || typeof body.value === "undefined") delete current[body.key];
+    else current[body.key] = String(body.value);
+    auth.store.userData[auth.user.id] = current;
+  }else{
+    return sendJson(res, 400, { ok:false, error:"invalid_payload" });
+  }
+  await writeAuthStore(auth.store);
+  sendJson(res, 200, { ok:true, data:auth.store.userData[auth.user.id] || {} });
 }
 
 /* ── Multipart form parsing (minimal, no external deps) ── */
@@ -236,6 +429,8 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
 }
 
 async function handleChat(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
   if(!checkPublicChatLimit(req)){
     sendJson(res, 429, { error:"rate_limited", message:`今天的公开对话次数已用完，每个访问者每天限制 ${PUBLIC_CHAT_DAILY_LIMIT} 次` });
     return;
@@ -363,20 +558,6 @@ async function handleChat(req, res){
     }
   }
 
-  /* ── 注入稻田AI平台级System Prompt ── */
-  var daotianAlreadyInjected = messages.some(function(m){
-    return m?.role === "system" && m?.content && m.content.indexOf(DAOTIAN_DEFAULT_SYSTEM_PROMPT) >= 0;
-  });
-  if(!daotianAlreadyInjected){
-    /* 合并到第一个system消息顶部，而不是新建独立消息 */
-    var firstSysIdx = messages.findIndex(function(m){ return m?.role === "system"; });
-    if(firstSysIdx >= 0){
-      messages[firstSysIdx] = { role:"system", content: DAOTIAN_DEFAULT_SYSTEM_PROMPT + "\n\n" + messages[firstSysIdx].content };
-    } else {
-      messages.unshift({ role:"system", content: DAOTIAN_DEFAULT_SYSTEM_PROMPT });
-    }
-  }
-
   try{
     if(stream){
       openSse(res);
@@ -430,6 +611,8 @@ function buildModelsUrl(baseUrl){
 
 /* ── handleModelsList: universal model list fetcher ── */
 async function handleModelsList(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
   let body = {};
   try{
     body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
@@ -534,6 +717,8 @@ function applyContextMode(messages, contextMode){
 
 /* ── File parsing endpoint ── */
 async function handleFileParse(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
   const contentType = String(req.headers["content-type"] || "");
   if(!contentType.includes("multipart/form-data")){
     return sendJson(res, 400, { ok:false, error:"请使用 multipart/form-data 上传文件" });
@@ -645,6 +830,8 @@ async function handleFileParse(req, res){
 
 /* ── Volcengine TTS handler ── */
 async function handleTts(req, res){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
   let body = {};
   try{ body = JSON.parse((await readBody(req)).toString("utf8") || "{}"); }catch(e){
     return sendJson(res, 400, { ok:false, error:"parse_error" });
@@ -717,21 +904,28 @@ function serveStatic(req, res){
   const filePath = join(PUBLIC_DIR, relativePath);
   const contentTypes = { ".html":"text/html; charset=utf-8", ".css":"text/css; charset=utf-8", ".js":"application/javascript; charset=utf-8", ".json":"application/json; charset=utf-8" };
   const stream = createReadStream(filePath);
-  stream.on("open", ()=>{ res.writeHead(200, { "content-type": contentTypes[extname(filePath)] || "application/octet-stream", "cache-control": "no-store, no-cache, must-revalidate" }); stream.pipe(res); });
+  stream.on("open", ()=>{ res.writeHead(200, { "content-type": contentTypes[extname(filePath)] || "application/octet-stream" }); stream.pipe(res); });
   stream.on("error", ()=>sendJson(res, 404, { error:"not_found" }));
 }
 
 const server = http.createServer(async (req, res)=>{
   try{
+    const pathname = new URL(req.url, "http://localhost").pathname;
     if(req.method === "OPTIONS"){ res.writeHead(204, corsHeaders()); res.end(); return; }
-    if(req.method === "GET" && req.url === "/public/config"){
+    if(req.method === "POST" && pathname === "/api/auth/register") return await handleRegister(req, res);
+    if(req.method === "POST" && pathname === "/api/auth/login") return await handleLogin(req, res);
+    if(req.method === "POST" && pathname === "/api/auth/logout") return await handleLogout(req, res);
+    if(req.method === "GET" && pathname === "/api/auth/me") return await handleMe(req, res);
+    if(req.method === "GET" && pathname === "/api/user/data") return await handleGetUserData(req, res);
+    if((req.method === "POST" || req.method === "PUT") && pathname === "/api/user/data") return await handleSaveUserData(req, res);
+    if(req.method === "GET" && pathname === "/public/config"){
       return sendJson(res, 200, { chatModel:"deepseek-chat", webSearchConfigured:Boolean(TAVILY_API_KEY), providers:[] });
     }
-    if(req.method === "POST" && req.url === "/chat") return await handleChat(req, res);
-    if(req.method === "POST" && req.url === "/models/list") return await handleModelsList(req, res);
-    if(req.method === "POST" && req.url === "/file/parse") return await handleFileParse(req, res);
-    if(req.method === "POST" && req.url === "/api/tts") return await handleTts(req, res);
-    if(req.method === "POST" && req.url === "/memories/sync"){
+    if(req.method === "POST" && pathname === "/chat") return await handleChat(req, res);
+    if(req.method === "POST" && pathname === "/models/list") return await handleModelsList(req, res);
+    if(req.method === "POST" && pathname === "/file/parse") return await handleFileParse(req, res);
+    if(req.method === "POST" && pathname === "/api/tts") return await handleTts(req, res);
+    if(req.method === "POST" && pathname === "/memories/sync"){
       try{
         const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
         const memories = Array.isArray(body.memories) ? body.memories : [];
@@ -745,7 +939,7 @@ const server = http.createServer(async (req, res)=>{
       }
       return;
     }
-    if(req.method === "GET" && req.url === "/memories/export"){
+    if(req.method === "GET" && pathname === "/memories/export"){
       const token = req.headers["x-admin-token"] || "";
       if(!token || token !== process.env.ADMIN_TOKEN){
         return sendJson(res, 403, { error:"auth_failed", message:"需要x-admin-token头" });
@@ -753,7 +947,7 @@ const server = http.createServer(async (req, res)=>{
       sendJson(res, 200, { ok:true, message:"服务端存储尚未启用，记忆保存在浏览器本地。后续版本将支持服务端持久化。", time:nowIso() });
       return;
     }
-    if(req.url === "/health") return sendJson(res, 200, { ok:true, time:nowIso() });
+    if(pathname === "/health") return sendJson(res, 200, { ok:true, time:nowIso() });
     return serveStatic(req, res);
   }catch(error){
     console.error(error);

@@ -1,4 +1,4 @@
-(function(){
+(async function(){
   'use strict';
   window.__DAOTIAN_THINKING_VERSION__ = 'v3.6.0-semantic-memory';
 
@@ -49,6 +49,12 @@
     const $ = (sel, root=document) => root.querySelector(sel);
     const uid = () => 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
     const nowTime = () => new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+    const app = $('#app');
+    if(!app) throw new Error('#app not found');
+    var AUTH_USER = null;
+    var AUTH_DATA = {};
+    var AUTH_SYNC_QUEUE = {};
+    var AUTH_SYNC_TIMER = null;
 
     const KEYS = {
       chats:'daotian.chats.v323', active:'daotian.activeChat.v323', settings:'daotian.settings.v323', theme:'daotian.theme.v323',
@@ -337,12 +343,110 @@
       '想到什么就发什么'
     ];
 
-    function safeGet(key){ try{return localStorage.getItem(key);}catch(e){return null;} }
+    function authEscape(s){ return String(s).replace(/[&<>"]/g, function(ch){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]); }); }
+    async function authFetch(path, options){
+      options = options || {};
+      var headers = Object.assign({'Content-Type':'application/json'}, options.headers || {});
+      var res = await fetch(path, Object.assign({credentials:'same-origin'}, options, {headers:headers}));
+      var text = await res.text();
+      var data = {};
+      try{ data = text ? JSON.parse(text) : {}; }catch(_e){ data = { message:text }; }
+      if(!res.ok){
+        var err = new Error(data.message || data.error || ('HTTP ' + res.status));
+        err.status = res.status;
+        err.data = data;
+        throw err;
+      }
+      return data;
+    }
+    function renderAuthPage(mode, message){
+      mode = mode === 'register' ? 'register' : 'login';
+      app.innerHTML = '<div class="auth-shell">'+
+        '<div class="auth-card">'+
+          '<div class="auth-mark">稻田 AI</div>'+
+          '<div class="auth-title">'+(mode==='register'?'创建账号':'登录账号')+'</div>'+
+          '<div class="auth-subtitle">'+(mode==='register'?'注册后你的聊天、模型和 API Key 会按账号隔离。':'登录后继续使用你的私有配置和聊天记录。')+'</div>'+
+          '<div class="auth-error" id="authError" style="'+(message?'':'display:none')+'">'+authEscape(message||'')+'</div>'+
+          '<input class="auth-input" id="authEmail" type="email" autocomplete="email" placeholder="邮箱">'+
+          '<input class="auth-input" id="authPassword" type="password" autocomplete="'+(mode==='register'?'new-password':'current-password')+'" placeholder="密码">'+
+          (mode==='register'?'<input class="auth-input" id="authConfirm" type="password" autocomplete="new-password" placeholder="确认密码">':'')+
+          '<button class="auth-primary" id="authSubmit">'+(mode==='register'?'注册':'登录')+'</button>'+
+          '<button class="auth-switch" id="authSwitch">'+(mode==='register'?'已有账号，去登录':'没有账号，去注册')+'</button>'+
+        '</div>'+
+      '</div>';
+      var submit = $('#authSubmit');
+      var sw = $('#authSwitch');
+      var email = $('#authEmail');
+      var password = $('#authPassword');
+      if(email) setTimeout(function(){ email.focus(); }, 30);
+      function showError(msg){ var el = $('#authError'); if(el){ el.textContent = msg; el.style.display = 'block'; } }
+      async function submitAuth(){
+        var payload = { email:(email&&email.value||'').trim(), password:(password&&password.value||'') };
+        if(mode === 'register'){
+          var confirm = ($('#authConfirm') && $('#authConfirm').value) || '';
+          if(payload.password !== confirm){ showError('两次密码不一致'); return; }
+        }
+        if(submit){ submit.disabled = true; submit.textContent = mode==='register' ? '注册中...' : '登录中...'; }
+        try{
+          await authFetch(mode==='register' ? '/api/auth/register' : '/api/auth/login', {method:'POST', body:JSON.stringify(payload)});
+          location.reload();
+        }catch(err){
+          showError(err.message || '操作失败');
+          if(submit){ submit.disabled = false; submit.textContent = mode==='register' ? '注册' : '登录'; }
+        }
+      }
+      if(submit) submit.onclick = submitAuth;
+      [email,password,$('#authConfirm')].forEach(function(el){ if(el) el.addEventListener('keydown', function(e){ if(e.key === 'Enter') submitAuth(); }); });
+      if(sw) sw.onclick = function(){ renderAuthPage(mode==='register'?'login':'register'); };
+    }
+    async function loadAuthData(){
+      var me = await authFetch('/api/auth/me', {method:'GET', headers:{}});
+      AUTH_USER = me.user;
+      var data = await authFetch('/api/user/data', {method:'GET', headers:{}});
+      AUTH_DATA = data.data && typeof data.data === 'object' ? data.data : {};
+      try{
+        Object.keys(AUTH_DATA).forEach(function(key){
+          localStorage.setItem(scopedStorageKey(key), String(AUTH_DATA[key]));
+        });
+      }catch(_e){}
+      return true;
+    }
+    async function ensureAuthenticated(){
+      try{
+        await loadAuthData();
+        return true;
+      }catch(err){
+        renderAuthPage('login');
+        return false;
+      }
+    }
+    function scopedStorageKey(key){
+      return AUTH_USER && AUTH_USER.id ? ('daotian.user.' + AUTH_USER.id + '.' + key) : key;
+    }
+    function queueAuthDataSync(key, value){
+      if(!AUTH_USER || !AUTH_USER.id) return;
+      AUTH_DATA[key] = String(value);
+      AUTH_SYNC_QUEUE[key] = String(value);
+      clearTimeout(AUTH_SYNC_TIMER);
+      AUTH_SYNC_TIMER = setTimeout(flushAuthDataSync, 120);
+    }
+    async function flushAuthDataSync(){
+      if(!AUTH_USER || !AUTH_USER.id) return;
+      var items = AUTH_SYNC_QUEUE;
+      AUTH_SYNC_QUEUE = {};
+      if(!Object.keys(items).length) return;
+      try{
+        await authFetch('/api/user/data', {method:'POST', body:JSON.stringify({items:items})});
+      }catch(err){
+        console.error('[auth data] sync failed:', err);
+      }
+    }
+    function safeGet(key){ try{ if(AUTH_USER && Object.prototype.hasOwnProperty.call(AUTH_DATA, key)) return AUTH_DATA[key]; return localStorage.getItem(scopedStorageKey(key)); }catch(e){return null;} }
     function readJSON(key, fallback){ try{ const v = safeGet(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } }
-    function saveJSON(key, value){ try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){} }
-    function setItem(key, value){ try{ localStorage.setItem(key, value); }catch(e){} }
-    function saveJSONStrict(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
-    function setItemStrict(key, value){ localStorage.setItem(key, value); }
+    function saveJSON(key, value){ try{ var str = JSON.stringify(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }catch(e){} }
+    function setItem(key, value){ try{ var str = String(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }catch(e){} }
+    function saveJSONStrict(key, value){ var str = JSON.stringify(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }
+    function setItemStrict(key, value){ var str = String(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }
 
     function slugify(value){
       return String(value || 'x').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,48) || 'x';
@@ -541,6 +645,8 @@
       return [{id, title:'新对话', createdAt:Date.now(), updatedAt:Date.now(), messages:[]}];
     }
 
+    if(!(await ensureAuthenticated())) return;
+
     let theme = resolveTheme();
     let settings = ensureSettingsShape(readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
     let chats = loadChats();
@@ -625,8 +731,6 @@
       return false;
     }
 
-    const app = $('#app');
-    if(!app) throw new Error('#app not found');
     app.innerHTML = `
       <div class="app-shell" data-theme="${theme}">
         <aside class="sidebar" id="sidebar">
@@ -3584,6 +3688,7 @@
         settingsEntry('个性化','系统提示词与风格','personalization','▽')+
         settingsEntry('聊天偏好','流式输出、自动滚动、Token','chatPrefs','≡')+
         settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','♪')+
+        '<div class="settings-account"><div><div class="settings-account-label">当前账号</div><div class="settings-account-email">'+escapeHTML((AUTH_USER&&AUTH_USER.email)||'')+'</div></div><button class="settings-btn danger" id="logoutBtn" type="button">退出登录</button></div>'+
       '</div>';
     }
 
@@ -4029,6 +4134,15 @@
     });
     /* ── 设置系统事件 ── */
     document.addEventListener('click', function(e){
+      var logoutBtn = e.target.closest('#logoutBtn');
+      if(logoutBtn){
+        logoutBtn.disabled = true;
+        logoutBtn.textContent = '退出中...';
+        flushAuthDataSync().finally(function(){
+          authFetch('/api/auth/logout', {method:'POST', body:'{}'}).finally(function(){ location.reload(); });
+        });
+        return;
+      }
       var entry = e.target.closest('.settings-entry');
       if(entry){
         var page = entry.getAttribute('data-settings-go');
