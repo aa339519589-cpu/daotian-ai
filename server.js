@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { spawn } from "node:child_process";
+import pg from "pg";
 import { parseUploadedFile, buildFileContext } from "./fileParser.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
@@ -1706,9 +1707,10 @@ const server = http.createServer(async (req, res)=>{
         const hasCustomDataDir = !!process.env.DATA_DIR;
         const isPersistentPath = hasCustomDataDir && (DATA_DIR.indexOf('/opt/render') >= 0 || DATA_DIR.indexOf('/data') >= 0 || DATA_DIR.indexOf('/mnt') >= 0 || DATA_DIR.indexOf('/var/data') >= 0);
         const persistent = isRender ? isPersistentPath : true;
-        const persistentWarning = isRender && !isPersistentPath
-          ? 'CRITICAL: DATA_DIR not on persistent disk. Set DATA_DIR=/opt/render/project/data in Render Environment. Auth/access/memories will be LOST on restart or deploy.'
-          : null;
+        const persistentWarning = (supabaseConnected || !isRender) ? null
+          : (!isPersistentPath
+            ? 'CRITICAL: DATA_DIR not on persistent disk. Auth/access/memories will be LOST on restart or deploy. Set SUPABASE_URL+SUPABASE_SERVICE_ROLE_KEY for reliable storage.'
+            : null);
         return sendJson(res, 200, {
           ok:true, time:nowIso(),
           storage: supabaseConnected ? "supabase" : "json",
