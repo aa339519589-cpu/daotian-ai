@@ -1,66 +1,75 @@
-# 稻田 Ai
+# 稻田 AI
 
-这是一个轻量、安静的 OpenAI 兼容模型中转与聊天工作台，包含：
+稻田 AI 是一个轻量的聊天工作台，支持：
 
-- 公开网页对话入口，访客打开网址即可使用
-- `/v1/*` 透明转发到上游 API
-- Relay Key 管理，客户端只拿中转 Key
-- 多上游配置，可按模型前缀选择上游
-- 模型提供方弹窗里管理 Key、上游和最近调用记录
-- 支持普通 JSON 响应和 SSE 流式响应
+- 游客直接进入聊天
+- 登录后按账号隔离聊天、模型配置、系统 Prompt、语音和外观设置
+- 后端代理模型请求，不向前端下发上游 API Key
+- 接入码 / 模型提供方系统
 
-## 启动
+## 本地启动
 
-新手推荐：双击项目里的 `open-api-relay.command`。它会自动启动稻田 Ai，并自动打开 `http://127.0.0.1:8787`。
-
-如果你只想启动服务、不自动打开浏览器，也可以双击 `start.command`。
-
-也可以在终端运行：
+安装依赖并启动：
 
 ```bash
-ADMIN_TOKEN="your-admin-token" PORT=8787 node src/server.js
+npm install
+npm start
 ```
 
-打开：
+默认地址：
 
 ```text
-http://localhost:8787
+http://127.0.0.1:8787
 ```
 
-默认管理 Token 是 `change-me-admin-token`，正式使用时一定要通过环境变量覆盖。
+## 账号数据存储
 
-公开上线时请使用：
+默认情况下，账号、会话和接入码数据保存在：
+
+```text
+data/auth.json
+data/access.json
+```
+
+也可以通过环境变量覆盖数据目录：
 
 ```bash
-ADMIN_TOKEN="your-admin-token" HOST=0.0.0.0 PORT=8787 node src/server.js
+DATA_DIR=/absolute/path/to/data npm start
 ```
 
-## 使用方式
+## Render 部署
 
-1. 点击右上角“模型提供方”。
-2. 输入管理 Token。
-3. 添加并启用上游：例如 `https://api.openai.com` 和你的上游 API Key。
-4. 设置默认聊天模型。
-5. 回到聊天界面直接发送消息。
-6. 如需开放 API 调用，可以新建 Relay Key，并立即保存生成出来的 Key。
-7. 客户端把 Base URL 改成稻田 Ai 地址：
+账号系统要想在 Render 上稳定工作，核心要求只有一条：
 
-```text
-http://localhost:8787/v1
-```
+`auth.json` 和 `access.json` 必须落在持久存储里。
 
-请求头使用中转 Key：
+如果 Web Service 跑在临时磁盘上，实例重启、重新部署或休眠唤醒后，这两个文件可能会丢失，表现出来就是：
 
-```http
-Authorization: Bearer relay_xxxxxxxxxxxxxxxxx
-```
+- 过一段时间后又被要求重新登录
+- 原来注册过的邮箱再次登录时提示“邮箱或密码不正确”
 
-## 数据文件
+当前仓库里的 [render.yaml](/Users/paopaopaopao/daotian-ai-work/render.yaml) 已经改成：
 
-配置和调用记录保存在：
+- `starter` 计划
+- 挂载持久盘 `daotian-data`
+- `DATA_DIR=/opt/render/project/src/data`
 
-```text
-data/config.json
-```
+这样 Render 上的账号、session 和接入码文件会写到持久盘里，而不是临时文件系统。
 
-生产环境建议接入数据库、限流、配额、用户系统和 HTTPS。
+## Render 验证
+
+部署完成后，至少验证这几步：
+
+1. 注册一个新账号。
+2. 关闭页面，过一段时间重新打开。
+3. 已登录则应自动恢复；如果需要重新登录，输入原邮箱和密码必须成功。
+4. 在服务重启或重新部署后，再次登录仍应成功。
+
+## 说明
+
+`session` 现在使用持久 cookie，服务端会同时写入：
+
+- `Max-Age`
+- `Expires`
+
+这样在浏览器和 WebView 场景下都更稳一些。

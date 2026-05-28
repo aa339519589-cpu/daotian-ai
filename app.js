@@ -3413,6 +3413,14 @@
       box.innerHTML = settings.modelProviders.map(providerTemplate).join('');
     }
 
+    function providerEditorScope(){
+      var hub = document.querySelector('#settingsModal .provider-hub');
+      if(settingsPage === 'providerHub' && hub) return hub;
+      var old = document.getElementById('providerModal');
+      if(old && old.classList.contains('show')) return old;
+      return document;
+    }
+
     function setSaveProviderButtonState(state){
       const btn = $('#saveProvider');
       if(!btn) return;
@@ -3440,7 +3448,8 @@
     }
 
     function collectProviderEditor(){
-      const cards = Array.from(document.querySelectorAll('[data-provider-id]'));
+      const scope = providerEditorScope();
+      const cards = Array.from(scope.querySelectorAll('[data-provider-id]'));
       var providers = cards.map(function(card, i){
         function val(name){ const el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
         var rawModels = splitModels(val('models'));
@@ -3481,7 +3490,8 @@
           path:'/v1/chat/completions',
           models:[]
         }, n));
-        renderProviderEditor();
+        if(settingsPage === 'providerHub') renderSettingsPage();
+        else renderProviderEditor();
         setSaveProviderButtonState('idle');
       }catch(err){
         console.error('[provider] add failed:', err);
@@ -3491,7 +3501,8 @@
 
     /* ── 通用获取模型列表 ── */
     async function fetchModelsForProvider(providerId){
-      var card = document.querySelector('[data-provider-id="'+providerId+'"]');
+      var scope = providerEditorScope();
+      var card = scope.querySelector('[data-provider-id="'+providerId+'"]');
       if(!card) return;
       function val(name){ var el = card.querySelector('[data-provider-field="'+name+'"]'); return el ? el.value.trim() : ''; }
       var baseUrl = val('baseUrl');
@@ -3546,7 +3557,8 @@
     }
 
     function toggleModelInProvider(providerId, modelName){
-      var card = document.querySelector('[data-provider-id="'+providerId+'"]');
+      var scope = providerEditorScope();
+      var card = scope.querySelector('[data-provider-id="'+providerId+'"]');
       if(!card) return;
       var textarea = card.querySelector('[data-provider-field="models"]');
       if(!textarea) return;
@@ -3574,7 +3586,7 @@
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
     function openSettingsModalPage(page){
       closeModelPopover();
-      if(window.innerWidth<760) sidebarOpen=false;
+      sidebarOpen = false;
       renderSidebar();
       settingsPage = page || 'home';
       settingsPageStack = ['home'];
@@ -3636,7 +3648,10 @@
       if(!settings.modelProviders.length){ settings.modelProviders = []; }
       settings.modelPresets = providersToPresets(settings.modelProviders);
       _providerDraft = null;
-      persist(); renderProviderEditor(); renderModelSwitcher();
+      persist();
+      if(settingsPage === 'providerHub') renderSettingsPage();
+      else renderProviderEditor();
+      renderModelSwitcher();
       toast('已删除 '+name);
     }
 
@@ -4410,7 +4425,7 @@
       var manAdd = e.target.closest('[data-manual-toggle]');
       if(manAdd){
         var pid2 = manAdd.getAttribute('data-manual-toggle');
-        var card2 = document.querySelector('[data-provider-id="'+pid2+'"]');
+        var card2 = providerEditorScope().querySelector('[data-provider-id="'+pid2+'"]');
         if(card2){
           var modelName = prompt('输入模型名称（如 deepseek-v4-pro）：');
           if(modelName && modelName.trim()){

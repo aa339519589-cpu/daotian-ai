@@ -135,12 +135,14 @@ function getBearerToken(req){
 }
 function sessionCookie(req, token, maxAgeSeconds){
   const secure = String(req.headers["x-forwarded-proto"] || "").includes("https") || Boolean(process.env.RENDER);
+  const expiresAt = new Date(Date.now() + Math.max(0, Number(maxAgeSeconds || 0)) * 1000).toUTCString();
   return [
     "daotian_session=" + encodeURIComponent(token || ""),
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
     "Max-Age=" + maxAgeSeconds,
+    "Expires=" + expiresAt,
     secure ? "Secure" : ""
   ].filter(Boolean).join("; ");
 }
