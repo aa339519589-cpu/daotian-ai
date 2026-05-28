@@ -71,6 +71,15 @@ function normalizeEmail(email){
   return String(email || "").trim().toLowerCase();
 }
 
+function cleanUpstreamErrorDetail(status, text, contentType){
+  const raw = String(text || '');
+  const ct = String(contentType || '').toLowerCase();
+  const looksHtml = ct.includes('text/html') || /<!doctype html|<html[\s>]|<title>\s*\d{3}/i.test(raw);
+  if(looksHtml) return 'HTML error page suppressed (HTTP ' + status + ')';
+  try{ return JSON.parse(raw); }catch{}
+  return raw.slice(0,300);
+}
+
 /* ── Python edge-tts fallback ── */
 function runCommand(cmd, args){
   return new Promise((resolve, reject)=>{
@@ -892,8 +901,8 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
   });
   if(!response.ok){
     const detailText = await response.text();
-    let detail = detailText;
-    try{ detail = JSON.parse(detailText); }catch{}
+    const ct = response.headers.get('content-type') || '';
+    const detail = cleanUpstreamErrorDetail(response.status, detailText, ct);
     sendSse(res, "error", { message: "模型请求失败", status: response.status, detail });
     sendSse(res, "done", { ok:false });
     res.end();
@@ -1089,7 +1098,7 @@ async function handleChat(req, res){
     const text = await response.text();
     let data = null;
     try{ data = JSON.parse(text); }catch{ data = { text }; }
-    if(!response.ok){ sendJson(res, response.status, { error:"upstream_error", status:response.status, detail:data }); return; }
+    if(!response.ok){ sendJson(res, response.status, { error:"upstream_error", status:response.status, detail:cleanUpstreamErrorDetail(response.status, text, response.headers.get('content-type')||'') }); return; }
     const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.output_text || "";
     if(resolved.packageHit && resolved.packageHit.store && resolved.packageHit.pkg){
       const store = resolved.packageHit.store;

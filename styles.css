@@ -314,12 +314,19 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
   }
 
   body.keyboard-open .messages{
-    padding:10px 18px 72px;
-    scroll-padding-bottom:72px;
+    position:absolute!important;
+    left:0!important;
+    right:0!important;
+    top:0!important;
+    bottom:72px!important;
+    padding:10px 18px 8px;
+    scroll-padding-bottom:8px;
   }
 
 
-  /* keyboard-open composer is handled by ensureMobileKeyboardStyle() injection */
+  /* keyboard-open: main must be relative for absolute children */
+  body.keyboard-open .main{position:relative!important}
+  body.keyboard-open .composer-wrap{position:absolute!important;left:0!important;right:0!important;bottom:0!important}
 
   body.keyboard-open .composer{
     border-radius:20px;
@@ -525,10 +532,30 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .messages.generating-space{
   padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
   scroll-padding-bottom:max(42vh, calc(120px + env(safe-area-inset-bottom,0px)))!important;
+  display:flex!important;
+  flex-direction:column!important;
+}
+.messages.generating-space::before{
+  content:"";
+  flex:1 0 auto;
+  min-height:0;
+}
+.messages.generating-space .message{
+  flex-shrink:0;
 }
 body.keyboard-open .messages.generating-space{
-  padding-bottom:72px!important;
-  scroll-padding-bottom:72px!important;
+  padding-bottom:8px!important;
+  scroll-padding-bottom:8px!important;
+  display:flex!important;
+  flex-direction:column!important;
+}
+body.keyboard-open .messages.generating-space::before{
+  content:"";
+  flex:1 0 auto;
+  min-height:0;
+}
+body.keyboard-open .messages.generating-space .message{
+  flex-shrink:0;
 }
 @media(min-width:901px){
   .messages.generating-space{

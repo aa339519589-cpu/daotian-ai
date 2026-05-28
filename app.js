@@ -1558,10 +1558,12 @@
   body.keyboard-open{overflow:hidden!important;overscroll-behavior:none!important;}\
   body.keyboard-open #app{position:fixed!important;left:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;transform:none!important;}\
   body.keyboard-open .app-shell{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;}\
-  body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}\
-  body.keyboard-open .messages{flex:1 1 auto!important;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:10px 18px 72px!important;scroll-padding-bottom:72px!important;}\
-  body.keyboard-open .messages.generating-space{padding-bottom:72px!important;scroll-padding-bottom:72px!important;}\
-  body.keyboard-open .composer-wrap{position:relative!important;flex:0 0 auto!important;width:100vw!important;padding:4px 14px 8px!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;z-index:100!important;}\
+  body.keyboard-open .main{width:100vw!important;height:var(--app-height,100dvh)!important;min-height:0!important;position:relative!important;overflow:hidden!important;}\
+  body.keyboard-open .messages{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:72px!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:10px 18px 8px!important;scroll-padding-bottom:8px!important;}\
+  body.keyboard-open .messages.generating-space{padding-bottom:8px!important;scroll-padding-bottom:8px!important;display:flex!important;flex-direction:column!important;}\
+  body.keyboard-open .messages.generating-space::before{content:\"\";flex:1 0 auto;min-height:0;}\
+  body.keyboard-open .messages.generating-space .message{flex-shrink:0;}\
+  body.keyboard-open .composer-wrap{position:absolute!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;padding:4px 14px 6px!important;background:linear-gradient(to top,var(--bg) 88%,rgba(0,0,0,0))!important;z-index:100!important;}\
   body.keyboard-open .empty{display:none!important;}\
   body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}\
   body.keyboard-open .sidebar:not(.closed){transform:translateX(-105%)!important;opacity:0!important;pointer-events:none!important;}\
@@ -1660,6 +1662,18 @@
           scrollMessagesToBottomStable();
         }
       }
+    }
+    function normalizeHttpError(status, text, contentType){
+      var raw = String(text || '');
+      var ct = String(contentType || '').toLowerCase();
+      var looksHtml = ct.indexOf('text/html') >= 0 || /<!doctype html|<html[\s>]|<title>\s*\d{3}/i.test(raw);
+      if(status === 401 || status === 403) return '认证失败，请检查 API Key 或模型权限。';
+      if(status === 404) return '模型接口地址错误，请检查 Base URL / 请求路径。';
+      if(status === 429) return '请求太频繁或额度不足，请稍后再试。';
+      if(status === 502 || status === 503 || status === 504) return '模型服务暂时不可用（HTTP ' + status + '），请稍后重试。';
+      if(looksHtml) return '模型服务返回网页错误页（HTTP ' + status + '），请检查服务状态或稍后重试。';
+      try{ var data = JSON.parse(raw); return data.message || data.error || data.detail || ('请求失败（HTTP ' + status + '）'); }catch(_e){}
+      return raw.slice(0,200) || ('请求失败（HTTP ' + status + '）');
     }
     function friendlyModelName(model){
       if(!model) return '...';
@@ -1822,7 +1836,7 @@
       }
       const fetchHeaders = targetUrl === '/chat' ? {'Content-Type':'application/json'} : headers;
       const res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:JSON.stringify(body)});
-      if(!res.ok){ const txt=await res.text(); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
+      if(!res.ok){ var txt3=await res.text(); var ct3=res.headers.get('content-type')||''; throw new Error(normalizeHttpError(res.status, txt3, ct3)); }
 
       if(!res.body){
         const txt=await res.text();
@@ -2113,7 +2127,7 @@
       var res=await fetch(targetUrl,{method:'POST',headers:fetchHeaders,body:fetchBody,signal:activeAbortController?activeAbortController.signal:undefined}).catch(function(e){ if(e.name==='AbortError'){ throw new Error('ABORTED'); } throw e; });
       console.log('[send] response status:', res.status, 'ok:', res.ok, 'hasBody:', !!res.body);
 
-      if(!res.ok){ var txt=await res.text(); console.error('[send] HTTP error:', res.status, txt.slice(0,300)); throw new Error(txt.slice(0,400)||('HTTP '+res.status)); }
+      if(!res.ok){ var txt4=await res.text(); var ct4=res.headers.get('content-type')||''; console.error('[send] HTTP error:', res.status); throw new Error(normalizeHttpError(res.status, txt4, ct4)); }
 
       if(!res.body){
         var txt2=await res.text();
