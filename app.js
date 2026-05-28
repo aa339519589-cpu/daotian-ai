@@ -1514,15 +1514,10 @@
       const style=document.createElement('style');
       style.id='daotianThinkingStyle';
       style.textContent = '\
-.daotian-thinking{display:inline-flex;align-items:center;gap:9px;max-width:min(720px,88%);padding:2px 2px;line-height:1.75;font-size:1rem;background:transparent;border:0;box-shadow:none}\
-.daotian-thinking-mark{position:relative;width:13px;height:13px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}\
-.thinking-glyph-shape{position:relative;width:11px;height:11px;display:block;opacity:.72;animation:daotianGlyphBreath 1.7s ease-in-out infinite}\
-.thinking-glyph-shape::before,.thinking-glyph-shape::after{content:\"\";position:absolute;left:50%;top:50%;width:11px;height:2px;border-radius:99px;background:#C85A24;transform:translate(-50%,-50%);box-shadow:0 0 3px rgba(200,90,36,.12)}\
-.thinking-glyph-shape::after{transform:translate(-50%,-50%) rotate(90deg)}\
-.daotian-thinking-mark::before,.daotian-thinking-mark::after{content:\"\";position:absolute;left:50%;top:50%;width:8px;height:1.5px;border-radius:99px;background:#C85A24;opacity:.72;transform:translate(-50%,-50%) rotate(45deg)}\
-.daotian-thinking-mark::after{transform:translate(-50%,-50%) rotate(-45deg)}\
-.daotian-thinking-text{font-size:14px;letter-spacing:.02em;color:var(--muted);opacity:.58}\
-@keyframes daotianGlyphBreath{0%,100%{opacity:.42;transform:scale(.88)}50%{opacity:.86;transform:scale(1)}}\
+.daotian-thinking-message{justify-content:flex-start!important;max-width:100%!important;margin:0 auto 14px!important;display:flex!important}\
+.daotian-dot-spinner{position:relative!important;width:38px!important;height:38px!important;min-width:38px!important;min-height:38px!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important}\
+.daotian-dot-spinner span{position:absolute!important;left:50%!important;top:50%!important;width:4.5px!important;height:4.5px!important;margin:-2.25px 0 0 -2.25px!important;border-radius:999px!important;background:rgba(220,100,80,.85)!important;animation:daotianDotFade 1.05s linear infinite!important}\
+@keyframes daotianDotFade{0%{opacity:1}100%{opacity:.18}}\
 ';
       document.head.appendChild(style);
     }
@@ -1636,8 +1631,7 @@
         }
         if(m.thinking && !m.content){
           ensureThinkingStyle();
-          var label = m.memoryNotice ? '记忆已更新' : '想一下';
-          return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-thinking"><span class="daotian-thinking-mark" aria-hidden="true"><span class="thinking-glyph-shape"></span></span><span class="daotian-thinking-text">'+label+'</span></div></div>';
+          return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-dot-spinner" aria-label="thinking"><span style="transform:rotate(0deg) translate(0,-15px);animation-delay:0s"></span><span style="transform:rotate(30deg) translate(0,-15px);animation-delay:-0.9625s"></span><span style="transform:rotate(60deg) translate(0,-15px);animation-delay:-0.875s"></span><span style="transform:rotate(90deg) translate(0,-15px);animation-delay:-0.7875s"></span><span style="transform:rotate(120deg) translate(0,-15px);animation-delay:-0.7s"></span><span style="transform:rotate(150deg) translate(0,-15px);animation-delay:-0.6125s"></span><span style="transform:rotate(180deg) translate(0,-15px);animation-delay:-0.525s"></span><span style="transform:rotate(210deg) translate(0,-15px);animation-delay:-0.4375s"></span><span style="transform:rotate(240deg) translate(0,-15px);animation-delay:-0.35s"></span><span style="transform:rotate(270deg) translate(0,-15px);animation-delay:-0.2625s"></span><span style="transform:rotate(300deg) translate(0,-15px);animation-delay:-0.175s"></span><span style="transform:rotate(330deg) translate(0,-15px);animation-delay:-0.0875s"></span></div></div>';
         }
         var ttsText = (m.content || '').replace(/\s+/g,' ').trim();
         var ttsBtn = (m.role==='assistant' && !m.thinking && ttsText.length>0)
