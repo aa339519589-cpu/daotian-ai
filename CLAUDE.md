@@ -132,3 +132,20 @@ cd /Users/paopaopaopao/daotian-ai-work && node server.js
 
 - 推送代码到 GitHub → Render 自动拉取部署
 - `render.yaml` + `Dockerfile` 配置
+
+## Render 持久化存储配置（重要）
+
+账号、接入码、记忆数据存储在 `DATA_DIR` 目录（auth.json / access.json / memories.json）。Render 不使用 Persistent Disk 时，每次部署/重启数据会丢失。
+
+**配置步骤：**
+1. Render Dashboard → 选择服务 → Disks → Create Disk
+2. 名称：`daotian-data`，挂载路径：`/opt/render/project/data`，大小：1GB
+3. Environment → 添加环境变量：`DATA_DIR` = `/opt/render/project/data`
+4. 重新部署（Manual Deploy → Deploy latest commit）
+5. 访问 `/health` 验证 `persistent: true` + `customDataDir: true`
+
+**验证方法：**
+```bash
+curl https://daotian-ai.onrender.com/health | jq
+# 检查 persistent=true, customDataDir=true, dataDir="/opt/render/project/data"
+```

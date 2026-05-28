@@ -447,8 +447,12 @@ async function handleLogin(req, res){
   const password = String(body.password || "");
   const store = await readAuthStore();
   const user = store.users.find(u=>u.email === email);
-  if(!user || !(await bcrypt.compare(password, user.passwordHash || ""))){
-    console.log('[auth] LOGIN FAILED | email:', email, '| users in store:', store.users.length, '| user found:', !!user, '| all emails:', store.users.map(u=>u.email).join(', '));
+  if(!user){
+    console.error('[auth] LOGIN FAILED — user_not_found | email:', email, '| total users in store:', store.users.length, '| auth file:', AUTH_FILE);
+    return sendJson(res, 401, { ok:false, error:"invalid_credentials", message:"邮箱或密码不正确" });
+  }
+  if(!(await bcrypt.compare(password, user.passwordHash || ""))){
+    console.log('[auth] LOGIN FAILED — password_mismatch | email:', email, '| user id:', user.id);
     return sendJson(res, 401, { ok:false, error:"invalid_credentials", message:"邮箱或密码不正确" });
   }
   store.userData[user.id] = store.userData[user.id] || {};
@@ -1615,22 +1619,29 @@ const server = http.createServer(async (req, res)=>{
     }
     if(pathname === "/health"){
       try{
-        let authExists = false, accessExists = false, dataDirWritable = false;
+        let authExists = false, accessExists = false, memExists = false, dataDirWritable = false;
         try{ await readFile(AUTH_FILE, "utf8"); authExists = true; }catch{}
         try{ await readFile(ACCESS_FILE, "utf8"); accessExists = true; }catch{}
+        try{ await readFile(MEMORY_FILE, "utf8"); memExists = true; }catch{}
         try{ await mkdir(DATA_DIR, { recursive:true }); const testFile = AUTH_FILE + ".healthcheck"; await writeFile(testFile, "test"); await import("node:fs/promises").then(fs=>fs.unlink(testFile)); dataDirWritable = true; }catch{}
         const store = await readAuthStore();
         const isRender = !!process.env.RENDER;
-        const persistentWarning = isRender && (!process.env.DATA_DIR || process.env.DATA_DIR.indexOf('opt/render') === -1)
-          ? 'WARNING: DATA_DIR may not be on persistent disk. Auth data may be lost on deploy.'
+        const hasCustomDataDir = !!process.env.DATA_DIR;
+        const isPersistentPath = hasCustomDataDir && (DATA_DIR.indexOf('/opt/render') >= 0 || DATA_DIR.indexOf('/data') >= 0 || DATA_DIR.indexOf('/mnt') >= 0 || DATA_DIR.indexOf('/var/data') >= 0);
+        const persistent = isRender ? isPersistentPath : true;
+        const persistentWarning = isRender && !isPersistentPath
+          ? 'CRITICAL: DATA_DIR not on persistent disk. Set DATA_DIR=/opt/render/project/data in Render Environment. Auth/access/memories will be LOST on restart or deploy.'
           : null;
         return sendJson(res, 200, {
           ok:true, time:nowIso(),
+          persistent:persistent,
           users:store.users.length,
           sessions:store.sessions.length,
           dataDir:DATA_DIR,
+          customDataDir:hasCustomDataDir,
           authFileExists:authExists,
           accessFileExists:accessExists,
+          memoriesFileExists:memExists,
           dataDirWritable:dataDirWritable,
           persistentWarning:persistentWarning
         });
@@ -1645,8 +1656,16 @@ const server = http.createServer(async (req, res)=>{
   }
 });
 server.listen(PORT, HOST, ()=>{
-  const persistentWarning = !process.env.DATA_DIR ? 'WARNING: DATA_DIR not set. Auth data stored in local ./data/ and may be lost on Render restart/deploy. Set DATA_DIR to a persistent disk path.' : null;
-  console.log(`稻田 Ai running at http://${HOST}:${PORT}`);
+  const isRender = !!process.env.RENDER;
+  const hasCustomDataDir = !!process.env.DATA_DIR;
+  const isPersistentPath = hasCustomDataDir && (DATA_DIR.indexOf('/opt/render') >= 0 || DATA_DIR.indexOf('/data') >= 0 || DATA_DIR.indexOf('/mnt') >= 0 || DATA_DIR.indexOf('/var/data') >= 0);
+  const persistentWarning = !process.env.DATA_DIR
+    ? 'CRITICAL: DATA_DIR not set. Auth data stored in local ./data/ and WILL BE LOST on Render restart/deploy. To fix: create a Persistent Disk in Render, set DATA_DIR=/opt/render/project/data as environment variable.'
+    : (isRender && !isPersistentPath
+      ? 'WARNING: DATA_DIR=' + DATA_DIR + ' may not be on Render persistent disk. Auth data may be lost on deploy.'
+      : null);
+  console.log('DATA_DIR:', DATA_DIR, '| Render:', isRender, '| Persistent:', isRender ? isPersistentPath : 'local');
+  if(persistentWarning) console.warn(persistentWarning);  console.log(`稻田 Ai running at http://${HOST}:${PORT}`);
   console.log(`DATA_DIR: ${DATA_DIR}`);
   if(persistentWarning) console.warn(persistentWarning);
 });
