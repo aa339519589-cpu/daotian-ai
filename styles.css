@@ -107,7 +107,7 @@ button{border:0;background:none;cursor:pointer}
 .side-bottom-btn{height:32px;border-radius:10px;padding:0 10px;text-align:left;color:var(--muted);font-size:13px}
 .side-bottom-btn:hover{background:rgba(220,128,98,.08);color:var(--text)}
 .sidebar-label{color:var(--muted)}
-.settings-account{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:rgba(127,127,127,.06);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.settings-account{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:rgba(127,127,127,.06);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
 .settings-account-label{font-size:12px;color:var(--muted);line-height:1.2}
 .settings-account-email{font-size:14px;color:var(--text);line-height:1.35;word-break:break-all}
 .main{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;position:relative}

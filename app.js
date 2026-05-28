@@ -103,6 +103,7 @@
     const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
     const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
     const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'你是一个简洁自然的对话模型。默认少说，直接回应当前内容；用户没要求详细时，不要展开，不要客服腔，不要说明书腔，不要刻意装人。\n\n普通聊天保持短、淡、自然；学习、代码、分析、方案类问题认真答，结论先行，步骤清楚。\n\n在本提示词里，“你”指模型；正式回复用户时，“我”指模型自己，“你”指用户。不要复读问题，不要主客体说反。', memoryInjection:false };
+    const DEFAULT_SYSTEM_PROMPT = defaultModelParams.systemPrompt;
     const defaultPersonalization = { enabled:false, content:'' };
 
     function loadModelParamsMap(){
@@ -296,6 +297,7 @@
           (mode==='register'?'<input class="auth-input" id="authConfirm" type="password" autocomplete="new-password" placeholder="确认密码">':'')+
           '<button class="auth-primary" id="authSubmit">'+(mode==='register'?'注册':'登录')+'</button>'+
           '<button class="auth-switch" id="authSwitch">'+(mode==='register'?'已有账号，去登录':'没有账号，去注册')+'</button>'+
+          '<button class="auth-switch" id="authBack">返回聊天</button>'+
         '</div>'+
       '</div>';
       var submit = $('#authSubmit');
@@ -322,27 +324,33 @@
       if(submit) submit.onclick = submitAuth;
       [email,password,$('#authConfirm')].forEach(function(el){ if(el) el.addEventListener('keydown', function(e){ if(e.key === 'Enter') submitAuth(); }); });
       if(sw) sw.onclick = function(){ renderAuthPage(mode==='register'?'login':'register'); };
+      var back = $('#authBack');
+      if(back) back.onclick = function(){ location.reload(); };
     }
     async function loadAuthData(){
-      var me = await authFetch('/api/auth/me', {method:'GET', headers:{}});
-      AUTH_USER = me.user;
-      var data = await authFetch('/api/user/data', {method:'GET', headers:{}});
-      AUTH_DATA = data.data && typeof data.data === 'object' ? data.data : {};
       try{
-        Object.keys(AUTH_DATA).forEach(function(key){
-          localStorage.setItem(scopedStorageKey(key), String(AUTH_DATA[key]));
-        });
-      }catch(_e){}
-      return true;
-    }
-    async function ensureAuthenticated(){
-      try{
-        await loadAuthData();
+        var me = await authFetch('/api/auth/me', {method:'GET', headers:{}});
+        AUTH_USER = me.user;
+        AUTH_DATA = {};
+        try{
+          var data = await authFetch('/api/user/data', {method:'GET', headers:{}});
+          AUTH_DATA = data.data && typeof data.data === 'object' ? data.data : {};
+          Object.keys(AUTH_DATA).forEach(function(key){
+            localStorage.setItem(scopedStorageKey(key), String(AUTH_DATA[key]));
+          });
+        }catch(dataErr){
+          console.warn('[auth] user data restore failed, continuing with local state:', dataErr && dataErr.message ? dataErr.message : dataErr);
+        }
         return true;
       }catch(err){
-        renderAuthPage('login');
+        AUTH_USER = null;
+        AUTH_DATA = {};
+        AUTH_SYNC_QUEUE = {};
         return false;
       }
+    }
+    async function ensureAuthenticated(){
+      return loadAuthData();
     }
     function scopedStorageKey(key){
       return AUTH_USER && AUTH_USER.id ? ('daotian.user.' + AUTH_USER.id + '.' + key) : key;
@@ -569,7 +577,7 @@
       return [{id, title:'新对话', createdAt:Date.now(), updatedAt:Date.now(), messages:[]}];
     }
 
-    if(!(await ensureAuthenticated())) return;
+    await ensureAuthenticated();
 
     let theme = resolveTheme();
     let settings = ensureSettingsShape(readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
@@ -3586,6 +3594,11 @@
     }
 
     function renderSettingsHome(){
+      var authActions = AUTH_USER && AUTH_USER.id
+        ? '<button class="settings-btn danger" id="logoutBtn" type="button">退出登录</button>'
+        : '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="settings-btn" id="loginBtn" type="button">登录</button><button class="settings-btn" id="registerBtn" type="button">注册</button></div>';
+      var authLabel = AUTH_USER && AUTH_USER.id ? '当前账号' : '游客模式';
+      var authEmail = AUTH_USER && AUTH_USER.email ? AUTH_USER.email : '本地临时保存';
       return '<div class="settings-home">'+
         settingsEntry('外观与主题','跟随系统 / 浅色 / 深色','appearance','○')+
         settingsEntry('模型与参数','模型、Temperature、Top P','model','◇')+
@@ -3593,7 +3606,7 @@
         settingsEntry('个性化','系统提示词与风格','personalization','▽')+
         settingsEntry('聊天偏好','流式输出、自动滚动、Token','chatPrefs','≡')+
         settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','♪')+
-        '<div class="settings-account"><div><div class="settings-account-label">当前账号</div><div class="settings-account-email">'+escapeHTML((AUTH_USER&&AUTH_USER.email)||'')+'</div></div><button class="settings-btn danger" id="logoutBtn" type="button">退出登录</button></div>'+
+        '<div class="settings-account"><div><div class="settings-account-label">'+escapeHTML(authLabel)+'</div><div class="settings-account-email">'+escapeHTML(authEmail)+'</div></div>'+authActions+'</div>'+
       '</div>';
     }
 
@@ -4039,6 +4052,16 @@
     });
     /* ── 设置系统事件 ── */
     document.addEventListener('click', function(e){
+      var loginBtn = e.target.closest('#loginBtn');
+      if(loginBtn){
+        renderAuthPage('login');
+        return;
+      }
+      var registerBtn = e.target.closest('#registerBtn');
+      if(registerBtn){
+        renderAuthPage('register');
+        return;
+      }
       var logoutBtn = e.target.closest('#logoutBtn');
       if(logoutBtn){
         logoutBtn.disabled = true;
@@ -4452,6 +4475,93 @@
 
     /* ── Voice Cache & Pre-generation ── */
     var _voiceCache = {};
+    var _ttsAudioContext = null;
+    function ensureTtsAudioContext(){
+      try{
+        var Ctor = window.AudioContext || window.webkitAudioContext;
+        if(!Ctor) return null;
+        if(!_ttsAudioContext) _ttsAudioContext = new Ctor();
+        if(_ttsAudioContext.state === 'suspended' && _ttsAudioContext.resume){
+          var resumePromise = _ttsAudioContext.resume();
+          if(resumePromise && resumePromise.catch) resumePromise.catch(function(err){ console.warn('[TTS] audio context resume failed:', err && err.message ? err.message : err); });
+        }
+        return _ttsAudioContext;
+      }catch(err){
+        console.warn('[TTS] audio context init failed:', err && err.message ? err.message : err);
+        return null;
+      }
+    }
+    function setTtsButtonError(btn, err){
+      var msg = String(err && err.message ? err.message : err || '语音播放失败');
+      console.error('[TTS]', msg, err || '');
+      if(btn){
+        btn.classList.remove('loading','playing','paused');
+        btn.classList.add('error');
+        setTimeout(function(){ btn.classList.remove('error'); }, 2200);
+      }
+      toast(msg.length > 30 ? '语音播放失败' : msg);
+    }
+    async function playBlobAudio(blob, idx, btn){
+      if(!blob) throw new Error('No audio blob');
+      ensureTtsAudioContext();
+      if(_ttsAudio && typeof _ttsAudio.pause === 'function'){
+        try{ _ttsAudio.pause(); }catch(_e){}
+        _ttsAudio = null;
+      }
+      _ttsPlayingIdx = idx;
+      var objectUrl = URL.createObjectURL(blob);
+      try{
+        if(_ttsAudioContext && typeof _ttsAudioContext.decodeAudioData === 'function'){
+          var arr = await blob.arrayBuffer();
+          var audioBuffer = await new Promise(function(resolve, reject){
+            try{
+              var copy = arr.slice(0);
+              var maybePromise = _ttsAudioContext.decodeAudioData(copy, resolve, reject);
+              if(maybePromise && maybePromise.then) maybePromise.then(resolve).catch(reject);
+            }catch(e){ reject(e); }
+          });
+          return await new Promise(function(resolve, reject){
+            var source = _ttsAudioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(_ttsAudioContext.destination);
+            _ttsAudio = { pause:function(){ try{ source.stop(); }catch(_e){} }, currentTime:0, paused:false };
+            if(btn){ btn.classList.remove('loading','paused'); btn.classList.add('playing'); }
+            source.onended = function(){
+              if(_ttsAudio && _ttsAudio.pause){ _ttsAudio = null; }
+              if(_ttsPlayingIdx === idx) _ttsPlayingIdx = null;
+              if(btn) btn.classList.remove('playing','paused');
+              URL.revokeObjectURL(objectUrl);
+              resolve();
+            };
+            source.onerror = function(err){
+              if(_ttsPlayingIdx === idx) _ttsPlayingIdx = null;
+              if(btn) btn.classList.remove('playing','paused');
+              URL.revokeObjectURL(objectUrl);
+              reject(err || new Error('audio_source_error'));
+            };
+            try{
+              source.start(0);
+            }catch(startErr){
+              source.onerror = null;
+              reject(startErr);
+            }
+          });
+        }
+      }catch(err){
+        console.warn('[TTS] WebAudio playback failed, fallback to HTMLAudioElement:', err && err.message ? err.message : err);
+      }
+      return await new Promise(function(resolve, reject){
+        var a = new Audio(objectUrl);
+        _ttsAudio = a;
+        if(btn){ btn.classList.remove('loading','paused'); btn.classList.add('playing'); }
+        a.onended = function(){ _ttsAudio=null; if(_ttsPlayingIdx === idx) _ttsPlayingIdx=null; if(btn) btn.classList.remove('playing','paused'); URL.revokeObjectURL(objectUrl); resolve(); };
+        a.onerror = function(){ _ttsAudio=null; if(_ttsPlayingIdx === idx) _ttsPlayingIdx=null; if(btn) btn.classList.remove('playing','paused'); URL.revokeObjectURL(objectUrl); reject(new Error('音频播放失败')); };
+        a.play().catch(function(err){
+          URL.revokeObjectURL(objectUrl);
+          reject(err);
+        });
+      });
+    }
     async function preGenerateVoice(msgId, text){
       if(!text || text.length < 3) return;
       var vs = loadVoiceSettings();
@@ -4521,13 +4631,11 @@
       /* 检查缓存 */
       var cached = _voiceCache[idx];
       if(cached && cached.status === 'ready' && cached.blob){
-        _ttsPlayingIdx = idx;
-        btn.classList.add('playing');
-        var a = new Audio(URL.createObjectURL(cached.blob));
-        _ttsAudio = a;
-        a.onended = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing','paused'); };
-        a.onerror = function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing','paused'); };
-        a.play().catch(function(){ _ttsAudio=null; _ttsPlayingIdx=null; btn.classList.remove('playing','paused'); });
+        try{
+          await playBlobAudio(cached.blob, idx, btn);
+        }catch(err){
+          setTtsButtonError(btn, err);
+        }
         return;
       }
       if(cached && cached.status === 'loading'){ toast('语音正在生成中...'); return; }
@@ -4563,31 +4671,35 @@
       try{
         var firstBlob = null;
         for(var ci=0; ci<chunks.length && !stopped; ci++){
-          var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunks[ci]})});
-            var vs = loadVoiceSettings();
+          var vs = loadVoiceSettings();
           var ttsBody = {text:chunks[ci], provider:vs.provider, voice:vs.edgeVoice, rate:vs.rate};
           if(vs.provider==='fish'){ ttsBody.fishAudioApiKey=vs.fishAudioApiKey; ttsBody.fishAudioReferenceId=vs.fishAudioReferenceId; }
           var res = await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ttsBody)});
-          if(!res.ok){ consecutiveFails++; if(consecutiveFails>=2){ stop(); btn.classList.add('error'); setTimeout(function(){btn.classList.remove('error');},2000); break; } continue; }
+          if(!res.ok){
+            var errText = '';
+            try{ errText = (await res.text()).slice(0,300); }catch(_e){}
+            console.error('[TTS] request failed:', res.status, errText);
+            consecutiveFails++;
+            if(consecutiveFails>=2){
+              stop();
+              setTtsButtonError(btn, new Error('语音请求失败'));
+              break;
+            }
+            continue;
+          }
           consecutiveFails = 0;
           var blob = await res.blob();
           if(!firstBlob){ firstBlob = blob; }
           /* Play each chunk sequentially */
           await new Promise(function(resolve){
-            var a = new Audio(URL.createObjectURL(blob));
-            _ttsAudio = a; _ttsPlayingIdx = idx;
-            if(ci===0){ btn.classList.remove('loading'); btn.classList.add('playing'); }
-            a.onended = function(){ _ttsAudio=null; resolve(); };
-            a.onerror = function(){ consecutiveFails++; resolve(); };
-            a.play().catch(function(){ consecutiveFails++; resolve(); });
+            playBlobAudio(blob, idx, btn).then(function(){ resolve(); }).catch(function(err){ consecutiveFails++; console.error('[TTS] chunk playback failed:', err && err.message ? err.message : err); resolve(); });
           });
         }
         if(!stopped && firstBlob){ _ttsCache[idx] = firstBlob; }
         btn.classList.remove('playing','loading');
         _ttsAudio = null; _ttsPlayingIdx = null;
       }catch(e){
-        btn.classList.remove('loading'); btn.classList.add('error');
-        setTimeout(function(){ btn.classList.remove('error'); }, 2000);
+        setTtsButtonError(btn, e);
         _ttsAudio = null; _ttsPlayingIdx = null;
       }
       /* Expose stop for pause button */

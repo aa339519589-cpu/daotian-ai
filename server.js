@@ -429,8 +429,6 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
 }
 
 async function handleChat(req, res){
-  const auth = await requireAuth(req, res);
-  if(!auth) return;
   if(!checkPublicChatLimit(req)){
     sendJson(res, 429, { error:"rate_limited", message:`今天的公开对话次数已用完，每个访问者每天限制 ${PUBLIC_CHAT_DAILY_LIMIT} 次` });
     return;
@@ -611,8 +609,6 @@ function buildModelsUrl(baseUrl){
 
 /* ── handleModelsList: universal model list fetcher ── */
 async function handleModelsList(req, res){
-  const auth = await requireAuth(req, res);
-  if(!auth) return;
   let body = {};
   try{
     body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
@@ -717,8 +713,6 @@ function applyContextMode(messages, contextMode){
 
 /* ── File parsing endpoint ── */
 async function handleFileParse(req, res){
-  const auth = await requireAuth(req, res);
-  if(!auth) return;
   const contentType = String(req.headers["content-type"] || "");
   if(!contentType.includes("multipart/form-data")){
     return sendJson(res, 400, { ok:false, error:"请使用 multipart/form-data 上传文件" });
@@ -830,8 +824,6 @@ async function handleFileParse(req, res){
 
 /* ── Volcengine TTS handler ── */
 async function handleTts(req, res){
-  const auth = await requireAuth(req, res);
-  if(!auth) return;
   let body = {};
   try{ body = JSON.parse((await readBody(req)).toString("utf8") || "{}"); }catch(e){
     return sendJson(res, 400, { ok:false, error:"parse_error" });
