@@ -3572,7 +3572,19 @@
     var _providerDraft = null;
     function openSettings(){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settings=ensureSettingsShape(settings); /* 深拷贝草稿 */ _providerDraft = JSON.parse(JSON.stringify(settings.modelProviders)); renderProviderEditor(); setSaveProviderButtonState('idle'); $('#providerModal').classList.add('show'); document.body.classList.add('modal-open'); }
     function closeSettings(){ /* 丢弃草稿 */ _providerDraft = null; $('#providerModal').classList.remove('show'); document.body.classList.remove('modal-open'); renderModelSwitcher(); }
-    function openSettingsModalPage(page){ closeModelPopover(); if(window.innerWidth<760) sidebarOpen=false; renderSidebar(); settingsPage = page || 'home'; settingsPageStack = ['home']; if(page && page !== 'home') settingsPageStack.push(page); renderSettingsPage(); $('#settingsModal').classList.add('show'); document.body.classList.add('modal-open'); }
+    function openSettingsModalPage(page){
+      closeModelPopover();
+      if(window.innerWidth<760) sidebarOpen=false;
+      renderSidebar();
+      settingsPage = page || 'home';
+      settingsPageStack = ['home'];
+      if(page && page !== 'home') settingsPageStack.push(page);
+      renderSettingsPage();
+      $('#settingsModal').classList.add('show');
+      document.body.classList.add('modal-open');
+      document.body.classList.toggle('provider-hub-open', page === 'providerHub');
+      document.body.classList.toggle('access-code-open', page === 'access');
+    }
     function openAccessPage(){ openSettingsModalPage('access'); }
     function openProviderHub(){ openSettingsModalPage('providerHub'); }
     async function saveSettings(){
@@ -3645,6 +3657,7 @@
     function closeSettingsModal(){
       $('#settingsModal').classList.remove('show');
       document.body.classList.remove('modal-open');
+      document.body.classList.remove('provider-hub-open','access-code-open');
     }
     function settingsGoTo(page){
       settingsPage = page;
