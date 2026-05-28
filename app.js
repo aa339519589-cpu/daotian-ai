@@ -1514,10 +1514,12 @@
       const style=document.createElement('style');
       style.id='daotianThinkingStyle';
       style.textContent = '\
-.daotian-thinking-message{justify-content:flex-start!important;max-width:100%!important;margin:0 auto 14px!important;display:flex!important}\
-.daotian-dot-spinner{position:relative!important;width:38px!important;height:38px!important;min-width:38px!important;min-height:38px!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important}\
-.daotian-dot-spinner span{position:absolute!important;left:50%!important;top:50%!important;width:4.5px!important;height:4.5px!important;margin:-2.25px 0 0 -2.25px!important;border-radius:999px!important;background:rgba(220,100,80,.85)!important;animation:daotianDotFade 1.05s linear infinite!important}\
-@keyframes daotianDotFade{0%{opacity:1}100%{opacity:.18}}\
+.daotian-thinking-message{justify-content:flex-start!important;max-width:100%!important;margin:0 auto 14px!important;display:flex!important;align-items:center!important}\
+.daotian-thinking{display:inline-flex!important;align-items:center!important;justify-content:flex-start!important;gap:8px!important;padding:0!important;margin:0!important;background:transparent!important;border:0!important;box-shadow:none!important;color:var(--muted)!important;font-size:14px!important;line-height:1.5!important;opacity:.78!important;transform:none!important}\
+.daotian-thinking-icon{position:relative!important;width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important;display:inline-block!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important;padding:0!important;margin:0!important;overflow:visible!important;flex:0 0 20px!important}\
+.daotian-thinking-icon span{position:absolute!important;left:50%!important;top:50%!important;width:2.6px!important;height:2.6px!important;margin:-1.3px 0 0 -1.3px!important;border-radius:999px!important;background:rgba(220,100,80,.78)!important;transform:rotate(var(--a)) translate(0,-7.5px)!important;animation:daotianThinkingChain 1.02s linear infinite!important;animation-delay:calc(var(--i) * -0.085s)!important;will-change:opacity,transform!important}\
+.daotian-thinking-text{font-size:14px!important;line-height:1.5!important;font-weight:400!important;color:var(--muted)!important;opacity:.72!important;letter-spacing:0!important;white-space:nowrap!important}\
+@keyframes daotianThinkingChain{0%{opacity:.96;transform:rotate(var(--a)) translate(0,-7.5px) scale(1)}18%{opacity:.74;transform:rotate(var(--a)) translate(0,-7.5px) scale(.96)}38%{opacity:.46;transform:rotate(var(--a)) translate(0,-7.5px) scale(.88)}68%{opacity:.24;transform:rotate(var(--a)) translate(0,-7.5px) scale(.78)}100%{opacity:.17;transform:rotate(var(--a)) translate(0,-7.5px) scale(.72)}}\
 ';
       document.head.appendChild(style);
     }
@@ -1631,7 +1633,9 @@
         }
         if(m.thinking && !m.content){
           ensureThinkingStyle();
-          return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-dot-spinner" aria-label="thinking"><span style="transform:rotate(0deg) translate(0,-15px);animation-delay:0s"></span><span style="transform:rotate(30deg) translate(0,-15px);animation-delay:-0.9625s"></span><span style="transform:rotate(60deg) translate(0,-15px);animation-delay:-0.875s"></span><span style="transform:rotate(90deg) translate(0,-15px);animation-delay:-0.7875s"></span><span style="transform:rotate(120deg) translate(0,-15px);animation-delay:-0.7s"></span><span style="transform:rotate(150deg) translate(0,-15px);animation-delay:-0.6125s"></span><span style="transform:rotate(180deg) translate(0,-15px);animation-delay:-0.525s"></span><span style="transform:rotate(210deg) translate(0,-15px);animation-delay:-0.4375s"></span><span style="transform:rotate(240deg) translate(0,-15px);animation-delay:-0.35s"></span><span style="transform:rotate(270deg) translate(0,-15px);animation-delay:-0.2625s"></span><span style="transform:rotate(300deg) translate(0,-15px);animation-delay:-0.175s"></span><span style="transform:rotate(330deg) translate(0,-15px);animation-delay:-0.0875s"></span></div></div>';
+          var dots='';
+          for(var di=0;di<12;di++){dots+='<span style=\"--i:'+di+';--a:'+(di*30)+'deg\"></span>';}
+          return '<div class="message assistant daotian-thinking-message" data-scroll-focus="1"><div class="daotian-thinking"><span class="daotian-thinking-icon" aria-hidden="true">'+dots+'</span><span class="daotian-thinking-text">想一下</span></div></div>';
         }
         var ttsText = (m.content || '').replace(/\s+/g,' ').trim();
         var ttsBtn = (m.role==='assistant' && !m.thinking && ttsText.length>0)
