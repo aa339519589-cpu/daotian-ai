@@ -104,7 +104,7 @@
 
     const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
     const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
-    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'你是一个简洁自然的对话模型。默认少说，直接回应当前内容；用户没要求详细时，不要展开，不要客服腔，不要说明书腔，不要刻意装人。\n\n普通聊天保持短、淡、自然；学习、代码、分析、方案类问题认真答，结论先行，步骤清楚。\n\n在本提示词里，“你”指模型；正式回复用户时，“我”指模型自己，“你”指用户。不要复读问题，不要主客体说反。', memoryInjection:false };
+    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'你是一个简洁自然的对话模型。默认少说，直接回应当前内容；用户没要求详细时，不要展开，不要客服腔，不要说明书腔，不要刻意装人。\n\n普通聊天保持短、淡、自然；学习、代码、分析、方案类问题认真答，结论先行，步骤清楚。\n\n在本提示词里，"你"指模型；正式回复用户时，"我"指模型自己，"你"指用户。不要复读问题，不要主客体说反。', memoryInjection:false };
     const DEFAULT_SYSTEM_PROMPT = defaultModelParams.systemPrompt;
     const defaultPersonalization = { enabled:false, content:'' };
 
@@ -756,6 +756,19 @@
       }
       return null;
     }
+    function hasAnyProvider(){
+      settings = ensureSettingsShape(settings);
+      return (Array.isArray(settings.modelProviders) && settings.modelProviders.length > 0);
+    }
+    function hasProviderWithCredentials(){
+      settings = ensureSettingsShape(settings);
+      var providers = settings.modelProviders || [];
+      for(var i=0; i<providers.length; i++){
+        var p = providers[i];
+        if(p.apiKey && p.apiKey.trim() && p.baseUrl && p.baseUrl.trim()) return true;
+      }
+      return false;
+    }
     function syncModelState(){
       settings = ensureSettingsShape(settings);
       var provider = findFirstUsableProvider();
@@ -1088,12 +1101,15 @@
     }
     function hasUsableModelConfig(){
       settings = ensureSettingsShape(settings);
-      var provider = findFirstUsableProvider();
-      if(!provider) return false;
-      var preset = settings.modelPresets.find(function(p){ return p.providerId===provider.id; });
-      if(!preset) return false;
-      if(!settings.activePresetId || !settings.modelPresets.some(function(p){return p.id===settings.activePresetId;})){ settings.activePresetId=preset.id; }
-      return true;
+      return findFirstUsableProvider() !== null;
+    }
+
+    function getModelConfigLevel(){
+      settings = ensureSettingsShape(settings);
+      if(!hasAnyProvider()) return 'noProvider';
+      if(!hasProviderWithCredentials()) return 'providerMissingKey';
+      if(!findFirstUsableProvider()) return 'providerReadyButNoModel';
+      return 'usable';
     }
 
     /* Model capability detection */
@@ -1125,10 +1141,11 @@
     var IMAGE_EXTENSIONS = ['png','jpg','jpeg','webp','gif','bmp'];
     var SUPPORTED_BINARY = ['pdf','docx','xlsx'];
     function getModelStatusText(){
+      var level = getModelConfigLevel();
+      if(level === 'noProvider') return '请先添加模型提供方';
+      if(level === 'providerMissingKey') return '请填写 Base URL / API Key';
       var current = activePreset();
-      if(!current || !current.model) return '请先添加模型';
-      if(!current.apiKey || !current.apiKey.trim()) return '请填写 API Key';
-      if(!current.baseUrl || !current.baseUrl.trim()) return '请填写 Base URL';
+      if(level === 'providerReadyButNoModel' || !current || !current.model) return '请填写或获取模型名称';
       return friendlyModelName(current.model);
     }
     function renderModelSwitcher(){
@@ -1359,11 +1376,12 @@
       /* Build request body — include upstream when going through /chat */
       var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true}};
       exportModelParamsBody(cfg.id, body);
-      if(searchOn || hasAttachments || cfg.accessCode || cfg.providerId){
+      if(searchOn || hasAttachments || cfg.accessCode || cfg.providerId || (cfg.baseUrl && cfg.apiKey)){
         if(searchOn){ body.webSearch = true; body.search = true; }
         if(cfg.accessCode) body.accessCode = cfg.accessCode;
-        else if(cfg.providerId) body.providerId = cfg.providerId;
-        else{
+        if(cfg.providerId) body.providerId = cfg.providerId;
+        body.providerScope = cfg.providerScope || 'self';
+        if(cfg.baseUrl && cfg.apiKey){
           body.frontendUpstream = {
             providerType: cfg.providerType || 'openai',
             providerName: cfg.providerName || cfg.label || '当前模型',
@@ -1371,7 +1389,7 @@
             apiKey: cfg.apiKey || '',
             requestPath: cfg.path || '/v1/chat/completions',
             path: cfg.path || '/v1/chat/completions',
-            model: cfg.model || 'deepseek-chat'
+            model: cfg.model || body.model || ''
           };
         }
       }
@@ -1447,8 +1465,24 @@
       var hasFiles = _attachments && _attachments.length > 0;
       var fetchBody, fetchHeaders, targetUrl;
 
-      if(hasFiles || searchOn || (cfg.baseUrl && cfg.apiKey)){
-        /* Send to our backend for file parsing + proxying */
+      if(hasFiles || searchOn || cfg.accessCode || cfg.providerId || (cfg.baseUrl && cfg.apiKey)){
+        targetUrl = '/chat';
+        /* 先写 body 字段，再序列化 —— 顺序绝对不能反 */
+        body.accessCode = cfg.accessCode || '';
+        body.providerId = cfg.providerId || '';
+        body.providerScope = cfg.providerScope || 'self';
+        if(cfg.baseUrl && cfg.apiKey){
+          body.frontendUpstream = {
+            providerType: cfg.providerType || 'openai',
+            providerName: cfg.providerName || cfg.label || '当前模型',
+            baseUrl: cfg.baseUrl || '',
+            apiKey: cfg.apiKey || '',
+            requestPath: cfg.path || '/v1/chat/completions',
+            path: cfg.path || '/v1/chat/completions',
+            model: cfg.model || body.model || ''
+          };
+        }
+        if(searchOn){ body.webSearch = true; body.search = true; }
         if(hasFiles){
           var fd = new FormData();
           fd.append('body', JSON.stringify(body));
@@ -1461,18 +1495,6 @@
           fetchHeaders = {'Content-Type':'application/json'};
           fetchBody = JSON.stringify(body);
         }
-        targetUrl = '/chat';
-        body.accessCode = cfg.accessCode || '';
-        body.providerId = cfg.providerId || '';
-        body.frontendUpstream = {
-          providerType: cfg.providerType || 'openai',
-          providerName: cfg.providerName || cfg.label || '当前模型',
-          baseUrl: cfg.baseUrl || '',
-          apiKey: cfg.apiKey || '',
-          requestPath: cfg.path || '/v1/chat/completions',
-          path: cfg.path || '/v1/chat/completions',
-          model: cfg.model || 'deepseek-chat'
-        };
       }else{
         fetchHeaders = {'Content-Type':'application/json'};
         if(cfg.apiKey) fetchHeaders.Authorization = 'Bearer '+cfg.apiKey;
@@ -4132,24 +4154,24 @@
     }
 
     function renderPackageEditor(){
-      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
+      var providers = Array.isArray(settings.shareModelProviders) ? settings.shareModelProviders : [];
       var selectedId = settings.sharePackageProviderId || (providers[0] ? providers[0].id : '');
       var opts = providers.map(function(p){
-        return '<option value=”'+escapeHTML(p.id)+'”'+(p.id === selectedId ? ' selected' : '')+'>'+escapeHTML(p.providerName || '模型提供方')+'</option>';
+        return '<option value="'+escapeHTML(p.id)+'"'+(p.id === selectedId ? ' selected' : '')+'>'+escapeHTML(p.providerName || '模型提供方')+'</option>';
       }).join('');
       var selectedProvider = providers.find(function(p){ return p.id === selectedId; }) || providers[0] || null;
       var models = selectedProvider ? selectedProvider.models : [];
-      var emptyHint = providers.length ? '' : '<div class=”settings-muted” style=”margin-top:10px”>请先在”模型提供方”里保存至少一个提供方</div>';
-      return '<div class=”package-editor”>'+
-        '<div class=”row”><div class=”field”><label>选择已保存的模型提供方</label><select id=”sharePackageProviderSelect” class=”settings-select”>'+opts+'</select></div><div class=”field”><label>模型包名称</label><input id=”sharePackageNameInput” class=”settings-input” placeholder=”例如：团队共享包”></div></div>'+
-        '<div class=”row”><div class=”field”><label>有效期（天）</label><input id=”sharePackageExpiryInput” class=”settings-input” type=”number” min=”1” step=”1” value=”30”></div><div class=”field”><label>额度（0 为不限）</label><input id=”sharePackageQuotaInput” class=”settings-input” type=”number” min=”0” step=”1” value=”0”></div></div>'+
-        '<div class=”field”><label>可分享模型（从上面提供方已保存的模型中选择）</label><textarea id=”sharePackageModelsInput” class=”settings-textarea” placeholder=”一行一个模型名”>'+escapeHTML(models.join('\n'))+'</textarea>'+emptyHint+'</div>'+
-        '<div style=”display:flex;gap:8px;flex-wrap:wrap”><button class=”settings-btn primary” id=”shareCreatePackageBtn”>生成接入码</button><button class=”settings-btn” id=”shareRefreshPackageBtn” type=”button”>刷新列表</button></div>'+
-        '<div id=”sharePackageStatus” class=”settings-muted” style=”margin-top:8px”></div>'+
+      var emptyHint = providers.length ? '' : '<div class="settings-muted" style="margin-top:10px">请先在下方添加一个分享用提供方</div>';
+      return '<div class="package-editor">'+
+        '<div class="row"><div class="field"><label>选择分享用提供方</label><select id="sharePackageProviderSelect" class="settings-select">'+opts+'</select></div><div class="field"><label>模型包名称</label><input id="sharePackageNameInput" class="settings-input" placeholder="例如：团队共享包"></div></div>'+
+        '<div class="row"><div class="field"><label>有效期（天）</label><input id="sharePackageExpiryInput" class="settings-input" type="number" min="1" step="1" value="30"></div><div class="field"><label>额度（0 为不限）</label><input id="sharePackageQuotaInput" class="settings-input" type="number" min="0" step="1" value="0"></div></div>'+
+        '<div class="field"><label>可分享模型（从上面提供方已保存的模型中选择）</label><textarea id="sharePackageModelsInput" class="settings-textarea" placeholder="一行一个模型名">'+escapeHTML(models.join('\n'))+'</textarea>'+emptyHint+'</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="settings-btn primary" id="shareCreatePackageBtn">生成接入码</button><button class="settings-btn" id="shareRefreshPackageBtn" type="button">刷新列表</button></div>'+
+        '<div id="sharePackageStatus" class="settings-muted" style="margin-top:8px"></div>'+
       '</div>';
     }
     function syncPackageEditorModels(providerId){
-      var providers = Array.isArray(settings.modelProviders) ? settings.modelProviders : [];
+      var providers = Array.isArray(settings.shareModelProviders) ? settings.shareModelProviders : [];
       var provider = providers.find(function(p){ return p.id === providerId; }) || providers[0] || null;
       var ta = $('#sharePackageModelsInput');
       if(ta && provider) ta.value = (provider.models || []).join('\n');
@@ -4157,20 +4179,25 @@
 
     function renderShareHubPage(){
       settings = ensureSettingsShape(settings);
-      if(!Array.isArray(settings.modelProviders)) settings.modelProviders = [];
+      if(!Array.isArray(settings.shareModelProviders)) settings.shareModelProviders = [];
+      /* 分享用提供方编辑区 —— 独立于自己使用，存到 shareModelProviders */
+      var shareSection = renderProviderSection('share');
+
       var packages = loadAccessPackages();
       var packageCards = (Array.isArray(packages) && packages.length)
         ? packages.map(function(p){
-            return '<div class=”settings-card”><div class=”settings-card-title”>'+escapeHTML(p.packageName || '模型包')+'</div>'+
-              '<div class=”settings-muted”>接入码：<code>'+escapeHTML(p.code || '')+'</code> <button class=”copy-code-btn” data-copy=”'+escapeHTML(p.code || '')+'” type=”button” style=”cursor:pointer;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:2px 10px;font-size:12px”>复制</button></div>'+
-              '<div class=”settings-muted”>模型：'+escapeHTML((p.models||[]).join('、') || '无')+'</div>'+
-              '<div class=”settings-muted”>状态：'+(p.enabled!==false?'启用中':'已停用')+' / 额度：'+(p.quotaTotal>0?p.quotaUsed+'/'+p.quotaTotal:'不限')+' / 到期：'+(p.expiresAt?new Date(p.expiresAt).toLocaleDateString():'永久')+'</div>'+
+            return '<div class="settings-card"><div class="settings-card-title">'+escapeHTML(p.packageName || '模型包')+'</div>'+
+              '<div class="settings-muted">接入码：<code>'+escapeHTML(p.code || '')+'</code> <button class="copy-code-btn" data-copy="'+escapeHTML(p.code || '')+'" type="button" style="cursor:pointer;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:2px 10px;font-size:12px">复制</button></div>'+
+              '<div class="settings-muted">模型：'+escapeHTML((p.models||[]).join('、') || '无')+'</div>'+
+              '<div class="settings-muted">状态：'+(p.enabled!==false?'启用中':'已停用')+' / 额度：'+(p.quotaTotal>0?(p.quotaUsed||0)+'/'+p.quotaTotal:'不限')+' / 到期：'+(p.expiresAt?new Date(p.expiresAt).toLocaleDateString():'永久')+'</div>'+
               '</div>';
           }).join('')
-        : '<div class=”settings-muted”>暂无已生成的接入码</div>';
-      return '<div class=”settings-page share-hub”>'+
-        '<div class=”settings-card”><div class=”settings-card-title”>生成新接入码</div><div class=”settings-muted”>从已保存的模型提供方中选择模型，生成接入码分享给别人</div><div id=”packageEditor”>'+renderPackageEditor()+'</div></div>'+
-        '<div class=”settings-card”><div class=”settings-card-title”>已生成的接入码</div>'+packageCards+'</div>'+
+        : '<div class="settings-muted">暂无已生成的接入码</div>';
+      return '<div class="settings-page share-hub">'+
+        '<div class="settings-card"><div class="settings-card-title">分享给别人</div><div class="settings-muted">这里配置给别人使用的模型提供方，保存后可生成接入码。接入码使用者看不到你的 API Key。</div></div>'+
+        shareSection+
+        '<div class="settings-card"><div class="settings-card-title">生成新接入码</div><div class="settings-muted">选择一个分享用模型提供方，选择可分享模型，生成接入码给别人使用。</div><div id="packageEditor">'+renderPackageEditor()+'</div></div>'+
+        '<div class="settings-card"><div class="settings-card-title">已生成的接入码</div>'+packageCards+'</div>'+
       '</div>';
     }
 
@@ -4774,7 +4801,7 @@
           return;
         }
         var pkgBody = {
-          providerScope: 'self',
+          providerScope: 'share',
           providerId: providerSel.value,
           packageName: nameInput.value.trim(),
           models: splitModels(modelsInput.value),

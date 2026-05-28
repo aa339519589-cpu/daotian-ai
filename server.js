@@ -418,7 +418,7 @@ function parseProvidersFromSettings(userData, field){
     apiKey:String(p.apiKey || "").trim(),
     path:String(p.path || p.requestPath || "/v1/chat/completions").trim() || "/v1/chat/completions",
     models:Array.isArray(p.models) ? p.models.map(v=>String(v||"").trim()).filter(Boolean) : []
-  })).filter(p=>p.baseUrl && p.apiKey && p.models.length);
+  })).filter(p=>p.baseUrl && p.apiKey);
 }
 function parseSelfProviders(userData){
   return parseProvidersFromSettings(userData, "modelProviders");
@@ -930,6 +930,57 @@ async function handleModelsList(req, res){
     const models = pkg.models.map(id=>({ id, name:id, owned_by: pkg.packageName || pkg.providerName || "" }));
     return sendJson(res, 200, { ok:true, models, providerName:pkg.packageName || pkg.providerName || "接入模型", accessCode, packageName:pkg.packageName });
   }
+
+  /* baseUrl + apiKey 优先于 providerId —— 表单里填的值永远优先于已保存数据 */
+  if(baseUrl && apiKey){
+    const modelsUrl = buildModelsUrl(baseUrl);
+    if(!modelsUrl) return sendJson(res, 400, { ok:false, error:"无法构建模型列表请求地址，请检查 Base URL" });
+    try{
+      const controller = new AbortController();
+      const timeout = setTimeout(()=>controller.abort(), 15000);
+      const response = await fetch(modelsUrl, {
+        method: "GET",
+        headers: { "authorization": "Bearer " + apiKey, "content-type": "application/json" },
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      const text = await response.text();
+      let data = null;
+      try{ data = JSON.parse(text); }catch{}
+      if(!response.ok){
+        if(response.status === 401 || response.status === 403){
+          return sendJson(res, 200, { ok:false, error:"获取失败，API Key 无效或无权限" });
+        }
+        if(response.status === 404){
+          return sendJson(res, 200, { ok:false, error:"获取失败，该 Base URL 未提供 /models 接口（请求地址："+modelsUrl+"），可使用手动添加模型" });
+        }
+        return sendJson(res, 200, { ok:false, error:"获取失败 (HTTP "+response.status+")，请求地址："+modelsUrl+"，请检查 Base URL / API Key 是否正确" });
+      }
+      if(!data) return sendJson(res, 200, { ok:false, error:"获取失败，供应商返回格式异常" });
+      let modelList = [];
+      if(data.data && Array.isArray(data.data)) modelList = data.data;
+      else if(Array.isArray(data)) modelList = data;
+      else if(data.models && Array.isArray(data.models)) modelList = data.models;
+      const models = [];
+      const seen = new Set();
+      for(const item of modelList){
+        const modelId = String(item.id || item.name || "").trim();
+        if(!modelId) continue;
+        if(seen.has(modelId)) continue;
+        seen.add(modelId);
+        models.push({ id: modelId, name: modelId, owned_by: String(item.owned_by || item.ownedBy || providerName || "").trim() || "" });
+      }
+      models.sort((a,b)=>a.id.localeCompare(b.id));
+      return sendJson(res, 200, { ok:true, models, providerName, baseUrl, modelsUrl });
+    }catch(error){
+      if(error?.name === "AbortError"){
+        return sendJson(res, 200, { ok:false, error:"获取失败，请求超时（请求地址："+modelsUrl+"），请检查网络或供应商接口状态" });
+      }
+      return sendJson(res, 200, { ok:false, error:"获取失败: "+((error&&error.message)||'网络错误')+"（请求地址："+modelsUrl+"）" });
+    }
+  }
+
+  /* 没有实时 baseUrl/apiKey 时，才从已保存 provider 里读 */
   if(providerId){
     const auth = await authFromRequest(req);
     if(!auth) return sendJson(res, 401, { ok:false, error:"unauthorized", message:"请先登录" });
@@ -944,79 +995,6 @@ async function handleModelsList(req, res){
     return sendJson(res, 200, { ok:true, models:provider.models.map(id=>({ id, name:id, owned_by: provider.providerName || "" })), providerName:provider.providerName, providerId });
   }
 
-  if(!baseUrl) return sendJson(res, 400, { ok:false, error:"请先填写 Base URL" });
-  if(!apiKey) return sendJson(res, 400, { ok:false, error:"请先填写 API Key" });
-
-  const modelsUrl = buildModelsUrl(baseUrl);
-  if(!modelsUrl) return sendJson(res, 400, { ok:false, error:"无法构建模型列表请求地址，请检查 Base URL" });
-
-  try{
-    const controller = new AbortController();
-    const timeout = setTimeout(()=>controller.abort(), 15000);
-    const response = await fetch(modelsUrl, {
-      method: "GET",
-      headers: {
-        "authorization": `Bearer ${apiKey}`,
-        "content-type": "application/json"
-      },
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-
-    const text = await response.text();
-    let data = null;
-    try{ data = JSON.parse(text); }catch{}
-
-    if(!response.ok){
-      if(response.status === 401 || response.status === 403){
-        return sendJson(res, 200, { ok:false, error:"获取失败，API Key 无效或无权限（请检查 Key 是否正确、是否过期）" });
-      }
-      if(response.status === 404){
-        return sendJson(res, 200, { ok:false, error:"获取失败，该 Base URL 未提供 /models 接口（请求地址："+modelsUrl+"），可使用手动添加模型" });
-      }
-      return sendJson(res, 200, { ok:false, error:"获取失败 (HTTP "+response.status+")，请求地址："+modelsUrl+"，请检查 Base URL / API Key 是否正确" });
-    }
-
-    if(!data){
-      return sendJson(res, 200, { ok:false, error:"获取失败，供应商返回格式异常" });
-    }
-
-    /* Normalize models */
-    let modelList = [];
-
-    /* OpenAI format: { object:"list", data:[{id:"gpt-4o"}] } */
-    if(data.data && Array.isArray(data.data)){
-      modelList = data.data;
-    }else if(Array.isArray(data)){
-      modelList = data;
-    }else if(data.models && Array.isArray(data.models)){
-      modelList = data.models;
-    }
-
-    const models = [];
-    const seen = new Set();
-
-    for(const item of modelList){
-      const modelId = String(item.id || item.name || "").trim();
-      if(!modelId) continue;
-      if(seen.has(modelId)) continue;
-      seen.add(modelId);
-      models.push({
-        id: modelId,
-        name: modelId,
-        owned_by: String(item.owned_by || item.ownedBy || providerName || "").trim() || ""
-      });
-    }
-
-    models.sort((a,b)=>a.id.localeCompare(b.id));
-
-    sendJson(res, 200, { ok:true, models, providerName, baseUrl, modelsUrl });
-  }catch(error){
-    if(error?.name === "AbortError"){
-      return sendJson(res, 200, { ok:false, error:"获取失败，请求超时（请求地址："+modelsUrl+"），请检查网络或供应商接口状态" });
-    }
-    sendJson(res, 200, { ok:false, error:"获取失败: "+((error&&error.message)||'网络错误')+"（请求地址："+modelsUrl+"）" });
-  }
 }
 
 /* ── Context mode: apply message trimming rules ── */
@@ -1268,8 +1246,25 @@ const server = http.createServer(async (req, res)=>{
     }
     if(pathname === "/health"){
       try{
+        let authExists = false, accessExists = false, dataDirWritable = false;
+        try{ await readFile(AUTH_FILE, "utf8"); authExists = true; }catch{}
+        try{ await readFile(ACCESS_FILE, "utf8"); accessExists = true; }catch{}
+        try{ await mkdir(DATA_DIR, { recursive:true }); const testFile = AUTH_FILE + ".healthcheck"; await writeFile(testFile, "test"); await import("node:fs/promises").then(fs=>fs.unlink(testFile)); dataDirWritable = true; }catch{}
         const store = await readAuthStore();
-        return sendJson(res, 200, { ok:true, time:nowIso(), users:store.users.length, sessions:store.sessions.length, dataDir:DATA_DIR });
+        const isRender = !!process.env.RENDER;
+        const persistentWarning = isRender && (!process.env.DATA_DIR || process.env.DATA_DIR.indexOf('opt/render') === -1)
+          ? 'WARNING: DATA_DIR may not be on persistent disk. Auth data may be lost on deploy.'
+          : null;
+        return sendJson(res, 200, {
+          ok:true, time:nowIso(),
+          users:store.users.length,
+          sessions:store.sessions.length,
+          dataDir:DATA_DIR,
+          authFileExists:authExists,
+          accessFileExists:accessExists,
+          dataDirWritable:dataDirWritable,
+          persistentWarning:persistentWarning
+        });
       }catch(e){
         return sendJson(res, 200, { ok:true, time:nowIso(), error:e.message });
       }
@@ -1281,5 +1276,8 @@ const server = http.createServer(async (req, res)=>{
   }
 });
 server.listen(PORT, HOST, ()=>{
+  const persistentWarning = !process.env.DATA_DIR ? 'WARNING: DATA_DIR not set. Auth data stored in local ./data/ and may be lost on Render restart/deploy. Set DATA_DIR to a persistent disk path.' : null;
   console.log(`稻田 Ai running at http://${HOST}:${PORT}`);
+  console.log(`DATA_DIR: ${DATA_DIR}`);
+  if(persistentWarning) console.warn(persistentWarning);
 });
