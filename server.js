@@ -511,73 +511,57 @@ async function handleCreateAccessPackage(req, res){
   if(!auth) return;
   let body = {};
   try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
-  const providerScope = String(body.providerScope || "share").trim();
-  const providerId = String(body.providerId || "").trim();
   const packageName = String(body.packageName || "").trim();
-  const models = Array.isArray(body.models) ? body.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
   const quotaTotal = Number(body.quotaTotal || 0);
   const expiresInDays = Number(body.expiresInDays || body.expiryDays || 0);
-  const enabled = body.enabled !== false;
-  if(!providerId) return sendJson(res, 400, { ok:false, error:"provider_required", message:"请选择一个模型提供方" });
-  if(!packageName) return sendJson(res, 400, { ok:false, error:"package_name_required", message:"请填写模型包名称" });
-  if(!models.length) return sendJson(res, 400, { ok:false, error:"models_required", message:"请至少选择一个模型" });
-  const userData = auth.store.userData[auth.user.id] || {};
-  const providers = providerScope === "self"
-    ? parseSelfProviders(userData)
-    : providerScope === "share"
-      ? parseShareProviders(userData)
-      : parseUserProviders(userData);
-  const provider = providers.find(p=>p.id === providerId);
-  if(!provider && providerScope !== "self"){
-    const fallbackProvider = parseSelfProviders(userData).find(p=>p.id === providerId);
-    if(fallbackProvider) return sendJson(res, 404, { ok:false, error:"provider_scope_mismatch", message:"请选择“分享给别人”中的提供方" });
+  let items = Array.isArray(body.items) ? body.items : [];
+  // Backward compat: single providerId + models → items
+  if(!items.length && body.providerId){
+    const models = Array.isArray(body.models) ? body.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
+    items = [{ providerId: String(body.providerId).trim(), models }];
   }
-  if(!provider) return sendJson(res, 404, { ok:false, error:"provider_not_found", message:"未找到该模型提供方" });
+  if(!packageName) return sendJson(res, 400, { ok:false, error:"package_name_required", message:"请填写接入包名称" });
+  if(!items.length) return sendJson(res, 400, { ok:false, error:"items_required", message:"请至少选择一个提供方及模型" });
+  // Validate each item has models
+  for(const item of items){
+    if(!Array.isArray(item.models) || !item.models.length){
+      return sendJson(res, 400, { ok:false, error:"models_required", message:"每个提供方至少选择一个模型" });
+    }
+  }
+  const userData = auth.store.userData[auth.user.id] || {};
+  const shareProviders = parseShareProviders(userData);
+  // Resolve provider info for each item
+  for(const item of items){
+    const provider = shareProviders.find(p=>p.id === item.providerId);
+    if(!provider) return sendJson(res, 404, { ok:false, error:"provider_not_found", message:"未找到提供方: "+item.providerId });
+    // Attach provider info for storage
+    item._baseUrl = provider.baseUrl;
+    item._apiKey = provider.apiKey;
+    item._path = provider.path || "/v1/chat/completions";
+    item._providerName = provider.providerName;
+  }
   const store = await readAccessStore();
-  const existing = store.packages.find(p=>p.providerUserId === auth.user.id && p.providerId === providerId && p.packageName === packageName);
   const code = String(body.code || "").trim() || crypto.randomBytes(4).toString("hex").toUpperCase();
-  const next = normalizeAccessPackage(existing || {});
   const pkg = normalizeAccessPackage({
-    ...next,
-    id: existing ? existing.id : newId("pkg"),
+    id: newId("pkg"),
     code,
     providerUserId: auth.user.id,
-    providerId,
     packageName,
-    models,
-    baseUrl: provider.baseUrl,
-    apiKey: provider.apiKey,
-    path: provider.path,
-    providerName: provider.providerName,
-    providerType: provider.providerType,
+    items: items.map(it=>({ providerId: it.providerId, models: it.models, baseUrl: it._baseUrl, apiKey: it._apiKey, path: it._path, providerName: it._providerName })),
     quotaTotal,
     expiresAt: expiresInDays > 0 ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString() : "",
-    quotaUsed: existing ? Number(existing.quotaUsed || 0) : 0,
-    enabled,
-    createdAt: existing ? existing.createdAt : nowIso(),
+    quotaUsed: 0,
+    enabled: true,
+    createdAt: nowIso(),
     updatedAt: nowIso()
   });
-  if(existing){
-    const idx = store.packages.findIndex(p=>p.id === existing.id);
-    store.packages[idx] = pkg;
-  }else{
-    store.packages.push(pkg);
-  }
+  store.packages.push(pkg);
   await writeAccessStore(store);
   sendJson(res, 200, { ok:true, package: {
-    id: pkg.id,
-    code: pkg.code,
-    providerUserId: pkg.providerUserId,
-    providerId: pkg.providerId,
-    packageName: pkg.packageName,
-    models: pkg.models,
-    enabled: pkg.enabled,
-    quotaTotal: pkg.quotaTotal,
-    quotaUsed: pkg.quotaUsed,
-    expiresAt: pkg.expiresAt,
-    createdAt: pkg.createdAt,
-    updatedAt: pkg.updatedAt,
-    status: packageStatus(pkg)
+    id: pkg.id, code: pkg.code, packageName: pkg.packageName,
+    items: pkg.items, models: pkg.models,
+    enabled: pkg.enabled, quotaTotal: pkg.quotaTotal, quotaUsed: pkg.quotaUsed,
+    expiresAt: pkg.expiresAt, createdAt: pkg.createdAt, status: packageStatus(pkg)
   } });
 }
 
@@ -588,20 +572,71 @@ async function handleListAccessPackages(req, res){
   const packages = store.packages.filter(p=>p.providerUserId === auth.user.id).map(p=>{
     const pkg = normalizeAccessPackage(p);
     return {
-      id: pkg.id,
-      code: pkg.code,
-      packageName: pkg.packageName,
-      models: pkg.models,
-      enabled: pkg.enabled,
-      quotaTotal: pkg.quotaTotal,
-      quotaUsed: pkg.quotaUsed,
-      expiresAt: pkg.expiresAt,
-      status: packageStatus(pkg),
-      createdAt: pkg.createdAt,
-      updatedAt: pkg.updatedAt
+      id: pkg.id, code: pkg.code, packageName: pkg.packageName,
+      models: pkg.models, items: pkg.items, modelCount: pkg.models.length,
+      enabled: pkg.enabled, quotaTotal: pkg.quotaTotal, quotaUsed: pkg.quotaUsed,
+      expiresAt: pkg.expiresAt, status: packageStatus(pkg),
+      createdAt: pkg.createdAt, updatedAt: pkg.updatedAt
     };
   });
   sendJson(res, 200, { ok:true, packages });
+}
+
+/* ── Package management ── */
+async function handleDeleteAccessPackage(req, res, packageId){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
+  const store = await readAccessStore();
+  const idx = store.packages.findIndex(p=>p.id === packageId && p.providerUserId === auth.user.id);
+  if(idx < 0) return sendJson(res, 404, { ok:false, error:"not_found", message:"未找到该接入码" });
+  store.packages.splice(idx, 1);
+  await writeAccessStore(store);
+  sendJson(res, 200, { ok:true });
+}
+async function handleUpdateAccessPackage(req, res, packageId){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
+  let body = {};
+  try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, { ok:false, error:"parse_error" }); }
+  const store = await readAccessStore();
+  const idx = store.packages.findIndex(p=>p.id === packageId && p.providerUserId === auth.user.id);
+  if(idx < 0) return sendJson(res, 404, { ok:false, error:"not_found", message:"未找到该接入码" });
+  const existing = store.packages[idx];
+  if(body.enabled !== undefined) existing.enabled = Boolean(body.enabled);
+  if(body.packageName !== undefined) existing.packageName = String(body.packageName);
+  if(typeof body.quotaTotal === 'number') existing.quotaTotal = Number(body.quotaTotal);
+  if(body.expiresAt !== undefined) existing.expiresAt = body.expiresAt ? new Date(body.expiresAt).toISOString() : "";
+  if(Array.isArray(body.items)) existing.items = body.items;
+  existing.updatedAt = nowIso();
+  await writeAccessStore(store);
+  const pkg = normalizeAccessPackage(existing);
+  sendJson(res, 200, { ok:true, package: {
+    id: pkg.id, code: pkg.code, packageName: pkg.packageName,
+    models: pkg.models, items: pkg.items, modelCount: pkg.models.length,
+    enabled: pkg.enabled, quotaTotal: pkg.quotaTotal, quotaUsed: pkg.quotaUsed,
+    expiresAt: pkg.expiresAt, status: packageStatus(pkg), createdAt: pkg.createdAt
+  }});
+}
+async function handleRegenerateAccessCode(req, res, packageId){
+  const auth = await requireAuth(req, res);
+  if(!auth) return;
+  const store = await readAccessStore();
+  const idx = store.packages.findIndex(p=>p.id === packageId && p.providerUserId === auth.user.id);
+  if(idx < 0) return sendJson(res, 404, { ok:false, error:"not_found", message:"未找到该接入码" });
+  const old = store.packages[idx];
+  // Generate new code, invalidate old (keep same package)
+  const newCode = crypto.randomBytes(4).toString("hex").toUpperCase();
+  // Delete old, push new with new code
+  const pkg = normalizeAccessPackage({ ...old, code: newCode, updatedAt: nowIso() });
+  store.packages.splice(idx, 1);
+  store.packages.push(pkg);
+  await writeAccessStore(store);
+  sendJson(res, 200, { ok:true, package: {
+    id: pkg.id, code: pkg.code, packageName: pkg.packageName,
+    oldCode: old.code, models: pkg.models, items: pkg.items, modelCount: pkg.models.length,
+    enabled: pkg.enabled, quotaTotal: pkg.quotaTotal, quotaUsed: pkg.quotaUsed,
+    expiresAt: pkg.expiresAt, status: packageStatus(pkg), createdAt: pkg.createdAt
+  }});
 }
 
 async function handleClaimAccessCode(req, res){
@@ -663,18 +698,24 @@ function parseUserProviders(userData){
 
 function normalizeAccessPackage(pkg){
   const models = Array.isArray(pkg.models) ? pkg.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
+  // Migrate old single-provider packages to items format
+  let items = Array.isArray(pkg.items) ? pkg.items : [];
+  if(!items.length && (pkg.providerId || models.length)){
+    items = [{ providerId: String(pkg.providerId||"").trim(), models: Array.from(new Set(models)) }];
+  }
+  // Deduplicate models within each item
+  items = items.map(item=>({
+    providerId: String(item.providerId||"").trim(),
+    models: Array.from(new Set((Array.isArray(item.models)?item.models:[]).map(v=>String(v||"").trim()).filter(Boolean)))
+  })).filter(item=>item.providerId && item.models.length);
   return {
     id:String(pkg.id || "").trim(),
     code:String(pkg.code || "").trim(),
     providerUserId:String(pkg.providerUserId || "").trim(),
-    providerId:String(pkg.providerId || "").trim(),
     packageName:String(pkg.packageName || pkg.name || "").trim(),
-    models:Array.from(new Set(models)),
-    baseUrl:String(pkg.baseUrl || "").trim(),
-    apiKey:String(pkg.apiKey || "").trim(),
-    path:String(pkg.path || "/v1/chat/completions").trim() || "/v1/chat/completions",
-    providerName:String(pkg.providerName || "").trim(),
-    providerType:String(pkg.providerType || "openai").trim(),
+    items,
+    // Flattened models for backward compat
+    models: Array.from(new Set(items.reduce((acc,it)=>acc.concat(it.models),[]))),
     enabled:pkg.enabled !== false,
     quotaTotal:Number(pkg.quotaTotal || 0),
     quotaUsed:Number(pkg.quotaUsed || 0),
@@ -799,21 +840,55 @@ async function resolveUpstreamFromRequest(req, body){
   if(accessCode){
     const hit = await findAccessPackageByCode(accessCode);
     if(!hit) return { error: { status:404, message:"接入码不存在或已失效" } };
-    const pkg = hit.pkg;
+    const pkg = normalizeAccessPackage(hit.pkg);
     const status = packageStatus(pkg);
     if(status === "disabled") return { error:{ status:403, message:"接入码已停用" } };
     if(status === "expired") return { error:{ status:410, message:"接入码已过期" } };
     if(status === "quota") return { error:{ status:429, message:"接入额度已用完" } };
-    return {
-      upstream: {
-        id: pkg.id,
-        name: pkg.packageName || pkg.providerName || "接入模型",
-        baseUrl: pkg.baseUrl,
-        apiKey: pkg.apiKey,
-        requestPath: pkg.path || "/v1/chat/completions"
-      },
-      packageHit: hit
-    };
+    // Find the model in items to get the correct provider
+    const requestedModel = String(body.model || "").trim();
+    let upstream = null;
+    for(const item of pkg.items){
+      if(item.models.includes(requestedModel) || !requestedModel){
+        // If item has stored provider info, use it; otherwise look up from user data
+        const baseUrl = item.baseUrl || "";
+        const apiKey = item.apiKey || "";
+        const path = item.path || "/v1/chat/completions";
+        if(baseUrl && apiKey){
+          upstream = { id: item.providerId, name: item.providerName || item.providerId, baseUrl, apiKey, requestPath: path };
+          break;
+        }
+      }
+    }
+    // Fallback: look up provider from share providers
+    if(!upstream){
+      const auth2 = await authFromRequest(req);
+      if(auth2){
+        const userData2 = auth2.store.userData[auth2.user.id] || {};
+        const shareProviders = parseShareProviders(userData2);
+        for(const item of pkg.items){
+          const provider = shareProviders.find(pr=>pr.id === item.providerId);
+          if(provider && item.models.includes(requestedModel)){
+            upstream = { id: provider.id, name: provider.providerName, baseUrl: provider.baseUrl, apiKey: provider.apiKey, requestPath: provider.path || "/v1/chat/completions" };
+            break;
+          }
+        }
+      }
+    }
+    if(!upstream && requestedModel){
+      return { error: { status:403, message:"该接入码不允许使用模型: "+requestedModel } };
+    }
+    if(!upstream){
+      // No model requested yet, use first available item's provider
+      for(const item of pkg.items){
+        if(item.baseUrl && item.apiKey){
+          upstream = { id: item.providerId, name: item.providerName || item.providerId, baseUrl: item.baseUrl, apiKey: item.apiKey, requestPath: item.path || "/v1/chat/completions" };
+          break;
+        }
+      }
+    }
+    if(!upstream) return { error:{ status:500, message:"接入码配置异常，未找到可用提供方" } };
+    return { upstream, packageHit: hit };
   }
   const auth = await authFromRequest(req);
   const providerId = String(body.providerId || "").trim();
@@ -1155,11 +1230,18 @@ async function handleModelsList(req, res){
   if(accessCode){
     const hit = await findAccessPackageByCode(accessCode);
     if(!hit) return sendJson(res, 200, { ok:false, error:"接入码不存在或已失效" });
-    const pkg = hit.pkg;
+    const pkg = normalizeAccessPackage(hit.pkg);
     const status = packageStatus(pkg);
     if(status !== "active") return sendJson(res, 200, { ok:false, error:status === "disabled" ? "接入码已停用" : status === "expired" ? "接入码已过期" : "接入额度已用完" });
-    const models = pkg.models.map(id=>({ id, name:id, owned_by: pkg.packageName || pkg.providerName || "" }));
-    return sendJson(res, 200, { ok:true, models, providerName:pkg.packageName || pkg.providerName || "接入模型", accessCode, packageName:pkg.packageName });
+    // Build model list from items, each with provider name
+    const models = [];
+    const seen = new Set();
+    for(const item of pkg.items){
+      for(const m of item.models){
+        if(!seen.has(m)){ seen.add(m); models.push({ id:m, name:m, owned_by: item.providerName || item.providerId || "接入模型" }); }
+      }
+    }
+    return sendJson(res, 200, { ok:true, models, packageName:pkg.packageName, accessCode, itemCount: pkg.items.length });
   }
 
   /* baseUrl + apiKey 优先于 providerId —— 表单里填的值永远优先于已保存数据 */
@@ -1472,6 +1554,15 @@ const server = http.createServer(async (req, res)=>{
     if(req.method === "POST" && pathname === "/api/access/claim") return await handleClaimAccessCode(req, res);
     if(req.method === "GET" && pathname === "/api/access/packages") return await handleListAccessPackages(req, res);
     if(req.method === "POST" && pathname === "/api/access/packages") return await handleCreateAccessPackage(req, res);
+    // Package management: DELETE / PATCH / regenerate
+    if(pathname.startsWith("/api/access/packages/")){
+      var pkgId = pathname.replace("/api/access/packages/", "").replace("/regenerate-code", "");
+      var isRegen = pathname.endsWith("/regenerate-code");
+      var isDelete = req.method === "DELETE";
+      if(isRegen && req.method === "POST") return await handleRegenerateAccessCode(req, res, pkgId);
+      if(isDelete) return await handleDeleteAccessPackage(req, res, pkgId);
+      if(req.method === "PATCH") return await handleUpdateAccessPackage(req, res, pkgId);
+    }
     if(req.method === "GET" && pathname === "/public/config"){
       return sendJson(res, 200, { chatModel:"deepseek-chat", webSearchConfigured:Boolean(TAVILY_API_KEY), providers:[] });
     }

@@ -4778,18 +4778,23 @@
 
     function renderPackageEditor(){
       var providers = Array.isArray(settings.shareModelProviders) ? settings.shareModelProviders : [];
-      var selectedId = settings.sharePackageProviderId || (providers[0] ? providers[0].id : '');
-      var opts = providers.map(function(p){
-        return '<option value="'+escapeHTML(p.id)+'"'+(p.id === selectedId ? ' selected' : '')+'>'+escapeHTML(p.providerName || '模型提供方')+'</option>';
-      }).join('');
-      var selectedProvider = providers.find(function(p){ return p.id === selectedId; }) || providers[0] || null;
-      var models = selectedProvider ? selectedProvider.models : [];
-      var emptyHint = providers.length ? '' : '<div class="settings-muted" style="margin-top:10px">请先在下方添加一个分享用提供方</div>';
+      if(!providers.length) return '<div class="package-editor"><div class="settings-muted">请先在下方添加分享用提供方并保存模型</div></div>';
+      var modelChecks = '';
+      for(var pi=0; pi<providers.length; pi++){
+        var p = providers[pi];
+        if(!p.models || !p.models.length) continue;
+        modelChecks += '<div style="margin-bottom:8px"><div style="font-weight:540;font-size:13px;color:var(--text);margin-bottom:4px">'+escapeHTML(p.providerName||p.id)+'</div>';
+        for(var mi=0; mi<p.models.length; mi++){
+          var mid = p.id+'_'+p.models[mi];
+          modelChecks += '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;margin-bottom:4px;font-size:13px;cursor:pointer"><input type="checkbox" class="share-model-check" data-provider="'+escapeHTML(p.id)+'" data-model="'+escapeHTML(p.models[mi])+'" checked>'+escapeHTML(p.models[mi])+'</label>';
+        }
+        modelChecks += '</div>';
+      }
       return '<div class="package-editor">'+
-        '<div class="row"><div class="field"><label>选择分享用提供方</label><select id="sharePackageProviderSelect" class="settings-select">'+opts+'</select></div><div class="field"><label>模型包名称</label><input id="sharePackageNameInput" class="settings-input" placeholder="例如：团队共享包"></div></div>'+
-        '<div class="row"><div class="field"><label>有效期（天）</label><input id="sharePackageExpiryInput" class="settings-input" type="number" min="1" step="1" value="30"></div><div class="field"><label>额度（0 为不限）</label><input id="sharePackageQuotaInput" class="settings-input" type="number" min="0" step="1" value="0"></div></div>'+
-        '<div class="field"><label>可分享模型（从上面提供方已保存的模型中选择）</label><textarea id="sharePackageModelsInput" class="settings-textarea" placeholder="一行一个模型名">'+escapeHTML(models.join('\n'))+'</textarea>'+emptyHint+'</div>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="settings-btn primary" id="shareCreatePackageBtn">生成接入码</button><button class="settings-btn" id="shareRefreshPackageBtn" type="button">刷新列表</button></div>'+
+        '<div class="row"><div class="field"><label>接入包名称</label><input id="sharePackageNameInput" class="settings-input" placeholder="例如：团队共享包" style="width:100%"></div></div>'+
+        '<div class="row"><div class="field"><label>有效期（天）</label><input id="sharePackageExpiryInput" class="settings-input" type="number" min="1" step="1" value="30" style="width:100px"></div><div class="field"><label>总额度（0 不限）</label><input id="sharePackageQuotaInput" class="settings-input" type="number" min="0" step="1" value="0" style="width:100px"></div></div>'+
+        '<div class="field"><label>可分享模型</label><div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px 12px">'+modelChecks+'</div></div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="settings-btn primary" id="shareCreatePackageBtn">生成接入码</button><span style="margin-left:4px"><button class="settings-btn" id="shareSelectAllBtn" type="button">全选</button><button class="settings-btn" id="shareDeselectAllBtn" type="button">取消全选</button></span></div>'+
         '<div id="sharePackageStatus" class="settings-muted" style="margin-top:8px"></div>'+
       '</div>';
     }
@@ -4809,11 +4814,19 @@
       var packages = loadAccessPackages();
       var packageCards = (Array.isArray(packages) && packages.length)
         ? packages.map(function(p){
+            var statusLabel = p.enabled===false ? '已停用' : (p.status==='expired'?'已过期':(p.status==='quota'?'额度用完':'启用中'));
+            var statusColor = p.enabled===false ? '#c96f66' : (p.status!=='active'?'#d4a853':'#6a9');
             return '<div class="settings-card"><div class="settings-card-title">'+escapeHTML(p.packageName || '模型包')+'</div>'+
               '<div class="settings-muted">接入码：<code>'+escapeHTML(p.code || '')+'</code> <button class="copy-code-btn" data-copy="'+escapeHTML(p.code || '')+'" type="button" style="cursor:pointer;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:2px 10px;font-size:12px">复制</button></div>'+
-              '<div class="settings-muted">模型：'+escapeHTML((p.models||[]).join('、') || '无')+'</div>'+
-              '<div class="settings-muted">状态：'+(p.enabled!==false?'启用中':'已停用')+' / 额度：'+(p.quotaTotal>0?(p.quotaUsed||0)+'/'+p.quotaTotal:'不限')+' / 到期：'+(p.expiresAt?new Date(p.expiresAt).toLocaleDateString():'永久')+'</div>'+
-              '</div>';
+              '<div class="settings-muted">模型（'+(p.modelCount||p.models.length||0)+'个）：'+escapeHTML((p.models||[]).slice(0,6).join('、') + ((p.models||[]).length>6?'...':''))+'</div>'+
+              '<div class="settings-muted">状态：<span style="color:'+statusColor+'">'+statusLabel+'</span> / 额度：'+(p.quotaTotal>0?(p.quotaUsed||0)+'/'+p.quotaTotal:'不限')+' / 到期：'+(p.expiresAt?new Date(p.expiresAt).toLocaleDateString():'永久')+'</div>'+
+              '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
+                (p.enabled===false
+                  ? '<button class="settings-btn" data-pkg-action="enable" data-pkg-id="'+escapeHTML(p.id)+'">启用</button>'
+                  : '<button class="settings-btn" data-pkg-action="disable" data-pkg-id="'+escapeHTML(p.id)+'">停用</button>')+
+                '<button class="settings-btn" data-pkg-action="regen" data-pkg-id="'+escapeHTML(p.id)+'">重新生成码</button>'+
+                '<button class="settings-btn danger" data-pkg-action="delete" data-pkg-id="'+escapeHTML(p.id)+'">删除</button>'+
+              '</div></div>';
           }).join('')
         : '<div class="settings-muted">暂无已生成的接入码</div>';
       return '<div class="settings-page share-hub">'+
@@ -5420,48 +5433,80 @@
       }
       var createPkgBtn = e.target.closest('#shareCreatePackageBtn');
       if(createPkgBtn){
-        var providerSel = $('#sharePackageProviderSelect');
-        var nameInput = $('#sharePackageNameInput');
-        var expiryInput = $('#sharePackageExpiryInput');
-        var quotaInput = $('#sharePackageQuotaInput');
-        var modelsInput = $('#sharePackageModelsInput');
-        var statusEl = $('#sharePackageStatus');
-        if(!providerSel || !nameInput || !modelsInput){ return; }
-        if(!providerSel.value){
-          if(statusEl) statusEl.textContent = '请先添加一个分享用提供方';
+        var nameInput2 = $('#sharePackageNameInput');
+        var expiryInput2 = $('#sharePackageExpiryInput');
+        var quotaInput2 = $('#sharePackageQuotaInput');
+        var statusEl2 = $('#sharePackageStatus');
+        if(!nameInput2){ return; }
+        // Collect items from checkboxes
+        var checks = document.querySelectorAll('.share-model-check:checked');
+        var itemMap = {};
+        for(var ci=0; ci<checks.length; ci++){
+          var pid = checks[ci].getAttribute('data-provider');
+          var mid = checks[ci].getAttribute('data-model');
+          if(!itemMap[pid]) itemMap[pid] = [];
+          itemMap[pid].push(mid);
+        }
+        var items = Object.keys(itemMap).map(function(pid){ return { providerId:pid, models:itemMap[pid] }; });
+        if(!items.length){
+          if(statusEl2) statusEl2.textContent = '请至少选择一个模型';
           return;
         }
-        var pkgBody = {
-          providerScope: 'share',
-          providerId: providerSel.value,
-          packageName: nameInput.value.trim(),
-          models: splitModels(modelsInput.value),
-          expiresInDays: Number(expiryInput && expiryInput.value || 0),
-          quotaTotal: Number(quotaInput && quotaInput.value || 0),
-          enabled: true
+        var pkgBody2 = {
+          packageName: nameInput2.value.trim(),
+          items: items,
+          expiresInDays: Number(expiryInput2 && expiryInput2.value || 0),
+          quotaTotal: Number(quotaInput2 && quotaInput2.value || 0)
         };
         createPkgBtn.disabled = true;
         createPkgBtn.textContent = '生成中...';
-        if(statusEl) statusEl.textContent = '生成中...';
-        settings.sharePackageProviderId = providerSel.value;
-        saveJSONStrict(KEYS.settings, settings);
+        if(statusEl2) statusEl2.textContent = '生成中...';
         (async function(){
           try{
-            var data = await authFetch('/api/access/packages', {method:'POST', body:JSON.stringify(pkgBody)});
-            if(!data.ok) throw new Error(data.message || '生成失败');
+            var data2 = await authFetch('/api/access/packages', {method:'POST', body:JSON.stringify(pkgBody2)});
+            if(!data2.ok) throw new Error(data2.message || '生成失败');
             await refreshAccessPackages();
-            if(statusEl) statusEl.textContent = '接入码：' + data.package.code;
+            if(statusEl2) statusEl2.textContent = '接入码：' + data2.package.code;
             toast('接入码已生成');
             renderSettingsPage();
-          }catch(err){
-            console.error('[access] create package failed:', err);
-            if(statusEl) statusEl.textContent = err.message || '生成失败';
-            toast(err.message || '生成失败');
+          }catch(err2){
+            console.error('[access] create package failed:', err2);
+            if(statusEl2) statusEl2.textContent = err2.message || '生成失败';
+            toast(err2.message || '生成失败');
           }finally{
             createPkgBtn.disabled = false;
             createPkgBtn.textContent = '生成接入码';
           }
         })();
+        return;
+      }
+      // Select all / deselect all buttons
+      var selectAllBtn = e.target.closest('#shareSelectAllBtn');
+      if(selectAllBtn){
+        document.querySelectorAll('.share-model-check').forEach(function(cb){ cb.checked = true; });
+        return;
+      }
+      var deselectAllBtn = e.target.closest('#shareDeselectAllBtn');
+      if(deselectAllBtn){
+        document.querySelectorAll('.share-model-check').forEach(function(cb){ cb.checked = false; });
+        return;
+      }
+      // Package management actions
+      var pkgActionBtn = e.target.closest('[data-pkg-action]');
+      if(pkgActionBtn){
+        var action = pkgActionBtn.getAttribute('data-pkg-action');
+        var pkgId = pkgActionBtn.getAttribute('data-pkg-id');
+        if(action === 'delete'){
+          if(!confirm('删除后该接入码会立即失效，确定删除吗？')) return;
+          authFetch('/api/access/packages/'+pkgId, {method:'DELETE'}).then(function(r){ if(r.ok){ toast('已删除'); refreshAccessPackages().then(function(){ renderSettingsPage(); }); }else{ toast(r.message||'删除失败'); } }).catch(function(){ toast('删除失败'); });
+        }else if(action === 'disable'){
+          authFetch('/api/access/packages/'+pkgId, {method:'PATCH', body:JSON.stringify({enabled:false})}).then(function(r){ if(r.ok){ toast('已停用'); refreshAccessPackages().then(function(){ renderSettingsPage(); }); }else{ toast(r.message||'操作失败'); } });
+        }else if(action === 'enable'){
+          authFetch('/api/access/packages/'+pkgId, {method:'PATCH', body:JSON.stringify({enabled:true})}).then(function(r){ if(r.ok){ toast('已启用'); refreshAccessPackages().then(function(){ renderSettingsPage(); }); }else{ toast(r.message||'操作失败'); } });
+        }else if(action === 'regen'){
+          if(!confirm('重新生成后旧码立即失效，确定吗？')) return;
+          authFetch('/api/access/packages/'+pkgId+'/regenerate-code', {method:'POST'}).then(function(r){ if(r.ok){ toast('新码：'+r.package.code); refreshAccessPackages().then(function(){ renderSettingsPage(); }); }else{ toast(r.message||'操作失败'); } });
+        }
         return;
       }
       var copyCodeBtn = e.target.closest('.copy-code-btn');
