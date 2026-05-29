@@ -76,6 +76,86 @@
       voiceSettings:'daotian.voiceSettings.v1',
     };
 
+    /* ── Upload hotfix merged from upload-hotfix.js ── */
+    var UPLOAD_CACHE_TTL = 10 * 60 * 1000;
+    var uploadFileCache = [];
+    var FILE_GUARD_PROMPT = [
+      '【文件读取硬规则】',
+      '本轮用户上传了文件。只有在后端明确注入了文件正文、OCR文字、页面文本或图片视觉内容时，才可以回答文件里的具体内容。',
+      '如果上下文里只有文件名、大小、页数未知、解析失败、OCR失败、扫描版、无法提取文字等信息，必须直接说明"我没有读到文件正文"，不能猜题目数量、章节、页数、题型、答案或内容。',
+      '不能根据文件名、教材章节名、常见讲义格式推断里面有多少题；不知道就说不知道。',
+      '如果用户要求数题、总结、做题，而正文未读到，只能要求用户上传清晰图片/截图/可复制文字层PDF。'
+    ].join('\n');
+    function safeDecodeUploadName(s){
+      try{ return decodeURIComponent(String(s||'')); }catch(e){ return String(s||''); }
+    }
+    function uploadFileKey(f){
+      return [f && f.name || '', f && f.size || 0, f && f.lastModified || 0].join('|');
+    }
+    function pruneUploadFileCache(){
+      var t = Date.now();
+      uploadFileCache = uploadFileCache
+        .filter(function(x){ return x && x.file && (t - x.ts) <= UPLOAD_CACHE_TTL; })
+        .slice(-20);
+    }
+    function rememberUploadFile(file){
+      if(!file || !file.name) return;
+      pruneUploadFileCache();
+      var key = uploadFileKey(file);
+      uploadFileCache = uploadFileCache.filter(function(x){ return x.key !== key; });
+      uploadFileCache.push({
+        key:key,
+        file:file,
+        name:file.name,
+        encodedName:encodeURIComponent(file.name),
+        size:file.size,
+        type:file.type,
+        ts:Date.now()
+      });
+      uploadFileCache = uploadFileCache.slice(-20);
+      console.log('[upload-hotfix] captured file:', file.name, file.size, file.type || '');
+    }
+    function looksLikeChatFileRequest(body){
+      if(!body || !Array.isArray(body.messages)) return null;
+      for(var i = body.messages.length - 1; i >= 0; i--){
+        var m = body.messages[i];
+        if(!m || m.role !== 'user' || typeof m.content !== 'string') continue;
+        var match = m.content.match(/\[已发送\s*(\d+)\s*个文件：/);
+        if(match) return { text:m.content, count:Math.max(1, parseInt(match[1], 10) || 1) };
+      }
+      return null;
+    }
+    function injectFileGuard(body){
+      if(!body || !Array.isArray(body.messages)) return body;
+      var exists = body.messages.some(function(m){
+        return m && m.role === 'system' && String(m.content||'').indexOf('【文件读取硬规则】') >= 0;
+      });
+      if(!exists){
+        var sysIdx = body.messages.findIndex(function(m){ return m && m.role === 'system'; });
+        if(sysIdx >= 0){
+          body.messages[sysIdx] = Object.assign({}, body.messages[sysIdx], {
+            content:String(body.messages[sysIdx].content||'') + '\n\n' + FILE_GUARD_PROMPT
+          });
+        }else{
+          body.messages.unshift({ role:'system', content:FILE_GUARD_PROMPT });
+        }
+      }
+      return body;
+    }
+    function pickUploadFiles(marker){
+      pruneUploadFileCache();
+      if(!marker || !uploadFileCache.length) return [];
+      var rawText = String(marker.text || '');
+      var decodedText = safeDecodeUploadName(rawText);
+      var selected = uploadFileCache.filter(function(x){
+        return rawText.indexOf(x.name) >= 0 ||
+          rawText.indexOf(x.encodedName) >= 0 ||
+          decodedText.indexOf(x.name) >= 0;
+      });
+      if(!selected.length) selected = uploadFileCache.slice(-marker.count);
+      return selected.slice(-marker.count);
+    }
+
     /* Voice data */
     var EDGE_VOICES = [
       {id:'zh-CN-XiaoxiaoNeural',label:'小小',desc:'女声 · 普通话'},
@@ -237,11 +317,40 @@
     function saveTokenDisplay(v){
       saveJSON(KEYS.tokenDisplay, v === true);
     }
+    var AUTO_SCROLL_DEFAULT_OFF_KEY = 'daotian.autoScroll.defaultOff.v2';
+    var autoScrollManualUntil = 0;
+    function ensureAutoScrollDefaultOff(){
+      try{
+        if(localStorage.getItem(AUTO_SCROLL_DEFAULT_OFF_KEY) !== '1'){
+          localStorage.setItem(KEYS.autoScroll, 'false');
+          localStorage.setItem(AUTO_SCROLL_DEFAULT_OFF_KEY, '1');
+        }
+        if(localStorage.getItem(KEYS.autoScroll) === null){
+          localStorage.setItem(KEYS.autoScroll, 'false');
+        }
+      }catch(_e){}
+    }
     function loadAutoScroll(){
-      return readJSON(KEYS.autoScroll, true) === true;
+      ensureAutoScrollDefaultOff();
+      return readJSON(KEYS.autoScroll, false) === true;
     }
     function saveAutoScroll(v){
       saveJSON(KEYS.autoScroll, v === true);
+      if(v === true) autoScrollManualUntil = 0;
+    }
+    function markAutoScrollManual(){
+      autoScrollManualUntil = Date.now() + 10 * 60 * 1000;
+    }
+    function isAutoScrollManualActive(){
+      var box = $('#messages');
+      if(isNearBottom(box)){
+        autoScrollManualUntil = 0;
+        return false;
+      }
+      return Date.now() < autoScrollManualUntil;
+    }
+    function canProgramAutoScroll(){
+      return loadAutoScroll() && !isAutoScrollManualActive();
     }
     var thinkingScrollRaf = 0;
     var streamScrollTimer = 0;
@@ -252,18 +361,22 @@
       return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
     }
     function shouldAutoFollowStream(){
-      return !userScrolling && isNearBottom($('#messages'));
+      return canProgramAutoScroll() && !userScrolling && isNearBottom($('#messages'));
     }
     var _scrollDetectInited = false;
     function initUserScrollDetection(){
       if(_scrollDetectInited) return; _scrollDetectInited = true;
       var box = $('#messages'); if(!box) return;
+      box.style.overflowY = 'auto';
+      box.style.touchAction = 'pan-y';
+      box.style.webkitOverflowScrolling = 'touch';
       var lastScrollTop = 0;
       function onUserScroll(e){
         /* Ignore touches on composer/input area */
         if(e && e.target){
           if(e.target.closest('.composer-wrap, textarea, input, #sendBtn, .plus-btn, .search-globe, .plus-menu')) return;
         }
+        markAutoScrollManual();
         /* Only mark as user-scrolling if actually scrolling UP (away from bottom) */
         var currentTop = box.scrollTop;
         var scrollingUp = currentTop < lastScrollTop - 10;
@@ -286,9 +399,13 @@
       box.addEventListener('wheel', onUserScroll, {passive:true});
       box.addEventListener('touchstart', function(e){ lastScrollTop = box.scrollTop; onUserScroll(e); }, {passive:true});
       box.addEventListener('touchmove', onUserScroll, {passive:true});
+      box.addEventListener('pointerdown', onUserScroll, {passive:true});
       box.addEventListener('scroll', function(){
-        if(!userScrolling) return;
-        if(isNearBottom(box)){ userScrolling = false; clearTimeout(userScrollingTimer); }
+        if(isNearBottom(box)){
+          userScrolling = false;
+          autoScrollManualUntil = 0;
+          clearTimeout(userScrollingTimer);
+        }
       }, {passive:true});
     }
     function isMobileViewport(){
@@ -305,7 +422,7 @@
       return !!(typeof sending !== 'undefined' && sending) || !!(typeof generatingChatId !== 'undefined' && generatingChatId);
     }
     function shouldKeepFollowing(){
-      if(!loadAutoScroll()) return false;
+      if(!canProgramAutoScroll()) return false;
       var box = $('#messages');
       if(!box) return false;
       /* During active streaming, only pause if user has scrolled far away */
@@ -325,6 +442,7 @@
       });
     }
     function forceScrollToStreamBottom(){
+      if(!canProgramAutoScroll()) return;
       var box = document.getElementById('messages');
       if(!box) return;
       requestAnimationFrame(function(){
@@ -1898,6 +2016,7 @@
       var input=$('#input'); var text=(input.value||'').trim();
       var hasAttachments = _attachments && _attachments.length > 0;
       if(!text && !hasAttachments) return;
+      var sendAttachments = hasAttachments ? _attachments.slice() : [];
       if(!hasUsableModelConfig()){ toast('请先添加模型'); openProviderHub(); return; }
       var cfg = activePreset();
 
@@ -1987,7 +2106,9 @@
       }
 
       var timeoutId = setTimeout(function(){
-        if(assistant.thinking){ assistant.thinking=false; assistant.content='请求超时，没有收到回复。请检查网络或 API Key 配置。'; assistant.role='error'; sending=false; $('#sendBtn').disabled=false; renderAll(); }
+        if(assistant.thinking){
+          console.warn('[upload-hotfix] suppressed stale 30s chat timeout; request is still allowed to finish');
+        }
       }, 30000);
       try{
         var result=await callModelWithBody(requestMessages, body, cfg, function(delta){
@@ -2005,7 +2126,7 @@
           c.updatedAt=Date.now();
           if(!assistant.memoryNotice) renderMessages();
           if(assistant.scrollFocus) forceScrollToStreamBottom();
-        });
+        }, sendAttachments);
         clearTimeout(timeoutId);
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
@@ -2075,10 +2196,20 @@
       }catch(_e){ console.warn('[Mem] post-chat ingest error:', _e.message); }
     }
 
-    async function callModelWithBody(requestMessages, body, cfg, onDelta){
+    async function callModelWithBody(requestMessages, body, cfg, onDelta, attachedFiles){
       activeAbortController = new AbortController();
       generatingChatId = activeId;
-      var hasFiles = _attachments && _attachments.length > 0;
+      var marker = looksLikeChatFileRequest(body);
+      if(marker){
+        body = injectFileGuard(body);
+      }
+      var fileEntries = Array.isArray(attachedFiles)
+        ? attachedFiles.filter(function(x){ return x && x.file; })
+        : [];
+      if(!fileEntries.length && marker){
+        fileEntries = pickUploadFiles(marker);
+      }
+      var hasFiles = fileEntries.length > 0;
       var fetchBody, fetchHeaders, targetUrl;
 
       if(hasFiles || searchOn || cfg.accessCode || cfg.providerId || (cfg.baseUrl && cfg.apiKey)){
@@ -2102,11 +2233,12 @@
         if(hasFiles){
           var fd = new FormData();
           fd.append('body', JSON.stringify(body));
-          for(var fai=0; fai<_attachments.length; fai++){
-            fd.append('files', _attachments[fai].file, _attachments[fai].name);
+          for(var fai=0; fai<fileEntries.length; fai++){
+            fd.append('files', fileEntries[fai].file, fileEntries[fai].name);
           }
           fetchBody = fd;
           fetchHeaders = {};
+          console.log('[upload-hotfix] converted /chat to multipart, files:', fileEntries.map(function(x){ return x.name; }).join(', '));
         }else{
           fetchHeaders = {'Content-Type':'application/json'};
           fetchBody = JSON.stringify(body);
@@ -6065,6 +6197,7 @@
 
     function addAttachment(file){
       if(_attachments.length >= 5){ toast('最多添加5个附件'); return; }
+      rememberUploadFile(file);
       var entry = { file:file, name:file.name, type:file.type, size:file.size, status:'ready' };
       _attachments.push(entry);
       showAttachPreview();
