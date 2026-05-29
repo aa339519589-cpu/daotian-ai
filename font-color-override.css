@@ -1,0 +1,31 @@
+:root{
+  --daotian-serif:ui-serif, Georgia, Cambria, "Times New Roman", Times, "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  --claude-bg:#1f1f1e!important;
+  --claude-text:#eeeeee!important;
+  --claude-strong:#eeeeee!important;
+  --bg:#1f1f1e!important;
+  --text:#eeeeee!important;
+}
+html,body,#app,.app-shell,.main,.messages,[data-theme="dark"]{
+  background:#1f1f1e!important;
+  color:#eeeeee!important;
+}
+body,textarea,button,input,select,.chat-topbar,.model-top-trigger,.sidebar,.plus-menu,.model-popover,.messages,.message,.assistant-content,.assistant-render,.bubble{
+  font-family:var(--daotian-serif)!important;
+  color:#eeeeee!important;
+  letter-spacing:0!important;
+  -webkit-font-smoothing:antialiased!important;
+  text-rendering:optimizeLegibility!important;
+}
+.assistant-render,.assistant-render *,#app .main .messages .assistant-render,#app .main .messages .assistant-render *,#app .main .messages .bubble,#app .main textarea#input{
+  color:#eeeeee!important;
+  font-family:var(--daotian-serif)!important;
+}
+.assistant-render h1,.assistant-render h2,.assistant-render h3,.assistant-render strong,.assistant-render b{
+  color:#eeeeee!important;
+  font-family:var(--daotian-serif)!important;
+}
+.message.user .bubble{color:#eeeeee!important}
+.sidebar{background:#1f1f1e!important}
+body.keyboard-open .composer-wrap{background:#1f1f1e!important}
+textarea::placeholder{color:rgba(238,238,238,.44)!important}
