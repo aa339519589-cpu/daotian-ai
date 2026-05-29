@@ -173,4 +173,35 @@ body,
   .assistant-render table{
     font-size:.92rem!important;
   }
+
+  html body #app .app-shell .main .composer-wrap{
+    position:fixed!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    padding:0!important;
+    transform:none!important;
+    background:transparent!important;
+    z-index:999!important;
+  }
+
+  html body #app .app-shell .main .composer{
+    margin:0 auto!important;
+  }
+
+  html body.keyboard-open #app .app-shell .main .composer-wrap{
+    position:fixed!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    padding:0!important;
+    transform:none!important;
+    background:transparent!important;
+    z-index:999!important;
+  }
+
+  html body.keyboard-open #app .app-shell .main .composer{
+    width:calc(100% - 28px)!important;
+    margin:0 auto!important;
+  }
 }
