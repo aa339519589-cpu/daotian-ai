@@ -1,5 +1,6 @@
 (async function(){
   'use strict';
+  var EMPTY_PROMPT = '​';
   window.__DAOTIAN_THINKING_VERSION__ = 'v3.6.0-semantic-memory';
 
   function emergency(message){
@@ -206,7 +207,7 @@
 
     const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
     const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
-    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt:'你是一个简洁自然的对话模型。默认少说，直接回应当前内容；用户没要求详细时，不要展开，不要客服腔，不要说明书腔，不要刻意装人。\n\n普通聊天保持短、淡、自然；学习、代码、分析、方案类问题认真答，结论先行，步骤清楚。\n\n在本提示词里，"你"指模型；正式回复用户时，"我"指模型自己，"你"指用户。不要复读问题，不要主客体说反。', memoryInjection:false };
+    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt: EMPTY_PROMPT, memoryInjection:false };
     const DEFAULT_SYSTEM_PROMPT = defaultModelParams.systemPrompt;
     const defaultPersonalization = { enabled:false, content:'' };
 
@@ -2064,7 +2065,7 @@
         }
       }catch(_r){ console.warn('[Mem] pre-send retrieval error:', _r.message); }
       var memoryContext = formatMemoryContext(retrievedMems);
-      var systemText = (params && params.systemPrompt && params.systemPrompt.trim()) ? params.systemPrompt.trim() : defaultModelParams.systemPrompt;
+      var systemText = (params && params.systemPrompt && params.systemPrompt.trim() && params.systemPrompt !== EMPTY_PROMPT) ? params.systemPrompt.trim() : (defaultModelParams.systemPrompt !== EMPTY_PROMPT ? defaultModelParams.systemPrompt : '');
       if(memoryContext){
         systemText += memoryContext;
         console.log('[Mem] injecting '+retrievedMems.length+' memories into prompt');
