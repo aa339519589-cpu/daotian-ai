@@ -1,0 +1,143 @@
+/* Claude visual polish: only typography, colors, spacing, and surface tone. No keyboard layout selectors. */
+:root{
+  --claude-bg:#1F1F1F;
+  --claude-text:#EDEDEC;
+  --claude-text-strong:#F7F7F6;
+  --claude-muted:#A8A8A6;
+  --claude-line:rgba(255,255,255,.135);
+  --claude-surface:#2E2E2E;
+  --claude-input:#1E1E1E;
+  --claude-input-deep:#181818;
+}
+
+[data-theme="dark"]{
+  --bg:var(--claude-bg)!important;
+  --text:var(--claude-text)!important;
+  --muted:var(--claude-muted)!important;
+  --line:var(--claude-line)!important;
+  --panel:#242424!important;
+  --panel-2:#242424!important;
+  --composer-bg:rgba(24,24,24,.82)!important;
+  --composer-border:rgba(255,255,255,.12)!important;
+  --composer-text:var(--claude-text)!important;
+  --composer-muted:rgba(237,237,236,.48)!important;
+}
+
+html,body,#app,.app-shell,.main{
+  background:var(--claude-bg)!important;
+}
+
+body{
+  color:var(--claude-text)!important;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB",sans-serif!important;
+  font-weight:360!important;
+  letter-spacing:-0.006em!important;
+  -webkit-font-smoothing:antialiased!important;
+  text-rendering:optimizeLegibility!important;
+}
+
+.messages,.message,.assistant-content,.assistant-render,.bubble{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB",sans-serif!important;
+  -webkit-font-smoothing:antialiased!important;
+  text-rendering:optimizeLegibility!important;
+}
+
+.assistant-content{
+  max-width:min(760px,94%)!important;
+  color:var(--claude-text)!important;
+}
+
+.assistant-render{
+  color:var(--claude-text)!important;
+  font-size:16px!important;
+  line-height:1.72!important;
+  font-weight:360!important;
+  letter-spacing:-0.006em!important;
+}
+
+.assistant-render p{
+  margin:0 0 1.08em!important;
+}
+.assistant-render p:last-child{
+  margin-bottom:0!important;
+}
+
+.assistant-render strong,
+.assistant-render b{
+  color:var(--claude-text-strong)!important;
+  font-weight:590!important;
+}
+
+.assistant-render h1,
+.assistant-render h2,
+.assistant-render h3{
+  color:var(--claude-text-strong)!important;
+  letter-spacing:-0.012em!important;
+}
+.assistant-render h1{font-size:21px!important;line-height:1.34!important;font-weight:610!important;margin:24px 0 14px!important;}
+.assistant-render h2{font-size:18px!important;line-height:1.42!important;font-weight:600!important;margin:22px 0 12px!important;}
+.assistant-render h3{font-size:16.5px!important;line-height:1.48!important;font-weight:590!important;margin:18px 0 10px!important;}
+
+.assistant-render hr{
+  border:0!important;
+  border-top:1px solid var(--claude-line)!important;
+  margin:24px 0!important;
+  height:0!important;
+  background:transparent!important;
+}
+.assistant-render blockquote{
+  color:#D8D8D6!important;
+  border-left:3px solid rgba(255,255,255,.16)!important;
+  line-height:1.72!important;
+}
+.assistant-render li{
+  line-height:1.72!important;
+  margin:.18em 0!important;
+}
+
+.bubble{
+  color:var(--claude-text)!important;
+  font-size:16px!important;
+  line-height:1.68!important;
+  font-weight:360!important;
+  letter-spacing:-0.006em!important;
+}
+
+.chat-topbar{
+  background:linear-gradient(to bottom,rgba(31,31,31,.78),rgba(31,31,31,.48) 72%,rgba(31,31,31,0))!important;
+  backdrop-filter:blur(18px) saturate(1.08)!important;
+  -webkit-backdrop-filter:blur(18px) saturate(1.08)!important;
+}
+.model-top-trigger{
+  color:var(--claude-text-strong)!important;
+  font-weight:560!important;
+  letter-spacing:-0.012em!important;
+}
+
+.composer{
+  background:linear-gradient(180deg,rgba(31,31,31,.86),rgba(24,24,24,.88))!important;
+  border-color:rgba(255,255,255,.12)!important;
+  color:var(--claude-text)!important;
+  box-shadow:0 18px 58px rgba(0,0,0,.34)!important;
+}
+textarea{
+  color:var(--claude-text)!important;
+  font-weight:360!important;
+  letter-spacing:-0.006em!important;
+}
+textarea::placeholder{
+  color:rgba(237,237,236,.46)!important;
+}
+
+@media(max-width:900px){
+  .assistant-content{max-width:94%!important;}
+  .assistant-render{font-size:16.2px!important;line-height:1.74!important;font-weight:350!important;}
+  .bubble{font-size:16.2px!important;line-height:1.68!important;font-weight:350!important;}
+  .message{margin-bottom:18px!important;}
+  .assistant-render p{margin-bottom:1.1em!important;}
+}
+
+@media(min-width:901px){
+  .assistant-render{font-size:16px!important;line-height:1.72!important;font-weight:360!important;}
+  .message{margin-bottom:18px!important;}
+}
