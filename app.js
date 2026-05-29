@@ -50,7 +50,6 @@
     const $ = DTG.$;
     const uid = DTG.uid;
     const nowTime = DTG.nowTime;
-    function makeTtsMsgId(chatId, idx){ return 'tts_' + chatId + '_' + idx; }
     const app = $('#app');
     if(!app) throw new Error('#app not found');
     var AUTH_USER = null;
@@ -64,41 +63,6 @@
     const DTC = window.DAOTIAN_CONFIG || {};
     const EDGE_VOICES = DTC.EDGE_VOICES;
     const defaultVoiceSettings = DTC.defaultVoiceSettings;
-    function loadVoiceSettings(){
-      var raw = readJSON(KEYS.voiceSettings, null);
-      var out = Object.assign({}, defaultVoiceSettings, raw && typeof raw === 'object' ? raw : {});
-      if(out.provider !== 'edge' && out.provider !== 'fish'){ out.provider = 'edge'; }
-      var isGuest = !AUTH_USER || !AUTH_USER.id;
-      if(isGuest && out.provider === 'fish' && (!out.fishAudioApiKey || !out.fishAudioReferenceId)){
-        out.provider = 'edge';
-        out.edgeVoice = out.edgeVoice || 'zh-CN-XiaoxiaoNeural';
-        out.edgeVoiceLabel = out.edgeVoiceLabel || '小小';
-      }
-      if(!out.edgeVoice) out.edgeVoice = 'zh-CN-XiaoxiaoNeural';
-      if(!out.edgeVoiceLabel) out.edgeVoiceLabel = '小小';
-      if(!out.rate) out.rate = '+25%';
-      if(typeof out.enabled === 'undefined') out.enabled = true;
-      if(out.voiceSpeedVersion !== 2){
-        var speedMap = {'+0%':'+10%', '+10%':'+25%', '+25%':'+40%'};
-        out.rate = speedMap[out.rate] || '+25%';
-        out.voiceSpeedVersion = 2;
-      }
-      return out;
-    }
-    function saveVoiceSettings(v){ saveJSON(KEYS.voiceSettings, v); }
-    function getSafeVoiceSettingsForTts(){
-      var vs = loadVoiceSettings();
-      if(!vs || typeof vs !== 'object') vs = {};
-      vs = Object.assign({}, defaultVoiceSettings, vs);
-      if(vs.provider !== 'edge' && vs.provider !== 'fish'){ vs.provider = 'edge'; }
-      var _isGuest = !AUTH_USER || !AUTH_USER.id;
-      if((_isGuest || vs.provider === 'fish') && (!vs.fishAudioApiKey || !vs.fishAudioReferenceId)){ vs.provider = 'edge'; }
-      if(!vs.edgeVoice) vs.edgeVoice = 'zh-CN-XiaoxiaoNeural';
-      if(!vs.edgeVoiceLabel) vs.edgeVoiceLabel = '小小';
-      if(!vs.rate) vs.rate = '+25%';
-      if(typeof vs.enabled === 'undefined') vs.enabled = true;
-      return vs;
-    }
 
     const defaultSettings = DTC.defaultSettings;
     const legacyDefaultSettings = DTC.legacyDefaultSettings;
@@ -544,6 +508,19 @@
     function setItem(key, value){ try{ var str = String(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }catch(e){} }
     function saveJSONStrict(key, value){ var str = JSON.stringify(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }
     function setItemStrict(key, value){ var str = String(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }
+
+    /* tts-core bridge */
+    const DTT = window.DAOTIAN_TTS || {};
+    const TTS_API = DTT.createTtsApi ? DTT.createTtsApi({
+      readJSON: readJSON,
+      saveJSON: saveJSON,
+      getAuthUser: function(){ return AUTH_USER; },
+      KEYS: KEYS
+    }) : null;
+    const loadVoiceSettings = TTS_API ? TTS_API.loadVoiceSettings : function(){ return defaultVoiceSettings; };
+    const saveVoiceSettings = TTS_API ? TTS_API.saveVoiceSettings : function(){};
+    const getSafeVoiceSettingsForTts = TTS_API ? TTS_API.getSafeVoiceSettingsForTts : function(){ return defaultVoiceSettings; };
+    const makeTtsMsgId = TTS_API ? TTS_API.makeTtsMsgId : function(chatId, idx){ return 'tts_' + chatId + '_' + idx; };
 
     /* model-utils bridge */
     const DTM = window.DAOTIAN_MODEL_UTILS || {};
@@ -5578,19 +5555,6 @@
       if(_ttsAudio){ try{ _ttsAudio.pause(); _ttsAudio = null; }catch(_e){} }
       if(_ttsBtn){ _ttsBtn.classList.remove('playing','paused','loading'); _ttsBtn = null; }
       _ttsPlayingIdx = null; _ttsPausedAt = 0;
-    }
-    function splitTextForTts(text){
-      var chunks = []; var remaining = String(text||'').replace(/\s+/g,' ').trim();
-      if(!remaining) return [];
-      while(remaining.length > 0){
-        if(remaining.length <= 400){ chunks.push(remaining); break; }
-        var slice = remaining.slice(0,400);
-        var brk = Math.max(slice.lastIndexOf('。'), slice.lastIndexOf('！'), slice.lastIndexOf('？'), slice.lastIndexOf('；'), slice.lastIndexOf('\n'), slice.lastIndexOf('，'), slice.lastIndexOf('、'));
-        if(brk < 50) brk = 400;
-        chunks.push(remaining.slice(0, brk+1));
-        remaining = remaining.slice(brk+1);
-      }
-      return chunks.filter(function(c){ return c.trim().length >= 1; });
     }
 
     async function preGenerateVoice(msgId, text){
