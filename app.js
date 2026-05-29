@@ -5810,7 +5810,11 @@
         var rafPending = false;
 
         function isMobile(){
-          return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
+          var w = window.innerWidth || document.documentElement.clientWidth || 9999;
+          var t = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+          var c = false;
+          try{ c = matchMedia('(pointer: coarse)').matches; }catch(e){}
+          return w <= 900 && (t || c);
         }
         function isIOS(){
           return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -5847,7 +5851,16 @@
           /* keyboard is open */
           root.style.setProperty('--app-height', vvHeight + 'px');
           root.style.setProperty('--app-top', vvTop + 'px');
+          root.style.setProperty('--vvh', vvHeight + 'px');
           root.style.setProperty('--keyboard-accessory-offset', '0px');
+          var layoutH = window.innerHeight || vvHeight;
+          var keyboardLikely = layoutH - vvHeight > 120;
+          var extra = keyboardLikely ? Math.round(Math.min(72, Math.max(48, layoutH * 0.07))) : 0;
+          root.style.setProperty('--dt-keyboard-extra', extra + 'px');
+          var composerEl = document.querySelector('.composer-wrap');
+          var ch = 88;
+          try{ if(composerEl) ch = Math.max(64, Math.ceil(composerEl.getBoundingClientRect().height)); }catch(_e){}
+          root.style.setProperty('--composer-h', ch + 'px');
 
           if(Math.abs(inset - lastInset) > 6){
             root.style.setProperty('--keyboard-inset', inset + 'px');
@@ -5899,6 +5912,10 @@
             if(document.activeElement !== input) updateKeyboard();
           }, 300);
         });
+
+        window.addEventListener('orientationchange', function(){ setTimeout(scheduleUpdate, 80); }, {passive:true});
+        document.addEventListener('focusin', function(){ scheduleUpdate(); setTimeout(scheduleUpdate, 120); setTimeout(scheduleUpdate, 320); }, true);
+        document.addEventListener('focusout', function(){ setTimeout(scheduleUpdate, 80); }, true);
 
         input.addEventListener('input', function(){ autoResizeTextarea(this); });
 
