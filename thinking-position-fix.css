@@ -1,0 +1,192 @@
+/* Fix: keep the temporary “想一下” thinking row in the upper reading zone, not pinned to the bottom.
+   Also harden rich/file/table rendering so long filenames, markdown tables and pasted file content never distort text layout. */
+
+.messages.generating-space{
+  padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+  scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+}
+
+.daotian-thinking-message{
+  scroll-margin-top:18dvh!important;
+  scroll-margin-bottom:72dvh!important;
+}
+
+html,
+body,
+#app,
+.app-shell,
+.main{
+  width:100%!important;
+  max-width:100vw!important;
+  overflow-x:hidden!important;
+}
+
+.messages{
+  max-width:100vw!important;
+  overflow-x:hidden!important;
+  overscroll-behavior-x:none!important;
+}
+
+.message,
+.message.user,
+.message.assistant,
+.bubble,
+.assistant-content,
+.assistant-render,
+.assistant-render *{
+  min-width:0!important;
+  box-sizing:border-box!important;
+}
+
+/* Normal assistant prose: collapse model/file spacing, do not preserve table-alignment spaces. */
+.assistant-render,
+.assistant-render p,
+.assistant-render div:not(.markdown-table-wrap):not(.artifact-card):not(.artifact-head):not(.artifact-body):not(.artifact-actions):not(.code-block):not(.code-head),
+.assistant-render li,
+.assistant-render blockquote{
+  white-space:normal!important;
+  text-align:left!important;
+  text-align-last:auto!important;
+  letter-spacing:normal!important;
+  word-spacing:normal!important;
+  word-break:normal!important;
+  line-break:auto!important;
+  overflow-wrap:break-word!important;
+  max-width:100%!important;
+}
+
+/* Only true pre/code keeps preformatted spacing. */
+.assistant-render pre,
+.assistant-render code,
+.code-block pre,
+.code-block code{
+  white-space:pre!important;
+  overflow-x:auto!important;
+  word-break:normal!important;
+  overflow-wrap:normal!important;
+  line-break:auto!important;
+}
+
+.assistant-render p{
+  margin:.4em 0 .85em!important;
+}
+.assistant-render p:last-child{
+  margin-bottom:0!important;
+}
+
+.bubble{
+  white-space:pre-wrap!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+  line-break:auto!important;
+  letter-spacing:normal!important;
+  word-spacing:normal!important;
+}
+
+.message.user .bubble{
+  max-width:min(82%, calc(100vw - 72px))!important;
+}
+
+.message.assistant .assistant-content{
+  max-width:min(720px, calc(100vw - 36px))!important;
+  width:fit-content!important;
+  overflow-x:hidden!important;
+}
+
+/* Tables/artifacts: scroll inside card instead of widening the whole page. */
+.artifact-card,
+.markdown-table-wrap,
+.artifact-body{
+  max-width:100%!important;
+  overflow-x:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+}
+
+.assistant-render table{
+  width:max-content!important;
+  min-width:100%!important;
+  max-width:none!important;
+  table-layout:auto!important;
+  white-space:normal!important;
+}
+
+.assistant-render th,
+.assistant-render td{
+  white-space:normal!important;
+  word-break:keep-all!important;
+  overflow-wrap:normal!important;
+  line-break:auto!important;
+  letter-spacing:normal!important;
+  word-spacing:normal!important;
+}
+
+.attach-chip,
+.file-chip,
+[data-file-name]{
+  max-width:100%!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+  line-break:auto!important;
+}
+
+@media(max-width:900px){
+  .messages.generating-space{
+    padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+    scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+  }
+
+  body.keyboard-open .messages.generating-space{
+    padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;
+    scroll-padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;
+  }
+
+  .message.user .bubble{
+    max-width:calc(100vw - 84px)!important;
+  }
+
+  .message.assistant .assistant-content,
+  .assistant-render{
+    max-width:calc(100vw - 36px)!important;
+  }
+
+  .assistant-render table{
+    font-size:.92rem!important;
+  }
+}
+.daotian-thinking-orbit{
+  position:relative!important;
+  width:18px!important;height:18px!important;
+  min-width:18px!important;min-height:18!important;
+  flex:0 0 18px!important;
+  background:transparent!important;
+  overflow:visible!important;
+  transform-origin:50% 50%!important;
+  animation:dtClaudeOrbitDrift 2800ms linear infinite!important;
+}
+.daotian-thinking-orbit span{
+  position:absolute!important;
+  left:50%!important;top:50%!important;
+  width:2.35px!important;height:5.6px!important;
+  margin:-2.8px 0 0 -1.175px!important;
+  border-radius:999px!important;
+  background:#D96F55!important;
+  box-shadow:none!important;
+  filter:saturate(1.04)!important;
+  transform-origin:center center!important;
+  transform:rotate(var(--a)) translateY(-6.25px)!important;
+  animation:dtClaudeRayMorph 1680ms cubic-bezier(.55,.02,.24,1) infinite!important;
+  animation-delay:calc(var(--i) * -8ms)!important;
+  will-change:width,height,margin,opacity,transform!important;
+}
+@keyframes dtClaudeOrbitDrift{
+  0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}
+}
+@keyframes dtClaudeRayMorph{
+  0%,100%{width:2.35px;height:5.6px;margin:-2.8px 0 0 -1.175px;opacity:.76;transform:rotate(var(--a)) translateY(-6.25px)}
+  14%{width:2.35px;height:5.6px;margin:-2.8px 0 0 -1.175px;opacity:.78;transform:rotate(var(--a)) translateY(-6.25px)}
+  32%{width:2.55px;height:7.4px;margin:-3.7px 0 0 -1.275px;opacity:.86;transform:rotate(var(--a)) translateY(-4.2px)}
+  48%{width:2.78px;height:11.4px;margin:-5.7px 0 0 -1.39px;opacity:.96;transform:rotate(var(--a)) translateY(-1.55px)}
+  56%,66%{width:3px;height:13.8px;margin:-6.9px 0 0 -1.5px;opacity:1;transform:rotate(var(--a)) translateY(-.45px)}
+  78%{width:2.62px;height:8.1px;margin:-4.05px 0 0 -1.31px;opacity:.9;transform:rotate(var(--a)) translateY(-3.55px)}
+  90%{width:2.4px;height:5.9px;margin:-2.95px 0 0 -1.2px;opacity:.8;transform:rotate(var(--a)) translateY(-5.95px)}
+}

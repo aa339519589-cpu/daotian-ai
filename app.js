@@ -505,6 +505,14 @@
       var maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
       box.scrollTop = Math.min(maxTop, Math.max(0, nextTop));
     }
+    function scrollThinkingToReadingZone(){
+      var box = $('#messages');
+      var row = box && box.querySelector('.daotian-thinking-message[data-scroll-focus="1"], .daotian-thinking-message');
+      if(!box || !row) return;
+      var ratio = window.innerWidth <= 900 ? 0.18 : 0.26;
+      if(document.body.classList.contains('keyboard-open')) ratio = 0.16;
+      scrollTargetIntoReadingZone(box, row, ratio);
+    }
     function loadFontSize(){ var v = parseInt(safeGet(KEYS.fontSize)); if(v>=15&&v<=21) return v; return 18; }
     function saveFontSize(v){ setItem(KEYS.fontSize, String(v)); applyFontSize(v); }
     function applyFontSize(v){
@@ -6130,6 +6138,18 @@
     updateSearchVisual();
     setupMobileViewport();
     initUserScrollDetection();
+    var _thinkingObserver = null;
+    function initThinkingPositionObserver(){
+      var box = $('#messages');
+      if(!box){ setTimeout(initThinkingPositionObserver, 120); return; }
+      if(_thinkingObserver) _thinkingObserver.disconnect();
+      _thinkingObserver = new MutationObserver(function(){
+        if(box.querySelector('.daotian-thinking-message')) scheduleThinkingScroll();
+      });
+      _thinkingObserver.observe(box, {childList:true, subtree:true, attributes:true, attributeFilter:['class','data-scroll-focus']});
+      if(box.querySelector('.daotian-thinking-message')) scheduleThinkingScroll();
+    }
+    initThinkingPositionObserver();
     /* 预初始化记忆引擎（后台加载向量模型） */
     initMemoryEngine();
 
