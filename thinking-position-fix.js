@@ -2,19 +2,16 @@
   'use strict';
 
   var STYLE_ID = 'daotianThinkingPositionFixRuntimeStyle';
-  var scrollTimer = 0;
-  var headObserverStarted = false;
-  var messagesObserver = null;
 
   function injectRuntimeStyle(){
     var css = [
-      '.messages.generating-space{padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;}',
-      '.daotian-thinking-message{scroll-margin-top:18dvh!important;scroll-margin-bottom:72dvh!important;}',
+      '.messages.generating-space{padding-bottom:110px!important;scroll-padding-bottom:110px!important;}',
+      '.daotian-thinking-message{scroll-margin-top:12px!important;scroll-margin-bottom:110px!important;}',
       '.daotian-thinking-orbit{position:relative!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;flex:0 0 18px!important;background:transparent!important;overflow:visible!important;transform-origin:50% 50%!important;animation:dtClaudeOrbitDrift 2800ms linear infinite!important;}',
       '.daotian-thinking-orbit span{position:absolute!important;left:50%!important;top:50%!important;width:2.35px!important;height:5.6px!important;margin:-2.8px 0 0 -1.175px!important;border-radius:999px!important;background:#D96F55!important;box-shadow:none!important;filter:saturate(1.04)!important;transform-origin:center center!important;transform:rotate(var(--a)) translateY(-6.25px)!important;animation:dtClaudeRayMorph 1680ms cubic-bezier(.55,.02,.24,1) infinite!important;animation-delay:calc(var(--i) * -8ms)!important;will-change:width,height,margin,opacity,transform!important;}',
       '@keyframes dtClaudeOrbitDrift{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}',
       '@keyframes dtClaudeRayMorph{0%,100%{width:2.35px;height:5.6px;margin:-2.8px 0 0 -1.175px;opacity:.76;transform:rotate(var(--a)) translateY(-6.25px)}14%{width:2.35px;height:5.6px;margin:-2.8px 0 0 -1.175px;opacity:.78;transform:rotate(var(--a)) translateY(-6.25px)}32%{width:2.55px;height:7.4px;margin:-3.7px 0 0 -1.275px;opacity:.86;transform:rotate(var(--a)) translateY(-4.2px)}48%{width:2.78px;height:11.4px;margin:-5.7px 0 0 -1.39px;opacity:.96;transform:rotate(var(--a)) translateY(-1.55px)}56%,66%{width:3px;height:13.8px;margin:-6.9px 0 0 -1.5px;opacity:1;transform:rotate(var(--a)) translateY(-.45px)}78%{width:2.62px;height:8.1px;margin:-4.05px 0 0 -1.31px;opacity:.9;transform:rotate(var(--a)) translateY(-3.55px)}90%{width:2.4px;height:5.9px;margin:-2.95px 0 0 -1.2px;opacity:.8;transform:rotate(var(--a)) translateY(-5.95px)}}',
-      '@media(max-width:900px){.messages.generating-space{padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;}body.keyboard-open .messages.generating-space{padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;scroll-padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;}.daotian-thinking-message{scroll-margin-top:18dvh!important;scroll-margin-bottom:58dvh!important;}}'
+      '@media(max-width:900px){.messages.generating-space{padding-bottom:96px!important;scroll-padding-bottom:96px!important;}body.keyboard-open .messages.generating-space{padding-bottom:96px!important;scroll-padding-bottom:96px!important;}.daotian-thinking-message{scroll-margin-top:8px!important;scroll-margin-bottom:96px!important;}}'
     ].join('\n');
     var existing = document.getElementById(STYLE_ID);
     if(existing && existing.textContent === css && existing.parentNode === document.head && existing === document.head.lastElementChild) return;
@@ -27,8 +24,7 @@
 
   function keepStyleLast(){
     injectRuntimeStyle();
-    if(headObserverStarted || !document.head) return;
-    headObserverStarted = true;
+    if(!document.head) return;
     new MutationObserver(function(){
       var style = document.getElementById(STYLE_ID);
       if(!style || style !== document.head.lastElementChild){
@@ -37,51 +33,9 @@
     }).observe(document.head, {childList:true});
   }
 
-  function getMessagesBox(){ return document.getElementById('messages'); }
-  function getThinkingRow(box){ return box && box.querySelector('.daotian-thinking-message[data-scroll-focus="1"], .daotian-thinking-message'); }
-
-  function scrollThinkingToReadingZone(){
-    injectRuntimeStyle();
-    var box = getMessagesBox();
-    var row = getThinkingRow(box);
-    if(!box || !row) return;
-
-    var ratio = window.innerWidth <= 900 ? 0.18 : 0.26;
-    if(document.body.classList.contains('keyboard-open')) ratio = 0.16;
-
-    var boxRect = box.getBoundingClientRect();
-    var rowRect = row.getBoundingClientRect();
-    var desiredTop = box.clientHeight * ratio;
-    var delta = (rowRect.top - boxRect.top) - desiredTop;
-    var nextTop = box.scrollTop + delta;
-    var maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
-    box.scrollTop = Math.max(0, Math.min(maxTop, nextTop));
-  }
-
-  function scheduleThinkingPosition(){
-    clearTimeout(scrollTimer);
-    requestAnimationFrame(function(){
-      requestAnimationFrame(scrollThinkingToReadingZone);
-    });
-    scrollTimer = setTimeout(scrollThinkingToReadingZone, 80);
-  }
-
-  function observeMessages(){
-    keepStyleLast();
-    var box = getMessagesBox();
-    if(!box){ setTimeout(observeMessages, 120); return; }
-    if(messagesObserver) messagesObserver.disconnect();
-    messagesObserver = new MutationObserver(function(){
-      if(getThinkingRow(box)) scheduleThinkingPosition();
-    });
-    messagesObserver.observe(box, {childList:true, subtree:true, attributes:true, attributeFilter:['class','data-scroll-focus']});
-    if(getThinkingRow(box)) scheduleThinkingPosition();
-  }
-
   if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', observeMessages, {once:true});
+    document.addEventListener('DOMContentLoaded', keepStyleLast, {once:true});
   }else{
-    observeMessages();
+    keepStyleLast();
   }
-  window.addEventListener('resize', function(){ if(getThinkingRow(getMessagesBox())) scheduleThinkingPosition(); }, {passive:true});
 })();
