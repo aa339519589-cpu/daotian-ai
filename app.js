@@ -1396,7 +1396,9 @@
         var isRich = hasRichLayoutContent(m.content);
         var richClass = isRich ? ' rich-wide' : '';
         var scrollAttr2 = m.scrollFocus ? ' data-scroll-focus="1"' : '';
-        return '<div class="message assistant'+richClass+'"'+scrollAttr2+'><div class="assistant-content"><div class="assistant-render">'+renderAssistantContent(m.content)+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
+        /* During streaming, skip markdown pipeline on the live message to avoid mangling incomplete formulas */
+        var renderedContent = (isStreamingNow() && m.scrollFocus) ? escapeHTML(m.content) : renderAssistantContent(m.content);
+        return '<div class="message assistant'+richClass+'"'+scrollAttr2+'><div class="assistant-content"><div class="assistant-render">'+renderedContent+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       box.classList.toggle('generating-space', !!hasScrollFocus);
       scheduleEnhanceRender();

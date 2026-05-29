@@ -25,7 +25,7 @@ body,textarea,button,input,select,.chat-topbar,.model-top-trigger,.sidebar,.plus
   -webkit-font-smoothing:antialiased!important;
   text-rendering:optimizeLegibility!important;
 }
-.assistant-render,.assistant-render *,#app .main .messages .assistant-render,#app .main .messages .assistant-render *{
+.assistant-render,.assistant-render :not(mjx-container):not(mjx-container *),#app .main .messages .assistant-render,#app .main .messages .assistant-render :not(mjx-container):not(mjx-container *){
   color:#eeeeee!important;
   font-family:var(--daotian-serif)!important;
 }

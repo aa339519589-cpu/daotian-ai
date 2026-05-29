@@ -100,7 +100,7 @@ html[data-theme="light"] body,
 [data-theme="light"] .message,
 [data-theme="light"] .assistant-content,
 [data-theme="light"] .assistant-render,
-[data-theme="light"] .assistant-render *{
+[data-theme="light"] .assistant-render :not(mjx-container):not(mjx-container *){
   color:var(--text)!important;
   font-family:var(--font-reading)!important;
   font-weight:400!important;
