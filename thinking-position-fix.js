@@ -34,35 +34,16 @@
     if(Date.now() < keepUntil && isNearBottom(box)) box.scrollTop = box.scrollHeight;
   }
 
-  function fixGap(){
-    var input = document.getElementById('input');
-    var wrap = document.querySelector('.composer-wrap');
-    var vv = window.visualViewport;
-    if(!input || !wrap || !vv) return;
-    var mobile = (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900;
-    var open = mobile && (document.body.classList.contains('keyboard-open') || document.activeElement === input);
-    if(!open){ wrap.style.removeProperty('transform'); return; }
-    var gap = Math.round((vv.offsetTop || 0) + vv.height - wrap.getBoundingClientRect().bottom);
-    if(gap > 8 && gap < 240) wrap.style.setProperty('transform','translateY('+gap+'px)','important');
-    else if(gap < -8) wrap.style.setProperty('transform','translateY('+gap+'px)','important');
-    else wrap.style.removeProperty('transform');
-  }
-
-  function tick(){ raf = 0; injectRuntimeStyle(); fixGap(); keepBottomStable(); }
+  function tick(){ raf = 0; injectRuntimeStyle(); keepBottomStable(); }
   function schedule(){ if(!raf) raf = requestAnimationFrame(tick); }
-  function delayedKeyboardRecalibration(){
-    schedule();
-    [60,140,260,420].forEach(function(ms){ setTimeout(schedule,ms); });
-  }
 
   function start(){
     injectRuntimeStyle();
     if(document.head){ new MutationObserver(schedule).observe(document.head,{childList:true}); }
     var box = document.getElementById('messages');
     if(box){ new MutationObserver(schedule).observe(box,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','data-scroll-focus']}); }
-    if(window.visualViewport){ window.visualViewport.addEventListener('resize',delayedKeyboardRecalibration,{passive:true}); window.visualViewport.addEventListener('scroll',delayedKeyboardRecalibration,{passive:true}); }
-    window.addEventListener('resize',delayedKeyboardRecalibration,{passive:true});
-    document.addEventListener('focusin',delayedKeyboardRecalibration,true);
+    window.addEventListener('resize',schedule,{passive:true});
+    document.addEventListener('focusin',schedule,true);
     document.addEventListener('focusout',function(){ setTimeout(schedule,80); },true);
     schedule();
   }
