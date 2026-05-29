@@ -693,6 +693,66 @@
 
 
 
+    app.innerHTML = `
+      <div class="app-shell" data-theme="${theme}">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-top"><button class="icon-btn" id="closeSide" title="收起">☰</button><span class="sidebar-label">历史对话</span></div>
+          <div class="chat-list" id="chatList"></div>
+      <div class="sidebar-bottom"><button class="side-bottom-btn settings-only" id="openSettingsBtn">设置</button></div>
+        </aside>
+        <main class="main">
+          <div class="chat-topbar" id="chatTopbar">
+            <button class="home-menu-button" id="openSide" title="展开侧边栏"><span></span><span></span><span></span></button>
+            <button class="model-top-trigger" id="modelTopTrigger" title="切换模型"><span id="modelTopLabel">...</span><span class="chevron">▾</span></button>
+            <div class="model-popover" id="modelPopover"></div>
+            <button class="top-new-chat-btn" id="topNewChatBtn" title="新建对话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          </div>
+          <div class="messages" id="messages"></div>
+          <div class="composer-wrap">
+            <div class="composer">
+              <button class="plus-btn" id="plusBtn" title="添加附件">+</button>
+              <textarea id="input" placeholder="输入消息..."></textarea>
+              <button class="send" id="sendBtn">›</button>
+            </div>
+            <div class="attach-preview" id="attachPreview" style="display:none"></div>
+          </div>
+          <div class="plus-menu" id="plusMenu" style="display:none">
+            <button class="plus-menu-item" data-action="camera"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>拍照</button>
+            <button class="plus-menu-item" data-action="image"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>添加图片</button>
+            <button class="plus-menu-item" data-action="file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>添加文件</button>
+            <button class="plus-menu-item" data-action="search"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg><span>联网</span><span class="search-capsule" id="searchCapsule"><span class="search-capsule-knob"></span></span></button>
+          </div>
+          <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="imageInput" accept="image/*" style="display:none">
+          <input type="file" id="fileInput" style="display:none">
+        </main>
+      </div>
+      <div class="modal-backdrop" id="providerModal"><div class="modal">
+        <div class="modal-head"><span>设置 / 模型提供方</span><button class="icon-btn" id="closeProvider">×</button></div>
+        <div class="modal-body">
+          <div class="hint">可以保存多个模型提供方；每个提供方下面可以填多个模型。聊天页点"模型"就能切换，下一条消息立即使用选中的模型。</div>
+          <div id="presetList" class="preset-list"></div>
+          <button class="btn" id="addPreset" type="button">＋ 添加提供方</button>
+        </div>
+        <div class="modal-foot"><button class="btn" id="cancelProvider">取消</button><button class="btn primary" id="saveProvider">保存</button></div>
+      </div></div>
+      <div class="modal-backdrop" id="settingsModal"><div class="settings-shell" id="settingsShell">
+        <div class="settings-header">
+          <button class="settings-back-btn" id="settingsBackBtn" style="display:none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="settings-title" id="settingsTitle">设置</span>
+          <button class="settings-close-btn" id="settingsCloseBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div class="settings-body" id="settingsBody"></div>
+      </div></div>
+      <div class="modal-backdrop" id="memoryEditModal"><div class="modal" style="max-width:520px">
+        <div class="modal-head"><span id="memoryEditTitle">编辑记忆</span><button class="icon-btn" id="closeMemoryEdit">×</button></div>
+        <div class="modal-body">
+          <div class="field"><label>记忆内容</label><textarea id="memoryEditContent" rows="4" style="resize:vertical;min-height:80px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:10px 14px;outline:0;font:inherit;width:100%"></textarea></div>
+          <div class="field"><label>标签（逗号分隔）</label><input id="memoryEditTags" placeholder="学习, 项目, 偏好, 生活, 人格" style="height:46px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.28);padding:0 14px;outline:0;font:inherit;width:100%"></div>
+        </div>
+        <div class="modal-foot"><button class="btn" id="cancelMemoryEdit">取消</button><button class="btn primary" id="saveMemoryEdit">保存</button></div>
+      </div></div>
+      <div class="status" id="status"></div>`;
     renderAll();
     syncModelState();
     applyFontSize(loadFontSize());
