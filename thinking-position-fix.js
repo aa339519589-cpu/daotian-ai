@@ -50,15 +50,19 @@
 
   function tick(){ raf = 0; injectRuntimeStyle(); fixGap(); keepBottomStable(); }
   function schedule(){ if(!raf) raf = requestAnimationFrame(tick); }
+  function delayedKeyboardRecalibration(){
+    schedule();
+    [60,140,260,420].forEach(function(ms){ setTimeout(schedule,ms); });
+  }
 
   function start(){
     injectRuntimeStyle();
     if(document.head){ new MutationObserver(schedule).observe(document.head,{childList:true}); }
     var box = document.getElementById('messages');
     if(box){ new MutationObserver(schedule).observe(box,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','data-scroll-focus']}); }
-    if(window.visualViewport){ window.visualViewport.addEventListener('resize',schedule,{passive:true}); window.visualViewport.addEventListener('scroll',schedule,{passive:true}); }
-    window.addEventListener('resize',schedule,{passive:true});
-    document.addEventListener('focusin',schedule,true);
+    if(window.visualViewport){ window.visualViewport.addEventListener('resize',delayedKeyboardRecalibration,{passive:true}); window.visualViewport.addEventListener('scroll',delayedKeyboardRecalibration,{passive:true}); }
+    window.addEventListener('resize',delayedKeyboardRecalibration,{passive:true});
+    document.addEventListener('focusin',delayedKeyboardRecalibration,true);
     document.addEventListener('focusout',function(){ setTimeout(schedule,80); },true);
     schedule();
   }
