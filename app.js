@@ -110,6 +110,7 @@
 
     /* ── Server Memory API helpers ── */
     var _memoriesMigrated = false;
+    window._memoriesMigrated = _memoriesMigrated;
     async function migrateMemoriesToServer(){
     window.migrateMemoriesToServer = migrateMemoriesToServer;
       if(_memoriesMigrated) return;
@@ -117,7 +118,7 @@
       if(!oldMems.length) return;
       try{
         var res = await authFetch('/api/memory/migrate', {method:'POST', body:JSON.stringify({memories:oldMems})});
-        if(res && res.ok){ _memoriesMigrated = true; console.log('[Mem] migrated '+res.imported+' memories to server'); }
+        if(res && res.ok){ _memoriesMigrated = true; window._memoriesMigrated = true; console.log('[Mem] migrated '+res.imported+' memories to server'); }
       }catch(e){ console.warn('[Mem] migration deferred:', e.message); }
     }
     async function retrieveMemories(query){

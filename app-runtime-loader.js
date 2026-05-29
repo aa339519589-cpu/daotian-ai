@@ -35,7 +35,7 @@ var lastSendAt = 0;
       'ensureAuthenticated','loadAuthData','ensureSettingsShape','normalizeProvider','normalizeProviders','providerHasConfig',
       'makeProviderId','splitModels','providersToPresets','presetFromProvider','accessPackagesToPresets',
       'activeChat','modelPresets','activePreset','syncLegacySettings','persist','persistModelSettingsStrict',
-      'findFirstUsableProvider','hasAnyProvider','hasProviderWithCredentials','syncModelState','hasUsableModelConfig','saveSearchOn'
+      'findFirstUsableProvider','hasAnyProvider','hasProviderWithCredentials','syncModelState','hasUsableModelConfig','saveSearchOn','emptyPrompts','_memoriesMigrated'
     ];
     return '\n    /* Runtime bridge: expose app.js closure helpers to extracted modules */\n' +
       '    window.__DAOTIAN_RUNTIME_BRIDGE__ = \'' + VERSION + '\';\n' +
