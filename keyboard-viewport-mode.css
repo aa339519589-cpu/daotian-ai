@@ -1,0 +1,22 @@
+@media(max-width:900px){
+  html[data-keyboard-viewport="content"] .composer-wrap{
+    transform:none;
+    margin-bottom:0;
+  }
+
+  html[data-keyboard-viewport="content"] body.keyboard-open .composer-wrap{
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    transform:none;
+    margin-bottom:0;
+    z-index:999;
+  }
+
+  html[data-keyboard-viewport="content"] body.keyboard-open #app,
+  html[data-keyboard-viewport="content"] body.keyboard-open .app-shell,
+  html[data-keyboard-viewport="content"] body.keyboard-open .main{
+    top:auto;
+  }
+}
