@@ -1,0 +1,16 @@
+[data-theme="dark"]{
+  --bg:#1F1F1F;
+  --panel:#2B2B2B;
+  --panel-2:#2B2B2B;
+  --text:#E8E8E8;
+  --line:#3D3D3C;
+  --sidebar-border:#3D3D3C;
+  --sidebar-text:#E8E8E8;
+  --composer-bg:#2B2B2B;
+  --composer-border:#3D3D3C;
+  --composer-text:#E8E8E8;
+  --surface-popover:#2B2B2B;
+  --surface-dropdown:#2B2B2B;
+  --border-soft:#3D3D3C;
+  --input-bg:#2B2B2B;
+}
