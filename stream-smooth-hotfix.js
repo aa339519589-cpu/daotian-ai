@@ -1,19 +1,21 @@
 ;(function(){
   'use strict';
   if(window.__DAOTIAN_STREAM_SMOOTH_HOTFIX__) return;
-  window.__DAOTIAN_STREAM_SMOOTH_HOTFIX__ = 'v1.0.0';
+  window.__DAOTIAN_STREAM_SMOOTH_HOTFIX__ = 'v1.1.0-water-flow';
 
   var nativeFetch = window.fetch;
   if(typeof nativeFetch !== 'function' || typeof ReadableStream === 'undefined') return;
 
   var STREAM_CFG = {
-    minBatch: 5,
-    maxBatch: 15,
-    baseDelay: 22,
-    punctuationDelay: 105,
-    paragraphDelay: 205,
-    backlogFastThreshold: 220,
-    backlogTurboThreshold: 520
+    minBatch: 1,
+    maxBatch: 3,
+    bufferStartDelay: 20,
+    baseDelayMin: 30,
+    baseDelayMax: 40,
+    punctuationDelay: 60,
+    paragraphDelay: 120,
+    backlogFastThreshold: 180,
+    backlogTurboThreshold: 420
   };
 
   function sleep(ms){ return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
@@ -53,17 +55,17 @@
 
   function chooseBatchSize(buffer){
     var len = charLen(buffer);
-    if(len > STREAM_CFG.backlogTurboThreshold) return 28;
-    if(len > STREAM_CFG.backlogFastThreshold) return 20;
-    return Math.max(STREAM_CFG.minBatch, Math.min(STREAM_CFG.maxBatch, 8 + Math.floor(Math.random() * 5)));
+    if(len > STREAM_CFG.backlogTurboThreshold) return 5;
+    if(len > STREAM_CFG.backlogFastThreshold) return 4;
+    return STREAM_CFG.minBatch + Math.floor(Math.random() * (STREAM_CFG.maxBatch - STREAM_CFG.minBatch + 1));
   }
 
   function chooseDelay(chunk, bufferLeft){
-    if(bufferLeft > STREAM_CFG.backlogTurboThreshold) return 8;
-    if(bufferLeft > STREAM_CFG.backlogFastThreshold) return 12;
+    if(bufferLeft > STREAM_CFG.backlogTurboThreshold) return 14;
+    if(bufferLeft > STREAM_CFG.backlogFastThreshold) return 22;
     if(/\n\n\s*$/.test(chunk)) return STREAM_CFG.paragraphDelay;
     if(/[，。！？；：,.!?;:]\s*$/.test(chunk)) return STREAM_CFG.punctuationDelay;
-    return STREAM_CFG.baseDelay + Math.floor(Math.random() * 10);
+    return STREAM_CFG.baseDelayMin + Math.floor(Math.random() * (STREAM_CFG.baseDelayMax - STREAM_CFG.baseDelayMin + 1));
   }
 
   function shouldSmoothResponse(res){
@@ -71,8 +73,6 @@
       if(!res || !res.body || !res.ok) return false;
       var ct = String(res.headers && res.headers.get && res.headers.get('content-type') || '').toLowerCase();
       if(ct.indexOf('text/event-stream') >= 0) return true;
-      // Some upstreams stream with octet/plain headers. The parser below is SSE-safe and will pass non-SSE through poorly,
-      // so keep this conservative.
       return false;
     }catch(e){ return false; }
   }
@@ -84,11 +84,15 @@
     var textBuffer = '';
     var contentBuffer = '';
     var pendingTail = [];
-    var sourceEnded = false;
+    var startedRelease = false;
     var cancelled = false;
 
     async function flushContent(controller, force){
       if(!contentBuffer) return;
+      if(!force && !startedRelease){
+        startedRelease = true;
+        await sleep(STREAM_CFG.bufferStartDelay);
+      }
       while(contentBuffer && !cancelled){
         var n = force ? charLen(contentBuffer) : chooseBatchSize(contentBuffer);
         var part = takeChars(contentBuffer, n);
@@ -139,7 +143,7 @@
       var delta = getDeltaText(data);
       if(delta){
         contentBuffer += delta;
-        if(charLen(contentBuffer) >= 32){ await flushContent(controller, false); }
+        if(charLen(contentBuffer) >= 12){ await flushContent(controller, false); }
         return;
       }
       await flushContent(controller, true);
@@ -162,7 +166,6 @@
           }
           textBuffer += decoder.decode();
           if(textBuffer.trim()) await processEvent(textBuffer.trim(), controller);
-          sourceEnded = true;
           await flushContent(controller, true);
           emitTail(controller);
           controller.close();
@@ -193,5 +196,5 @@
     return res;
   };
 
-  console.log('[stream-smooth] enabled');
+  console.log('[stream-smooth] enabled v1.1.0-water-flow');
 })();
