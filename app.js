@@ -1,6 +1,5 @@
 (async function(){
   'use strict';
-  var EMPTY_PROMPT = '​';
   window.__DAOTIAN_THINKING_VERSION__ = 'v3.6.0-semantic-memory';
 
   function emergency(message){
@@ -47,36 +46,9 @@
   });
 
   try{
-    const $ = (sel, root=document) => root.querySelector(sel);
-    const uid = () => 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
-    const nowTime = () => new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
     function makeTtsMsgId(chatId, idx){ return 'tts_' + chatId + '_' + idx; }
     const app = $('#app');
     if(!app) throw new Error('#app not found');
-    var AUTH_USER = null;
-    var AUTH_DATA = {};
-    var AUTH_SYNC_QUEUE = {};
-    var AUTH_SYNC_TIMER = null;
-
-    const KEYS = {
-      chats:'daotian.chats.v323', active:'daotian.activeChat.v323', settings:'daotian.settings.v323', theme:'daotian.theme.v323',
-      oldChats:'daotian.chats', oldActive:'daotian.activeChat', oldSettings:'daotian.settings',
-      v322Chats:'daotian.chats.v322', v322Active:'daotian.activeChat.v322', v322Settings:'daotian.settings.v322',
-      modelParams:'daotian.modelParams.v1',
-      accessPackages:'daotian.accessPackages.v1',
-      accessClaims:'daotian.accessClaims.v1',
-      personalization:'daotian.personalization.v1',
-      memories:'daotian.memories.v1',
-      memoryCandidates:'daotian.memoryCandidates.v1',
-      autoExtract:'daotian.autoExtract.v1',
-      memoryGlobal:'daotian.memoryGlobal.v1',
-      tokenDisplay:'daotian.tokenDisplay.v2',
-      autoScroll:'daotian.autoScroll.v1',
-      themeMode:'daotian.themeMode.v1',
-      fontSize:'daotian.fontSize.v1',
-      voiceSettings:'daotian.voiceSettings.v1',
-    };
-
     /* ── Upload hotfix merged from upload-hotfix.js ── */
     var UPLOAD_CACHE_TTL = 10 * 60 * 1000;
     var uploadFileCache = [];
@@ -157,18 +129,6 @@
       return selected.slice(-marker.count);
     }
 
-    /* Voice data */
-    var EDGE_VOICES = [
-      {id:'zh-CN-XiaoxiaoNeural',label:'小小',desc:'女声 · 普通话'},
-      {id:'zh-CN-XiaoyiNeural',label:'晓伊',desc:'女声 · 普通话'},
-      {id:'zh-CN-YunxiNeural',label:'云希',desc:'男声 · 普通话'},
-      {id:'zh-CN-YunjianNeural',label:'云健',desc:'男声 · 普通话'},
-      {id:'zh-CN-YunyangNeural',label:'云扬',desc:'男声 · 普通话'},
-      {id:'zh-TW-HsiaoChenNeural',label:'台湾晓臻',desc:'女声 · 台湾普通话'},
-      {id:'zh-TW-HsiaoYuNeural',label:'台湾晓雨',desc:'女声 · 台湾普通话'},
-      {id:'zh-TW-YunJheNeural',label:'台湾云哲',desc:'男声 · 台湾普通话'}
-    ];
-    var defaultVoiceSettings = {enabled:true,provider:'edge',edgeVoice:'zh-CN-XiaoxiaoNeural',edgeVoiceLabel:'小小',rate:'+25%',voiceSpeedVersion:2,fishAudioApiKey:'',fishAudioReferenceId:'',fishAudioVoiceName:''};
     function loadVoiceSettings(){
       var raw = readJSON(KEYS.voiceSettings, null);
       var out = Object.assign({}, defaultVoiceSettings, raw && typeof raw === 'object' ? raw : {});
@@ -207,8 +167,6 @@
 
     const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
     const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
-    const defaultModelParams = { temperature:0.7, top_p:1, max_tokens:0, presence_penalty:0, frequency_penalty:0, stream:true, systemPrompt: EMPTY_PROMPT, memoryInjection:false };
-    const DEFAULT_SYSTEM_PROMPT = defaultModelParams.systemPrompt;
     const defaultPersonalization = { enabled:false, content:'' };
 
     function loadModelParamsMap(){
@@ -319,7 +277,6 @@
       saveJSON(KEYS.tokenDisplay, v === true);
     }
     var AUTO_SCROLL_DEFAULT_OFF_KEY = 'daotian.autoScroll.defaultOff.v2';
-    var autoScrollManualUntil = 0;
     function ensureAutoScrollDefaultOff(){
       try{
         if(localStorage.getItem(AUTO_SCROLL_DEFAULT_OFF_KEY) !== '1'){
@@ -364,7 +321,6 @@
     function shouldAutoFollowStream(){
       return canProgramAutoScroll() && !userScrolling && isNearBottom($('#messages'));
     }
-    var _scrollDetectInited = false;
     function initUserScrollDetection(){
       if(_scrollDetectInited) return; _scrollDetectInited = true;
       var box = $('#messages'); if(!box) return;
@@ -587,21 +543,6 @@
     ];
 
     function authEscape(s){ return String(s).replace(/[&<>"]/g, function(ch){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]); }); }
-    async function authFetch(path, options){
-      options = options || {};
-      var headers = Object.assign({'Content-Type':'application/json'}, options.headers || {});
-      var res = await fetch(path, Object.assign({credentials:'same-origin'}, options, {headers:headers}));
-      var text = await res.text();
-      var data = {};
-      try{ data = text ? JSON.parse(text) : {}; }catch(_e){ data = { message:text }; }
-      if(!res.ok){
-        var err = new Error(data.message || data.error || ('HTTP ' + res.status));
-        err.status = res.status;
-        err.data = data;
-        throw err;
-      }
-      return data;
-    }
     function renderAuthPage(mode, message){
       mode = mode === 'register' ? 'register' : 'login';
       app.innerHTML = '<div class="auth-shell">'+
@@ -675,34 +616,6 @@
     async function ensureAuthenticated(){
       return loadAuthData();
     }
-    function scopedStorageKey(key){
-      return AUTH_USER && AUTH_USER.id ? ('daotian.user.' + AUTH_USER.id + '.' + key) : key;
-    }
-    function queueAuthDataSync(key, value){
-      if(!AUTH_USER || !AUTH_USER.id) return;
-      AUTH_DATA[key] = String(value);
-      AUTH_SYNC_QUEUE[key] = String(value);
-      clearTimeout(AUTH_SYNC_TIMER);
-      AUTH_SYNC_TIMER = setTimeout(flushAuthDataSync, 120);
-    }
-    async function flushAuthDataSync(){
-      if(!AUTH_USER || !AUTH_USER.id) return;
-      var items = AUTH_SYNC_QUEUE;
-      AUTH_SYNC_QUEUE = {};
-      if(!Object.keys(items).length) return;
-      try{
-        await authFetch('/api/user/data', {method:'POST', body:JSON.stringify({items:items})});
-      }catch(err){
-        console.error('[auth data] sync failed:', err);
-      }
-    }
-    function safeGet(key){ try{ if(AUTH_USER && Object.prototype.hasOwnProperty.call(AUTH_DATA, key)) return AUTH_DATA[key]; return localStorage.getItem(scopedStorageKey(key)); }catch(e){return null;} }
-    function readJSON(key, fallback){ try{ const v = safeGet(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } }
-    function saveJSON(key, value){ try{ var str = JSON.stringify(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }catch(e){} }
-    function setItem(key, value){ try{ var str = String(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }catch(e){} }
-    function saveJSONStrict(key, value){ var str = JSON.stringify(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }
-    function setItemStrict(key, value){ var str = String(value); localStorage.setItem(scopedStorageKey(key), str); queueAuthDataSync(key, str); }
-
     function slugify(value){
       return String(value || 'x').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,48) || 'x';
     }
@@ -978,16 +891,16 @@
     await ensureAuthenticated();
 
     let theme = resolveTheme();
-    let settings = ensureSettingsShape(readJSON(scopedStorageKey(KEYS.settings),null) || readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
+    settings = ensureSettingsShape(readJSON(scopedStorageKey(KEYS.settings),null) || readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
     let chats = loadChats();
-    let activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
-    let sidebarOpen = true;
-    let searchOn = (function(){ var v = readJSON('daotian.searchOn.v1', null); return v === null ? true : !!v; })();
+    activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
+    sidebarOpen = true;
+    searchOn = (function(){ var v = readJSON('daotian.searchOn.v1', null); return v === null ? true : !!v; })();
     function saveSearchOn(v){ saveJSON('daotian.searchOn.v1', !!v); }
-    let sending = false;
+    sending = false;
     let activeAbortController = null;
     let lastSendAt = 0;
-    let generatingChatId = null;
+    generatingChatId = null;
     if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
 
     function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
@@ -1139,7 +1052,6 @@
       </div></div>
       <div class="status" id="status"></div>`;
 
-    function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
     function escapeHTML(s){ return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
 
     function escapeAttr(s){ return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
@@ -6155,7 +6067,6 @@
     updateSearchVisual();
     setupMobileViewport();
     initUserScrollDetection();
-    var _thinkingObserver = null;
     function initThinkingPositionObserver(){
       var box = $('#messages');
       if(!box){ setTimeout(initThinkingPositionObserver, 120); return; }
@@ -6180,7 +6091,6 @@
     }catch(_e1){}
 
     /* ── 加号附件菜单（函数定义在 try 外，严格模式安全） ── */
-    var _attachments = [];
     var _plusOpen = false;
 
     function openPlusMenu(){
