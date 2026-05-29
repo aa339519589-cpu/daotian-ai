@@ -577,7 +577,7 @@
     let chats = loadChats();
     window.chats = chats;
     activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
-    sidebarOpen = true;
+    sidebarOpen = false;
     searchOn = (function(){ var v = readJSON('daotian.searchOn.v1', null); return v === null ? true : !!v; })();
     function saveSearchOn(v){ saveJSON('daotian.searchOn.v1', !!v); }
     window.saveSearchOn = saveSearchOn;
