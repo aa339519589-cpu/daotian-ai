@@ -1,0 +1,13 @@
+:root{
+  --font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB",sans-serif;
+  --font-reading:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB",sans-serif;
+}
+body{font-family:var(--font-ui)!important;font-size:16px!important;line-height:1.52!important;letter-spacing:-0.012em!important;font-weight:400!important}
+.model-top-trigger{font-family:var(--font-ui)!important;font-size:15.5px!important;line-height:1.25!important;font-weight:650!important;letter-spacing:-0.018em!important}
+.messages,.message{font-family:var(--font-reading)!important}
+.bubble,.assistant-render,.assistant-content{font-family:var(--font-reading)!important;font-size:15.5px!important;line-height:1.54!important;letter-spacing:-0.01em!important;font-weight:400!important}
+.bubble{padding:10px 14px!important}
+.assistant-render p{margin:0 0 10px!important}.assistant-render p:last-child{margin-bottom:0!important}.assistant-render li{line-height:1.54!important;margin:2px 0!important}.assistant-render blockquote{line-height:1.54!important}
+textarea{font-family:var(--font-ui)!important;font-size:15.5px!important;line-height:1.42!important;letter-spacing:-0.01em!important;font-weight:400!important}
+@media(min-width:901px){.messages{width:min(100%,920px)!important;padding-left:clamp(28px,4vw,56px)!important;padding-right:clamp(28px,4vw,56px)!important}.message{max-width:760px!important;margin-bottom:16px!important}.assistant-content{max-width:min(720px,82%)!important}.bubble{max-width:min(640px,76%)!important}}
+@media(max-width:900px){body{font-size:16px!important}.bubble,.assistant-render,.assistant-content{font-size:15.5px!important;line-height:1.54!important}.message{margin-bottom:14px!important}.assistant-content{max-width:88%!important}}
