@@ -1,7 +1,7 @@
 (function(){
   'use strict';
-  if(window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ === 'v3-20260529') return;
-  window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ = 'v3-20260529';
+  if(window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ === 'v4-20260529') return;
+  window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ = 'v4-20260529';
 
   var AUTO_KEY = 'daotian.autoScroll.v1';
   var manualLock = false;
@@ -11,6 +11,8 @@
   var rawProtoPatched = false;
   var lastKeyboardOpen = false;
   var keyboardSettleTimer = null;
+
+  function isMobile(){ return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900; }
 
   function autoOn(){
     try{
@@ -121,8 +123,8 @@
 
     var input = document.getElementById('input');
     var focused = input && document.activeElement === input;
-    var keyboardLikely = focused && vv && (window.innerHeight - vv.height > 120);
-    document.body.classList.toggle('keyboard-open', !!keyboardLikely);
+    var keyboardLikely = !!(focused && isMobile());
+    document.body.classList.toggle('keyboard-open', keyboardLikely);
 
     if(keyboardLikely && !lastKeyboardOpen){
       manualLock = false;
@@ -131,7 +133,7 @@
       setTimeout(forceScrollToBottom, 260);
       setTimeout(forceScrollToBottom, 520);
     }
-    lastKeyboardOpen = !!keyboardLikely;
+    lastKeyboardOpen = keyboardLikely;
   }
 
   function injectFinalCss(){
