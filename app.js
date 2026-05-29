@@ -47,6 +47,7 @@
 
   try{
     const app = $('#app');
+    window.app = app;
     if(!app) throw new Error('#app not found');
     const defaultSettings = { providerType:'openai', providerName:'', baseUrl:'', apiKey:'', model:'', path:'/v1/chat/completions' };
     const legacyDefaultSettings = { providerName:'DeepSeek', baseUrl:'https://api.deepseek.com', model:'deepseek-chat' };
@@ -59,47 +60,58 @@
       return m;
     }
     function getModelParams(presetId){
+    window.getModelParams = getModelParams;
       const map = loadModelParamsMap();
       const params = map[presetId] ? Object.assign({}, defaultModelParams, map[presetId]) : Object.assign({}, defaultModelParams);
       if(!params.systemPrompt || !String(params.systemPrompt).trim()) params.systemPrompt = DEFAULT_SYSTEM_PROMPT;
       return params;
     }
     function setModelParams(presetId, params){
+    window.setModelParams = setModelParams;
       const map = loadModelParamsMap();
       map[presetId] = Object.assign({}, defaultModelParams, params || {});
       saveJSON(KEYS.modelParams, map);
     }
     function loadPersonalization(){
+    window.loadPersonalization = loadPersonalization;
       return Object.assign({}, defaultPersonalization, readJSON(KEYS.personalization, {}));
     }
     function savePersonalization(p){
+    window.savePersonalization = savePersonalization;
       saveJSON(KEYS.personalization, { enabled:!!p.enabled, content:String(p.content||'') });
     }
     function loadMemories(){
+    window.loadMemories = loadMemories;
       const arr = readJSON(KEYS.memories, []);
       return Array.isArray(arr) ? arr.filter(function(m){ return m && typeof m.content === 'string'; }) : [];
     }
     function saveMemories(arr){
+    window.saveMemories = saveMemories;
       saveJSON(KEYS.memories, Array.isArray(arr) ? arr : []);
     }
     function loadMemoryGlobal(){
+    window.loadMemoryGlobal = loadMemoryGlobal;
       var v = readJSON(KEYS.memoryGlobal, null);
       if(v === true || v === false) return v;
       return true;
     }
     function saveMemoryGlobal(v){
+    window.saveMemoryGlobal = saveMemoryGlobal;
       saveJSON(KEYS.memoryGlobal, v === true);
     }
     function loadAutoExtract(){
+    window.loadAutoExtract = loadAutoExtract;
       return readJSON(KEYS.autoExtract, true) === true;
     }
     function saveAutoExtract(v){
+    window.saveAutoExtract = saveAutoExtract;
       saveJSON(KEYS.autoExtract, v === true);
     }
 
     /* ── Server Memory API helpers ── */
     var _memoriesMigrated = false;
     async function migrateMemoriesToServer(){
+    window.migrateMemoriesToServer = migrateMemoriesToServer;
       if(_memoriesMigrated) return;
       var oldMems = loadMemories();
       if(!oldMems.length) return;
@@ -109,6 +121,7 @@
       }catch(e){ console.warn('[Mem] migration deferred:', e.message); }
     }
     async function retrieveMemories(query){
+    window.retrieveMemories = retrieveMemories;
       try{
         var res = await authFetch('/api/memory/retrieve', {method:'POST', body:JSON.stringify({query:query, limit:5})});
         if(res && res.ok && Array.isArray(res.memories)) return res.memories;
@@ -116,31 +129,38 @@
       return [];
     }
     function ingestMemoryFacts(facts){
+    window.ingestMemoryFacts = ingestMemoryFacts;
       if(!facts || !facts.length) return;
       authFetch('/api/memory/ingest', {method:'POST', body:JSON.stringify({facts:facts})}).catch(function(e){
         console.warn('[Mem] ingest failed:', e.message);
       });
     }
     function formatMemoryContext(memories){
+    window.formatMemoryContext = formatMemoryContext;
       if(!memories || !memories.length) return '';
       var lines = memories.map(function(m){ return '- ' + m.fact; });
       return '\n\n[User Profile]\n' + lines.join('\n');
     }
     function loadAccessPackages(){
+    window.loadAccessPackages = loadAccessPackages;
       var v = readJSON(KEYS.accessPackages, []);
       return Array.isArray(v) ? v : [];
     }
     function saveAccessPackages(v){
+    window.saveAccessPackages = saveAccessPackages;
       saveJSON(KEYS.accessPackages, Array.isArray(v) ? v : []);
     }
     function loadAccessClaims(){
+    window.loadAccessClaims = loadAccessClaims;
       var v = readJSON(KEYS.accessClaims, {});
       return v && typeof v === 'object' ? v : {};
     }
     function saveAccessClaims(v){
+    window.saveAccessClaims = saveAccessClaims;
       saveJSON(KEYS.accessClaims, v && typeof v === 'object' ? v : {});
     }
     async function refreshAccessPackages(){
+    window.refreshAccessPackages = refreshAccessPackages;
       if(!AUTH_USER || !AUTH_USER.id) return loadAccessPackages();
       try{
         var data = await authFetch('/api/access/packages', {method:'GET', headers:{}});
@@ -154,19 +174,24 @@
       return loadAccessPackages();
     }
     function loadTokenDisplay(){
+    window.loadTokenDisplay = loadTokenDisplay;
       return readJSON(KEYS.tokenDisplay, false) === true;
     }
     function saveTokenDisplay(v){
+    window.saveTokenDisplay = saveTokenDisplay;
       saveJSON(KEYS.tokenDisplay, v === true);
     }
     function loadMemoryCandidates(){
+    window.loadMemoryCandidates = loadMemoryCandidates;
       const arr = readJSON(KEYS.memoryCandidates, []);
       return Array.isArray(arr) ? arr : [];
     }
     function saveMemoryCandidates(arr){
+    window.saveMemoryCandidates = saveMemoryCandidates;
       saveJSON(KEYS.memoryCandidates, Array.isArray(arr) ? arr : []);
     }
     function exportModelParamsBody(presetId, existingBody){
+    window.exportModelParamsBody = exportModelParamsBody;
       const p = getModelParams(presetId);
       if(typeof existingBody !== 'object' || !existingBody) existingBody = {};
       if(p.temperature !== undefined && p.temperature !== null) existingBody.temperature = p.temperature;
@@ -188,6 +213,7 @@
 
     function authEscape(s){ return String(s).replace(/[&<>"]/g, function(ch){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]); }); }
     function renderAuthPage(mode, message){
+    window.renderAuthPage = renderAuthPage;
       mode = mode === 'register' ? 'register' : 'login';
       app.innerHTML = '<div class="auth-shell">'+
         '<div class="auth-card">'+
@@ -231,6 +257,7 @@
       if(back) back.onclick = function(){ location.reload(); };
     }
     async function loadAuthData(){
+    window.loadAuthData = loadAuthData;
       try{
         var me = await authFetch('/api/auth/me', {method:'GET', headers:{}});
         AUTH_USER = me.user;
@@ -258,12 +285,14 @@
       }
     }
     async function ensureAuthenticated(){
+    window.ensureAuthenticated = ensureAuthenticated;
       return loadAuthData();
     }
     function slugify(value){
       return String(value || 'x').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,48) || 'x';
     }
     function splitModels(value){
+    window.splitModels = splitModels;
       if(Array.isArray(value)) return value.map(v=>String(v||'').trim()).filter(Boolean);
       return String(value || '')
         .split(/[\n,，;；]+/)
@@ -271,6 +300,7 @@
         .filter(Boolean);
     }
     function makeProviderId(name, baseUrl, i){
+    window.makeProviderId = makeProviderId;
       return 'p_' + slugify((name || 'provider') + '_' + (baseUrl || '')) + '_' + i;
     }
     function modelValuesFromProvider(p){
@@ -280,6 +310,7 @@
       return [];
     }
     function normalizeProvider(p, i){
+    window.normalizeProvider = normalizeProvider;
       p = p && typeof p === 'object' ? p : {};
       const providerName = String(p.providerName || p.name || p.label || '').trim();
       const baseUrl = String(p.baseUrl || '').trim();
@@ -296,6 +327,7 @@
       };
     }
     function providerHasConfig(provider){
+    window.providerHasConfig = providerHasConfig;
       if(!provider) return false;
       return !!(
         (provider.providerName && provider.providerName.trim()) ||
@@ -307,6 +339,7 @@
     }
     /* 合并重复 provider：同 name+baseUrl → 合并 models 去重 */
     function normalizeProviders(providers){
+    window.normalizeProviders = normalizeProviders;
       if(!Array.isArray(providers)) return [];
       var merged = []; var seen = {};
       for(var i=0; i<providers.length; i++){
@@ -345,6 +378,7 @@
       };
     }
     function providersToPresets(providers){
+    window.providersToPresets = providersToPresets;
       const presets = [];
       providers.forEach(function(provider){
         provider.models.forEach(function(model){ presets.push(presetFromProvider(provider, model, presets.length)); });
@@ -472,6 +506,7 @@
       return providerHasConfig(provider) ? [provider] : [];
     }
     function ensureSettingsShape(raw){
+    window.ensureSettingsShape = ensureSettingsShape;
       var hasProviderList = raw && typeof raw === 'object' && Array.isArray(raw.modelProviders);
       var hasShareProviderList = raw && typeof raw === 'object' && Array.isArray(raw.shareModelProviders);
       var hasPresetList = raw && typeof raw === 'object' && Array.isArray(raw.modelPresets);
@@ -535,30 +570,39 @@
     await ensureAuthenticated();
 
     let theme = resolveTheme();
+    window.theme = theme;
     settings = ensureSettingsShape(readJSON(scopedStorageKey(KEYS.settings),null) || readJSON(KEYS.settings,null) || readJSON(KEYS.v322Settings,null) || readJSON(KEYS.oldSettings,null) || {});
     let chats = loadChats();
+    window.chats = chats;
     activeId = safeGet(KEYS.active) || safeGet(KEYS.v322Active) || safeGet(KEYS.oldActive) || chats[0].id;
     sidebarOpen = true;
     searchOn = (function(){ var v = readJSON('daotian.searchOn.v1', null); return v === null ? true : !!v; })();
     function saveSearchOn(v){ saveJSON('daotian.searchOn.v1', !!v); }
+    window.saveSearchOn = saveSearchOn;
     sending = false;
     let activeAbortController = null;
+    window.activeAbortController = activeAbortController;
     let lastSendAt = 0;
+    window.lastSendAt = lastSendAt;
     generatingChatId = null;
     if(!chats.some(c=>c && c.id===activeId)) activeId = chats[0].id;
 
     function activeChat(){ return chats.find(c=>c && c.id===activeId) || chats[0]; }
+    window.activeChat = activeChat;
     function modelPresets(){
+    window.modelPresets = modelPresets;
       settings = ensureSettingsShape(settings);
       var own = Array.isArray(settings.modelPresets) ? settings.modelPresets : [];
       var access = accessPackagesToPresets(loadAccessPackages());
       return own.concat(access);
     }
     function activePreset(){
+    window.activePreset = activePreset;
       const presets = modelPresets();
       return presets.find(p=>p.id===settings.activePresetId) || presets[0];
     }
     function syncLegacySettings(){
+    window.syncLegacySettings = syncLegacySettings;
       const p = activePreset();
       if(!p){
         const firstProvider = (settings.modelProviders && settings.modelProviders[0]) || null;
@@ -579,6 +623,7 @@
       return true;
     }
     function persist(options){
+    window.persist = persist;
       const strict = options && options.strict;
       syncLegacySettings();
       if(strict){
@@ -592,12 +637,14 @@
       saveJSON(KEYS.settings,settings);
     }
     function persistModelSettingsStrict(){
+    window.persistModelSettingsStrict = persistModelSettingsStrict;
       syncLegacySettings();
       saveJSONStrict(KEYS.settings, settings);
     }
 
     /* ── Model state sync ── */
     function findFirstUsableProvider(){
+    window.findFirstUsableProvider = findFirstUsableProvider;
       settings = ensureSettingsShape(settings);
       var providers = settings.modelProviders || [];
       for(var i=0; i<providers.length; i++){
@@ -609,10 +656,12 @@
       return null;
     }
     function hasAnyProvider(){
+    window.hasAnyProvider = hasAnyProvider;
       settings = ensureSettingsShape(settings);
       return (Array.isArray(settings.modelProviders) && settings.modelProviders.length > 0);
     }
     function hasProviderWithCredentials(){
+    window.hasProviderWithCredentials = hasProviderWithCredentials;
       settings = ensureSettingsShape(settings);
       var providers = settings.modelProviders || [];
       for(var i=0; i<providers.length; i++){
@@ -622,6 +671,7 @@
       return false;
     }
     function syncModelState(){
+    window.syncModelState = syncModelState;
       settings = ensureSettingsShape(settings);
       var provider = findFirstUsableProvider();
       if(provider){
