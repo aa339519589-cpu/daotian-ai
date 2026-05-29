@@ -52,6 +52,10 @@
     const nowTime = DTG.nowTime;
     const DTTU = window.DAOTIAN_TTS_UTILS || {};
     const makeTtsMsgId = DTTU.makeTtsMsgId;
+    const DTMR = window.DAOTIAN_MARKDOWN_RENDER || {};
+    const protectMath = DTMR.protectMath;
+    const restoreMath = DTMR.restoreMath;
+    const hasRichLayoutContent = DTMR.hasRichLayoutContent;
     const app = $('#app');
     if(!app) throw new Error('#app not found');
     var AUTH_USER = null;
@@ -826,33 +830,6 @@
       return null;
     }
 
-    function protectMath(text){
-      var placeholders = [];
-      var idx = 0;
-      /* protect $$...$$ and \[...\] */
-      text = text.replace(/(\$\$|\\\[)([\s\S]*?)(\$\$|\\\])/g, function(m, open, body, close){
-        var ph = ' MATHBLOCK'+idx+' ';
-        placeholders.push(m);
-        idx++;
-        return ph;
-      });
-      /* protect \(...\) and $...$ (inline) */
-      text = text.replace(/(\\\(|\$)([^\n$]+?)(\\\)|\$)/g, function(m, open, body, close){
-        if(open === '$' && close === '$' && m.indexOf('$$')===0) return m; /* skip display */
-        var ph = 'MATHINLINE'+idx+'';
-        placeholders.push(m);
-        idx++;
-        return ph;
-      });
-      return {text:text, placeholders:placeholders};
-    }
-    function restoreMath(html, placeholders){
-      for(var i=0;i<placeholders.length;i++){
-        html = html.replace(' MATHBLOCK'+i+' ', placeholders[i]);
-        html = html.replace('MATHINLINE'+i+'', placeholders[i]);
-      }
-      return html;
-    }
 
     function wrapArtifactCards(container){
       /* Wrap tables */
@@ -1355,14 +1332,6 @@
       var d = new Date(ts);
       var h = d.getHours(), m = d.getMinutes();
       return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;
-    }
-    function hasRichLayoutContent(text){
-      text = String(text || '');
-      if(/```/.test(text)) return true;
-      if(/<table|<iframe|<canvas|<svg|<!doctype html|<html/i.test(text)) return true;
-      if(/^\s*\|.+\|\s*$/m.test(text) && /^\s*\|?\s*:?-{3,}:?\s*\|/m.test(text)) return true;
-      if(text.split('\n').some(function(line){ return line.length > 60; })) return true;
-      return false;
     }
     function renderMessages(){
       const c = activeChat(); const box = $('#messages'); if(!box || !c) return;
