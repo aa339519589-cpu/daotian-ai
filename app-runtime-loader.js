@@ -48,7 +48,7 @@ var lastSendAt = 0;
     src = replaceOnce(src, 'let chats = loadChats();', 'chats = loadChats();');
     src = replaceOnce(src, 'let activeAbortController = null;', 'activeAbortController = null;');
     src = replaceOnce(src, 'let lastSendAt = 0;', 'lastSendAt = 0;');
-    var marker = '\n    renderAll();\n    syncModelState();';
+    var marker = '\n    renderAll();';
     var at = src.lastIndexOf(marker);
     if(at < 0) throw new Error('runtime patch marker not found: startup renderAll');
     src = src.slice(0, at) + exposeBlock() + src.slice(at);
