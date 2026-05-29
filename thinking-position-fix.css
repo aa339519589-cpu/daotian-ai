@@ -1,14 +1,13 @@
-/* Fix: keep the temporary “想一下” thinking row in the upper reading zone, not pinned to the bottom.
-   Also harden rich/file/table rendering so long filenames, markdown tables and pasted file content never distort text layout. */
+/* Keep streaming/thinking content in normal chat flow. Do not add viewport-height spacer. */
 
 .messages.generating-space{
-  padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
-  scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+  padding-bottom:110px!important;
+  scroll-padding-bottom:110px!important;
 }
 
 .daotian-thinking-message{
-  scroll-margin-top:18dvh!important;
-  scroll-margin-bottom:72dvh!important;
+  scroll-margin-top:12px!important;
+  scroll-margin-bottom:110px!important;
 }
 
 html,
@@ -38,7 +37,6 @@ body,
   box-sizing:border-box!important;
 }
 
-/* Normal assistant prose: collapse model/file spacing, do not preserve table-alignment spaces. */
 .assistant-render,
 .assistant-render p,
 .assistant-render div:not(.markdown-table-wrap):not(.artifact-card):not(.artifact-head):not(.artifact-body):not(.artifact-actions):not(.code-block):not(.code-head),
@@ -55,7 +53,6 @@ body,
   max-width:100%!important;
 }
 
-/* Only true pre/code keeps preformatted spacing. */
 .assistant-render pre,
 .assistant-render code,
 .code-block pre,
@@ -93,7 +90,6 @@ body,
   overflow-x:hidden!important;
 }
 
-/* Tables/artifacts: scroll inside card instead of widening the whole page. */
 .artifact-card,
 .markdown-table-wrap,
 .artifact-body{
@@ -130,14 +126,15 @@ body,
 }
 
 @media(max-width:900px){
-  .messages.generating-space{
-    padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
-    scroll-padding-bottom:calc(72dvh + env(safe-area-inset-bottom,0px))!important;
+  .messages.generating-space,
+  body.keyboard-open .messages.generating-space{
+    padding-bottom:96px!important;
+    scroll-padding-bottom:96px!important;
   }
 
-  body.keyboard-open .messages.generating-space{
-    padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;
-    scroll-padding-bottom:calc(58dvh + env(safe-area-inset-bottom,0px))!important;
+  .daotian-thinking-message{
+    scroll-margin-top:8px!important;
+    scroll-margin-bottom:96px!important;
   }
 
   .message.user .bubble{
