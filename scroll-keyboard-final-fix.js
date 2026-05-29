@@ -1,7 +1,7 @@
 (function(){
   'use strict';
-  if(window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__) return;
-  window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ = 'v1-20260529';
+  if(window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ === 'v2-20260529') return;
+  window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ = 'v2-20260529';
 
   var AUTO_KEY = 'daotian.autoScroll.v1';
   var manualLock = false;
@@ -11,19 +11,29 @@
   var rawProtoPatched = false;
 
   function autoOn(){
-    try{ return localStorage.getItem(AUTO_KEY) === 'true'; }catch(_e){ return false; }
+    try{
+      if(localStorage.getItem(AUTO_KEY) === 'true') return true;
+      for(var i=0;i<localStorage.length;i++){
+        var k = localStorage.key(i) || '';
+        if(k.indexOf(AUTO_KEY) >= 0 && localStorage.getItem(k) === 'true') return true;
+      }
+      var row = document.querySelector('[data-param="autoScroll"]');
+      if(row && row.getAttribute('data-on') === '1') return true;
+      var sw = row && row.querySelector('.settings-toggle-switch.on');
+      if(sw) return true;
+    }catch(_e){}
+    return false;
   }
 
   function nearBottom(box){
     if(!box) return true;
-    return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    return box.scrollHeight - box.scrollTop - box.clientHeight < 120;
   }
 
   function markManual(){
     var box = document.getElementById('messages');
     if(!box) return;
-    if(!nearBottom(box)) manualLock = true;
-    else manualLock = false;
+    manualLock = !nearBottom(box);
   }
 
   function canProgramScroll(){
@@ -106,15 +116,16 @@
   function injectFinalCss(){
     var css = '@media(max-width:900px){' +
       'body.keyboard-open{overflow:hidden!important;overscroll-behavior:none!important;background:var(--bg)!important;}' +
-      'body.keyboard-open #app{position:fixed!important;left:0!important;right:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:hidden!important;transform:none!important;background:var(--bg)!important;}' +
-      'body.keyboard-open .app-shell{position:relative!important;left:auto!important;right:auto!important;top:auto!important;width:100vw!important;height:100%!important;min-height:0!important;overflow:hidden!important;background:var(--bg)!important;}' +
-      'body.keyboard-open .main{position:relative!important;width:100vw!important;height:100%!important;min-height:0!important;overflow:hidden!important;background:var(--bg)!important;}' +
-      'body.keyboard-open .composer-wrap{position:absolute!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;padding:0!important;margin:0!important;background:var(--bg)!important;background-image:none!important;z-index:1000!important;transform:none!important;will-change:auto!important;}' +
+      'body.keyboard-open #app{position:fixed!important;left:0!important;right:0!important;top:var(--app-top,0px)!important;width:100vw!important;height:var(--app-height,100dvh)!important;min-height:var(--app-height,100dvh)!important;overflow:visible!important;transform:none!important;background:var(--bg)!important;}' +
+      'body.keyboard-open .app-shell{position:relative!important;left:auto!important;right:auto!important;top:auto!important;width:100vw!important;height:100%!important;min-height:0!important;overflow:visible!important;background:var(--bg)!important;}' +
+      'body.keyboard-open .main{position:relative!important;width:100vw!important;height:100%!important;min-height:0!important;overflow:visible!important;background:var(--bg)!important;}' +
+      'body.keyboard-open .composer-wrap{position:absolute!important;left:0!important;right:0!important;bottom:-60px!important;width:100vw!important;padding:0!important;margin:0!important;background:transparent!important;background-image:none!important;z-index:10000!important;transform:none!important;will-change:auto!important;}' +
       'body.keyboard-open .composer-wrap::after{display:none!important;content:none!important;}' +
       'body.keyboard-open .composer{width:calc(100% - 44px)!important;max-width:none!important;margin:0 auto!important;margin-bottom:0!important;transform:translateY(0)!important;}' +
-      'body.keyboard-open .messages{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:64px!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:10px 18px 6px!important;scroll-padding-bottom:6px!important;touch-action:pan-y!important;}' +
-      'body.keyboard-open .messages.generating-space{padding-bottom:6px!important;scroll-padding-bottom:6px!important;}' +
+      'body.keyboard-open .messages{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding:10px 18px 76px!important;scroll-padding-bottom:76px!important;touch-action:pan-y!important;}' +
+      'body.keyboard-open .messages.generating-space{padding-bottom:76px!important;scroll-padding-bottom:76px!important;}' +
       'body.keyboard-open .attach-preview{display:none!important;}' +
+      'body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}' +
     '}';
     var st = document.getElementById('daotianScrollKeyboardFinalStyle');
     if(!st){
