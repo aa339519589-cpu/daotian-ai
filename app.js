@@ -210,6 +210,7 @@
       '随便开个头也行',
       '想到什么就发什么'
     ];
+    window.emptyPrompts = emptyPrompts;
 
     function authEscape(s){ return String(s).replace(/[&<>"]/g, function(ch){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]); }); }
     function renderAuthPage(mode, message){
