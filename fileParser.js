@@ -1,740 +1,350 @@
-// fileParser.js — Universal file parsing pipeline for 稻田 AI
-// Lazy-loads parsers; each gracefully degrades if library is missing.
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-import { extname } from "node:path";
-
-const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB per file
-const MAX_TEXT_OUTPUT = 80000;           // max chars per parsed file
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_TEXT_OUTPUT = 120000;
 const MAX_ZIP_FILES = 80;
 const MAX_ZIP_DEPTH = 4;
-const MAX_ZIP_TOTAL_SIZE = 40 * 1024 * 1024; // 40MB uncompressed total
+const MAX_ZIP_TOTAL_SIZE = 40 * 1024 * 1024;
+const PDF_OCR_MAX_PAGES = Math.max(1, Math.min(80, Number(process.env.PDF_OCR_MAX_PAGES || 40)));
+const PDF_OCR_SCALE = Math.max(1.5, Math.min(4, Number(process.env.PDF_OCR_SCALE || 3)));
 
-/* ── OCR lazy-load ── */
-let _tesseractWorker = null;
-async function _getTesseractWorker(){
-  if(_tesseractWorker === undefined){
-    try{
-      const Tesseract = (await import("tesseract.js")).default;
-      _tesseractWorker = await Tesseract.createWorker("chi_sim+eng");
-      console.log("[fileParser] Tesseract OCR worker ready (chi_sim+eng)");
-    }catch(e){
-      console.warn("[fileParser] Tesseract OCR unavailable:", e.message);
-      _tesseractWorker = null;
-    }
-  }
-  return _tesseractWorker;
+let _pdfParse;
+let _pdfToImg;
+let _ocrWorker;
+let _mammoth;
+let _xlsx;
+let _AdmZip;
+
+function ext(name){
+  const p = String(name || "").split(".");
+  return p.length > 1 ? p.pop().toLowerCase() : "";
+}
+function visibleLen(text){ return String(text || "").replace(/\s/g, "").length; }
+function textTruncate(text, maxLen = MAX_TEXT_OUTPUT){
+  text = String(text || "");
+  return text.length <= maxLen ? text : text.slice(0, maxLen) + `\n\n...（文件较大，已截断前 ${maxLen} 字符）`;
+}
+function pageText(pages){
+  return (pages || []).filter(p => visibleLen(p.text) > 0).map(p => `[PDF第${p.page}页]\n${String(p.text || "").trim()}`).join("\n\n");
 }
 
-let _pdf2img = undefined;
-async function _getPdf2img(){
-  if(_pdf2img === undefined){
-    try{
-      const mod = await import("pdf-to-img");
-      _pdf2img = mod.default || mod;
-    }catch(e){
-      _pdf2img = null;
-    }
+function detectMime(buf, fileName){
+  const e = ext(fileName);
+  const head = Buffer.isBuffer(buf) ? buf.slice(0, 12) : Buffer.alloc(0);
+  if(head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) return "application/pdf";
+  if(head[0] === 0x50 && head[1] === 0x4b){
+    if(e === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    if(e === "xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    if(e === "pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    return "application/zip";
   }
-  return _pdf2img;
+  if(head[0] === 0x89 && head[1] === 0x50) return "image/png";
+  if(head[0] === 0xff && head[1] === 0xd8) return "image/jpeg";
+  if(head[0] === 0x47 && head[1] === 0x49) return "image/gif";
+  if(head[0] === 0x52 && head[1] === 0x49 && head[8] === 0x57 && head[9] === 0x45) return "image/webp";
+  if(["txt","md","markdown","csv","json","log","xml","html","css","js","ts","py"].includes(e)) return "text/plain";
+  return "application/octet-stream";
+}
+function safeText(buf){
+  try{ return buf.toString("utf8"); }catch{ return buf.toString("latin1"); }
 }
 
-async function ocrPdf(buf, fileName){
-  const worker = await _getTesseractWorker();
-  if(!worker) return { text: "", error: "OCR 引擎未安装，请联系管理员安装 tesseract.js" };
-  const pdf2img = await _getPdf2img();
-  if(!pdf2img) return { text: "", error: "PDF 转图片引擎未安装" };
-
+async function getPdfParse(){
+  if(_pdfParse !== undefined) return _pdfParse;
   try{
-    const results = [];
-    const maxPages = 10; // limit OCR to first 10 pages for performance
-
-    // Convert PDF buffer to image pages
-    const converter = pdf2img(buf, { scale: 2 }); // 2x scale for better OCR
-    let pageNum = 0;
-
-    for await (const page of converter) {
-      pageNum++;
-      if(pageNum > maxPages) break;
-
-      try{
-        const imageBuffer = page.toBuffer ? page.toBuffer() : (Buffer.isBuffer(page) ? page : null);
-        if(!imageBuffer) continue;
-
-        const { data } = await worker.recognize(imageBuffer);
-        if(data && data.text && data.text.trim()){
-          results.push(data.text.trim());
-        }
-      }catch(e){
-        console.warn(`[fileParser] OCR page ${pageNum} failed:`, e.message);
-      }
-    }
-
-    const text = results.join("\n\n");
-    if(text.replace(/\s/g, "").length > 20){
-      return { text: textTruncate(text), pages: pageNum, status: "ocr_ok" };
-    }
-    return { text: "", pages: pageNum, status: "ocr_empty", error: "OCR 未能识别出有效文字，PDF 可能为纯图片、手写体或质量过低" };
+    const mod = await import("pdf-parse");
+    _pdfParse = mod.PDFParse || (typeof mod.default === "function" ? mod.default : mod);
   }catch(e){
-    return { text: "", error: "OCR 处理失败：" + (e.message || "未知错误").slice(0,100) };
-  }
-}
-
-// ---- lazy parser loaders ----
-let _pdfParse = undefined;
-async function _getPdfParse() {
-  if (_pdfParse === undefined) {
-    try {
-      const mod = await import("pdf-parse");
-      // v2+: PDFParse class with getText() method
-      if (mod.PDFParse) {
-        _pdfParse = mod.PDFParse;
-      } else if (typeof mod.default === "function") {
-        _pdfParse = mod.default; // v1: default export function
-      } else {
-        _pdfParse = mod; // fallback
-      }
-    } catch { _pdfParse = null; }
+    console.warn("[fileParser] pdf-parse unavailable:", e.message);
+    _pdfParse = null;
   }
   return _pdfParse;
 }
-
-let _mammoth = undefined;
-async function _getMammoth() {
-  if (_mammoth === undefined) {
-    try { _mammoth = (await import("mammoth")).default; } catch { _mammoth = null; }
+async function getPdfToImg(){
+  if(_pdfToImg !== undefined) return _pdfToImg;
+  try{
+    const mod = await import("pdf-to-img");
+    _pdfToImg = mod.pdf || (mod.default && mod.default.pdf) || mod.default || mod;
+    if(typeof _pdfToImg !== "function") _pdfToImg = null;
+  }catch(e){
+    console.warn("[fileParser] pdf-to-img unavailable:", e.message);
+    _pdfToImg = null;
   }
+  return _pdfToImg;
+}
+async function getOcrWorker(){
+  if(_ocrWorker !== undefined) return _ocrWorker;
+  try{
+    const Tesseract = (await import("tesseract.js")).default;
+    _ocrWorker = await Tesseract.createWorker("chi_sim+eng");
+    console.log("[fileParser] OCR worker ready: chi_sim+eng");
+  }catch(e){
+    console.warn("[fileParser] OCR unavailable:", e.message);
+    _ocrWorker = null;
+  }
+  return _ocrWorker;
+}
+async function getMammoth(){
+  if(_mammoth !== undefined) return _mammoth;
+  try{ _mammoth = (await import("mammoth")).default; }catch{ _mammoth = null; }
   return _mammoth;
 }
-
-let _xlsx = undefined;
-async function _getXlsx() {
-  if (_xlsx === undefined) {
-    try { _xlsx = (await import("xlsx")); } catch { _xlsx = null; }
-  }
+async function getXlsx(){
+  if(_xlsx !== undefined) return _xlsx;
+  try{ _xlsx = await import("xlsx"); }catch{ _xlsx = null; }
   return _xlsx;
 }
-
-let _AdmZip = undefined;
-async function _getAdmZip() {
-  if (_AdmZip === undefined) {
-    try { _AdmZip = (await import("adm-zip")).default; } catch { _AdmZip = null; }
-  }
+async function getAdmZip(){
+  if(_AdmZip !== undefined) return _AdmZip;
+  try{ _AdmZip = (await import("adm-zip")).default; }catch{ _AdmZip = null; }
   return _AdmZip;
 }
 
-// ---- helpers ----
-function ext(name) { const p = (name || "").split("."); return p.length > 1 ? p.pop().toLowerCase() : ""; }
-
-function textTruncate(text, maxLen = MAX_TEXT_OUTPUT) {
-  if (typeof text !== "string") return "";
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + `\n\n...（文件较大，已截断前 ${maxLen} 字符）`;
-}
-
-function detectMime(buf, fileName) {
-  const e = ext(fileName);
-  const head = buf.slice(0, 8);
-  // PDF header
-  if (head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) return "application/pdf";
-  // ZIP-based (DOCX/XLSX/PPTX/ZIP)
-  if (head[0] === 0x50 && head[1] === 0x4b) {
-    if (e === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    if (e === "xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    if (e === "pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-    if (e === "zip") return "application/zip";
-    return "application/zip";
-  }
-  // PNG
-  if (head[0] === 0x89 && head[1] === 0x50) return "image/png";
-  // JPEG
-  if (head[0] === 0xff && head[1] === 0xd8) return "image/jpeg";
-  // GIF
-  if (head[0] === 0x47 && head[1] === 0x49) return "image/gif";
-  // WebP
-  if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46) return "image/webp";
-  // text
-  if (e === "txt" || e === "md" || e === "csv" || e === "json" || e === "log") return "text/plain";
-  return "application/octet-stream";
-}
-
-function isUtf8(buf) {
-  for (let i = 0; i < Math.min(buf.length, 4096); i++) {
-    if (buf[i] === 0) return false;
-    if (buf[i] >= 0xfe && buf[i] <= 0xff) continue;
-  }
-  return true;
-}
-
-function safeText(buf) {
-  if (isUtf8(buf)) return buf.toString("utf8");
-  try { return buf.toString("utf8"); } catch { return buf.toString("latin1"); }
-}
-
-// ---- individual parsers ----
-
-async function parsePdf(buf, fileName) {
-  const PdfMod = await _getPdfParse();
-  if (!PdfMod) return { fileType: "pdf", parseStatus: "error", error: "PDF 解析库未安装，请联系管理员安装 pdf-parse" };
-
-  try {
-    let text = "";
-    let numpages = 0;
+async function extractPdfTextLayer(buf){
+  const PdfMod = await getPdfParse();
+  if(!PdfMod) return { pages:[], pageCount:0, error:"PDF 文本解析库不可用" };
+  try{
+    let pages = [];
+    let pageCount = 0;
     let info = {};
-
-    // v2+ API: PDFParse class
-    if (typeof PdfMod === "function" && PdfMod.prototype && PdfMod.prototype.getText) {
-      const parser = new PdfMod({ data: buf });
+    if(typeof PdfMod === "function" && PdfMod.prototype && PdfMod.prototype.getText){
+      const parser = new PdfMod({ data:buf });
       const result = await parser.getText();
-      if (result && result.pages) {
-        numpages = result.pages.length;
-        text = result.pages.map(p => p.text || "").join("\n\n");
+      if(result && Array.isArray(result.pages)){
+        pageCount = result.pages.length;
+        pages = result.pages.map((p, i) => ({ page:i + 1, text:String(p && p.text || "").trim() }));
       }
-      try { const infoResult = await parser.getInfo(); if (infoResult) info = infoResult; } catch {}
-      await parser.destroy();
-    }
-    // v1 API: function(buf)
-    else if (typeof PdfMod === "function") {
+      try{ const inf = await parser.getInfo(); if(inf) info = inf; }catch{}
+      try{ await parser.destroy(); }catch{}
+    }else if(typeof PdfMod === "function"){
       const data = await PdfMod(buf);
-      text = data.text || "";
-      numpages = data.numpages || 0;
-      info = data.info || {};
-    }
-    // Object with parse method
-    else if (PdfMod && typeof PdfMod.parse === "function") {
+      const text = String(data && data.text || "").trim();
+      pageCount = Number(data && data.numpages || 0);
+      info = data && data.info || {};
+      const split = text.split(/\f+/).map(x => x.trim()).filter(Boolean);
+      pages = split.length ? split.map((t, i) => ({ page:i + 1, text:t })) : (text ? [{ page:1, text }] : []);
+    }else if(PdfMod && typeof PdfMod.parse === "function"){
       const data = await PdfMod.parse(buf);
-      text = data.text || "";
-      numpages = data.numpages || 0;
+      const text = String(data && data.text || "").trim();
+      pageCount = Number(data && data.numpages || 0);
+      const split = text.split(/\f+/).map(x => x.trim()).filter(Boolean);
+      pages = split.length ? split.map((t, i) => ({ page:i + 1, text:t })) : (text ? [{ page:1, text }] : []);
     }
+    return { pages, pageCount, info };
+  }catch(e){
+    return { pages:[], pageCount:0, error:"PDF 文本层解析失败：" + (e.message || "未知错误") };
+  }
+}
+async function pageToBuffer(page){
+  if(Buffer.isBuffer(page)) return page;
+  if(page && typeof page.toBuffer === "function") return page.toBuffer();
+  if(page && Buffer.isBuffer(page.buffer)) return page.buffer;
+  return null;
+}
+async function ocrSlidePdf(buf, fileName){
+  const pdf = await getPdfToImg();
+  if(!pdf) return { pages:[], pageCount:0, error:"PDF 转图片解析器不可用" };
+  const worker = await getOcrWorker();
+  if(!worker) return { pages:[], pageCount:0, error:"OCR 解析器不可用" };
 
-    const hasText = text.replace(/\s/g, "").length > 20;
-
-    if (!hasText) {
-      /* 尝试 OCR 兜底 */
-      console.log(`[fileParser] PDF "${fileName}" has no extractable text, attempting OCR...`);
-      const ocrResult = await ocrPdf(buf, fileName);
-      if(ocrResult.text && ocrResult.text.replace(/\s/g,"").length > 20){
-        console.log(`[fileParser] OCR success for "${fileName}": ${ocrResult.text.length} chars, ${ocrResult.pages} pages`);
-        return {
-          fileType: "pdf",
-          parseStatus: "ok",
-          text: textTruncate(ocrResult.text, MAX_TEXT_OUTPUT),
-          metadata: {
-            pages: ocrResult.pages || numpages || 0,
-            textLength: ocrResult.text.length,
-            ocr: true,
-            info: info && info.Title ? { title: info.Title, author: info.Author } : {}
-          },
-          warnings: ["该 PDF 为扫描件，已通过 OCR 识别文字"]
-        };
+  const root = await mkdtemp(join(tmpdir(), "daotian-pdf-"));
+  const pdfPath = join(root, "input.pdf");
+  try{
+    await writeFile(pdfPath, buf);
+    const doc = await pdf(pdfPath, { scale:PDF_OCR_SCALE });
+    const pages = [];
+    let pageNo = 0;
+    let truncated = false;
+    for await (const page of doc){
+      pageNo++;
+      if(pageNo > PDF_OCR_MAX_PAGES){ truncated = true; break; }
+      try{
+        const img = await pageToBuffer(page);
+        if(!img){ pages.push({ page:pageNo, text:"", error:"该页转图片失败" }); continue; }
+        const { data } = await worker.recognize(img);
+        pages.push({ page:pageNo, text:String(data && data.text || "").trim(), confidence:Number(data && data.confidence || 0) });
+      }catch(e){
+        pages.push({ page:pageNo, text:"", error:"该页 OCR 失败：" + (e.message || "未知错误") });
       }
-      console.log(`[fileParser] OCR failed for "${fileName}": ${ocrResult.error || "no text"}`);
-      return {
-        fileType: "pdf",
-        parseStatus: "empty",
-        text: "",
-        metadata: { pages: numpages || 0, hasText: false },
-        warnings: ["该 PDF 是扫描版，OCR 识别失败。请换清晰版本或上传图片页。原因：" + (ocrResult.error || "无法提取文字")]
-      };
     }
-
-    const pages = text.split(/\f/).filter(Boolean);
-    return {
-      fileType: "pdf",
-      parseStatus: "ok",
-      text: textTruncate(text),
-      metadata: {
-        pages: numpages || pages.length || 1,
-        textLength: text.length,
-        info: info && info.Title ? { title: info.Title, author: info.Author } : {}
-      },
-      chunks: (pages.length ? pages : [text]).slice(0, 30).map((p, i) => ({ page: i + 1, text: p.slice(0, 3000) }))
-    };
-  } catch (err) {
-    return { fileType: "pdf", parseStatus: "error", error: `PDF 解析失败：${err.message}` };
+    return { pages, pageCount:pageNo, truncated };
+  }catch(e){
+    return { pages:[], pageCount:0, error:"幻灯片式 PDF 解析失败：" + (e.message || "未知错误") };
   }
 }
-
-async function parseDocx(buf, fileName) {
-  const mammoth = await _getMammoth();
-  if (!mammoth) return { error: "DOCX 解析库未安装，请联系管理员安装 mammoth" };
-
-  try {
-    const result = await mammoth.extractRawText({ buffer: buf });
-    const text = (result.value || "").trim();
-    const warnings = [...(result.messages || [])].map(m => m.message);
-
-    if (!text) {
-      return {
-        fileType: "docx",
-        parseStatus: "empty",
-        text: "",
-        metadata: { hasText: false },
-        warnings: ["DOCX 文件中未提取到文本内容"]
-      };
-    }
-
+async function parsePdf(buf, fileName, mimeType){
+  const textLayer = await extractPdfTextLayer(buf);
+  const textLayerText = pageText(textLayer.pages);
+  if(visibleLen(textLayerText) > 20){
+    const clean = textLayer.pages.filter(p => visibleLen(p.text) > 0);
     return {
-      fileType: "docx",
-      parseStatus: "ok",
-      text: textTruncate(text),
-      metadata: { textLength: text.length },
-      warnings: warnings.length ? warnings : undefined
+      fileType:"pdf", parseStatus:"ok", text:textTruncate(textLayerText),
+      metadata:{ pages:textLayer.pageCount || clean.length || 1, textLength:textLayerText.length, textLayer:true, slideMode:false, info:textLayer.info || {} },
+      chunks:clean.slice(0,80).map(p => ({ page:p.page, text:String(p.text || "").slice(0,4000) }))
     };
-  } catch (err) {
-    return { fileType: "docx", parseStatus: "error", error: `DOCX 解析失败：${err.message}` };
   }
+
+  console.log(`[fileParser] PDF "${fileName}" has no text layer, start slide/scanned PDF OCR`);
+  const ocr = await ocrSlidePdf(buf, fileName);
+  const ocrText = pageText(ocr.pages);
+  if(visibleLen(ocrText) > 20){
+    const clean = ocr.pages.filter(p => visibleLen(p.text) > 0);
+    const warnings = ["该 PDF 为幻灯片式/扫描版，已转成图片并逐页 OCR 识别"];
+    if(ocr.truncated) warnings.push(`PDF 页数较多，本次 OCR 先读取前 ${PDF_OCR_MAX_PAGES} 页`);
+    return {
+      fileType:"pdf", parseStatus:"ok", text:textTruncate(ocrText),
+      metadata:{ pages:ocr.pageCount || clean.length || 0, textLength:ocrText.length, textLayer:false, slideMode:true, ocr:true, ocrMaxPages:PDF_OCR_MAX_PAGES, scale:PDF_OCR_SCALE },
+      warnings,
+      chunks:clean.slice(0,80).map(p => ({ page:p.page, text:String(p.text || "").slice(0,4000), confidence:p.confidence || 0 }))
+    };
+  }
+  return {
+    fileType:"pdf", parseStatus:"empty", text:"",
+    metadata:{ pages:ocr.pageCount || textLayer.pageCount || 0, textLayer:false, slideMode:true, ocr:true, hasText:false },
+    warnings:["该 PDF 没有可读文字层，已尝试幻灯片式逐页 OCR，但未识别出有效文字", textLayer.error ? "文本层错误：" + textLayer.error : "", ocr.error ? "OCR 错误：" + ocr.error : ""].filter(Boolean)
+  };
 }
 
-async function parsePptx(buf, fileName) {
-  const AdmZip = await _getAdmZip();
-  if (!AdmZip) return { error: "PPTX 解析库未安装，请联系管理员安装 adm-zip" };
-
-  try {
+async function parseDocx(buf){
+  const mammoth = await getMammoth();
+  if(!mammoth) return { fileType:"docx", parseStatus:"error", error:"DOCX 解析库未安装" };
+  try{
+    const result = await mammoth.extractRawText({ buffer:buf });
+    const text = String(result.value || "").trim();
+    if(!text) return { fileType:"docx", parseStatus:"empty", text:"", warnings:["DOCX 文件中未提取到文本内容"] };
+    return { fileType:"docx", parseStatus:"ok", text:textTruncate(text), metadata:{ textLength:text.length } };
+  }catch(e){ return { fileType:"docx", parseStatus:"error", error:"DOCX 解析失败：" + e.message }; }
+}
+async function parsePptx(buf){
+  const AdmZip = await getAdmZip();
+  if(!AdmZip) return { fileType:"pptx", parseStatus:"error", error:"PPTX 解析库未安装" };
+  try{
     const zip = new AdmZip(buf);
-    const entries = zip.getEntries();
     const slides = [];
-
-    for (const entry of entries) {
-      const en = entry.entryName;
-      // pptx slides are at ppt/slides/slideN.xml
-      const m = en.match(/^ppt\/slides\/slide(\d+)\.xml$/i);
-      if (m && !entry.isDirectory) {
-        const xml = entry.getData().toString("utf8");
-        // extract text from <a:t> tags
-        const texts = [];
-        const re = /<a:t[^>]*>([^<]*)<\/a:t>/g;
-        let match;
-        while ((match = re.exec(xml)) !== null) {
-          if (match[1]) texts.push(match[1]);
-        }
-        if (texts.length) {
-          slides.push({ slide: parseInt(m[1]), text: texts.join(" ").replace(/\s+/g, " ").trim() });
-        }
-      }
+    for(const entry of zip.getEntries()){
+      const m = entry.entryName.match(/^ppt\/slides\/slide(\d+)\.xml$/i);
+      if(!m || entry.isDirectory) continue;
+      const xml = entry.getData().toString("utf8");
+      const texts = [];
+      const re = /<a:t[^>]*>([^<]*)<\/a:t>/g;
+      let match;
+      while((match = re.exec(xml)) !== null){ if(match[1]) texts.push(match[1]); }
+      if(texts.length) slides.push({ slide:Number(m[1]), text:texts.join(" ").replace(/\s+/g," ").trim() });
     }
-
-    slides.sort((a, b) => a.slide - b.slide);
+    slides.sort((a,b)=>a.slide-b.slide);
     const fullText = slides.map(s => `[幻灯片 ${s.slide}]\n${s.text}`).join("\n\n");
-
-    if (!fullText) {
-      return {
-        fileType: "pptx",
-        parseStatus: "empty",
-        text: "",
-        metadata: { slides: slides.length, hasText: false },
-        warnings: ["PPTX 文件中未提取到文本内容"]
-      };
-    }
-
-    return {
-      fileType: "pptx",
-      parseStatus: "ok",
-      text: textTruncate(fullText),
-      metadata: { slides: slides.length, textLength: fullText.length },
-      chunks: slides.slice(0, 40).map(s => ({ slide: s.slide, text: s.text.slice(0, 2000) }))
-    };
-  } catch (err) {
-    return { fileType: "pptx", parseStatus: "error", error: `PPTX 解析失败：${err.message}` };
-  }
+    if(!fullText) return { fileType:"pptx", parseStatus:"empty", text:"", warnings:["PPTX 文件中未提取到文本内容"] };
+    return { fileType:"pptx", parseStatus:"ok", text:textTruncate(fullText), metadata:{ slides:slides.length, textLength:fullText.length }, chunks:slides.slice(0,80).map(s=>({ slide:s.slide, text:s.text.slice(0,3000) })) };
+  }catch(e){ return { fileType:"pptx", parseStatus:"error", error:"PPTX 解析失败：" + e.message }; }
 }
-
-async function parseXlsx(buf, fileName) {
-  const XLSX = await _getXlsx();
-  if (!XLSX) return { error: "Excel 解析库未安装，请联系管理员安装 xlsx" };
-
-  try {
-    const workbook = XLSX.read(buf, { type: "buffer" });
+async function parseXlsx(buf){
+  const XLSX = await getXlsx();
+  if(!XLSX) return { fileType:"xlsx", parseStatus:"error", error:"Excel 解析库未安装" };
+  try{
+    const workbook = XLSX.read(buf, { type:"buffer" });
     const sheets = [];
-    let totalRows = 0;
-
-    for (const name of workbook.SheetNames) {
+    for(const name of workbook.SheetNames){
       const sheet = workbook.Sheets[name];
-      const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-      const rows = json.length;
-      const cols = json.length > 0 ? json[0].length : 0;
-      totalRows += rows;
-
-      // extract first 100 rows as sample
-      const sample = json.slice(0, 100).map(row =>
-        row.map(cell => String(cell || "").slice(0, 200)).join("\t")
-      ).join("\n");
-
-      // extract headers
-      const headers = json.length > 0
-        ? json[0].map(c => String(c || "").trim()).filter(Boolean)
-        : [];
-
-      sheets.push({
-        name,
-        rows,
-        cols,
-        headers: headers.slice(0, 50),
-        sample: sample.slice(0, 5000)
-      });
+      const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
+      const sample = rows.slice(0,100).map(row => row.map(cell => String(cell || "").slice(0,200)).join("\t")).join("\n");
+      sheets.push({ name, rows:rows.length, cols:rows[0] ? rows[0].length : 0, sample });
     }
-
-    const summary = sheets.map(s => {
-      return `工作表「${s.name}」：${s.rows} 行 × ${s.cols} 列` +
-        (s.headers.length ? ` | 列名：${s.headers.join("、")}` : "");
-    }).join("\n");
-
-    const allText = sheets.map(s => {
-      return `=== 工作表：${s.name} ===\n列名：${s.headers.join("、")}\n行数：${s.rows}\n\n前若干行数据：\n${s.sample}`;
-    }).join("\n\n");
-
-    return {
-      fileType: "xlsx",
-      parseStatus: "ok",
-      text: textTruncate(allText, MAX_TEXT_OUTPUT),
-      metadata: {
-        sheets: sheets.length,
-        sheetNames: workbook.SheetNames,
-        totalRows,
-        summary
-      },
-      chunks: sheets.map(s => ({
-        sheet: s.name,
-        rows: s.rows,
-        cols: s.cols,
-        headers: s.headers,
-        sample: s.sample
-      }))
-    };
-  } catch (err) {
-    return { fileType: "xlsx", parseStatus: "error", error: `Excel 解析失败：${err.message}` };
-  }
+    const text = sheets.map(s => `=== 工作表：${s.name} ===\n${s.rows} 行 × ${s.cols} 列\n\n${s.sample}`).join("\n\n");
+    return { fileType:"xlsx", parseStatus:"ok", text:textTruncate(text), metadata:{ sheets:sheets.length, sheetNames:workbook.SheetNames }, chunks:sheets };
+  }catch(e){ return { fileType:"xlsx", parseStatus:"error", error:"Excel 解析失败：" + e.message }; }
 }
-
-async function parseCsv(buf, fileName) {
-  try {
-    const text = safeText(buf).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    const lines = text.split("\n").filter(l => l.trim());
-    const headers = lines[0] ? lines[0].split(",").map(h => h.trim()) : [];
-    const rows = lines.length - 1;
-
-    return {
-      fileType: "csv",
-      parseStatus: "ok",
-      text: textTruncate(text),
-      metadata: {
-        headers: headers.slice(0, 30),
-        rows,
-        cols: headers.length,
-        summary: `CSV 文件：${rows} 行 × ${headers.length} 列 | 列名：${headers.join("、")}`
-      },
-      chunks: [{
-        headers: headers.slice(0, 30),
-        sample: lines.slice(0, 50).join("\n")
-      }]
-    };
-  } catch (err) {
-    return { fileType: "csv", parseStatus: "error", error: `CSV 解析失败：${err.message}` };
-  }
+async function parseCsv(buf){
+  const text = safeText(buf).replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+  return { fileType:"csv", parseStatus:visibleLen(text) ? "ok" : "empty", text:textTruncate(text), metadata:{ lines:text.split("\n").length } };
 }
-
-async function parseZip(buf, fileName, depth = 0) {
-  if (depth >= MAX_ZIP_DEPTH) return { error: "压缩包嵌套层级过深" };
-
-  const AdmZip = await _getAdmZip();
-  if (!AdmZip) return { error: "ZIP 解析库未安装，请联系管理员安装 adm-zip" };
-
-  let zip;
-  try {
-    zip = new AdmZip(buf);
-  } catch (err) {
-    return { fileType: "zip", parseStatus: "error", error: `ZIP 文件损坏或无法打开：${err.message}` };
-  }
-
-  const entries = zip.getEntries();
-  if (entries.length > MAX_ZIP_FILES) {
-    return { error: `压缩包内文件过多（${entries.length}），最多支持 ${MAX_ZIP_FILES} 个文件` };
-  }
-
-  let totalSize = 0;
-  const fileTree = [];
-  const parsedFiles = [];
-
-  for (const entry of entries) {
-    if (entry.isDirectory) continue;
-    const eSize = entry.getData().length;
-    totalSize += eSize;
-    if (totalSize > MAX_ZIP_TOTAL_SIZE) {
-      fileTree.push({ name: entry.entryName, size: eSize, skipped: true, reason: "超出解压总大小限制" });
-      continue;
-    }
-
-    const ebuf = entry.getData();
-    const en = entry.entryName.split("/").pop() || entry.entryName;
-
-    fileTree.push({ name: entry.entryName, size: eSize });
-
-    // Parse inner files
-    const innerExt = ext(en);
-    try {
-      let innerResult = null;
-      if (["txt", "md", "json", "csv", "log", "xml", "html", "css", "js", "ts", "py", "java", "cpp", "c", "h", "go", "rs", "sh", "yaml", "yml", "toml", "ini", "conf", "env", "sql"].includes(innerExt)) {
-        innerResult = {
-          fileType: "text",
-          parseStatus: "ok",
-          text: textTruncate(safeText(ebuf), 10000)
-        };
-      } else if (innerExt === "pdf") {
-        innerResult = await parsePdf(ebuf, en);
-      } else if (innerExt === "docx") {
-        innerResult = await parseDocx(ebuf, en);
-      } else if (innerExt === "xlsx" || innerExt === "xls") {
-        innerResult = await parseXlsx(ebuf, en);
-      } else if (innerExt === "csv") {
-        innerResult = await parseCsv(ebuf, en);
-      } else if (innerExt === "zip") {
-        innerResult = await parseZip(ebuf, en, depth + 1);
-      }
-
-      if (innerResult && innerResult.parseStatus === "ok") {
-        parsedFiles.push({ fileName: en, ...innerResult });
-      }
-    } catch { /* skip individual file errors */ }
-  }
-
-  const treeText = fileTree.map(f => {
-    const sizeKB = (f.size / 1024).toFixed(1);
-    return `  ${f.name} (${sizeKB} KB)${f.skipped ? " [已跳过]" : ""}`;
-  }).join("\n");
-
-  const summary = `压缩包「${fileName}」包含 ${fileTree.length} 个文件：\n${treeText}` +
-    (parsedFiles.length ? `\n\n已解析 ${parsedFiles.length} 个可读文件的内容` : "");
-
-  const allContent = parsedFiles.map(f => {
-    return `--- ${f.fileName} ---\n${f.text || ""}`;
-  }).join("\n\n");
-
-  return {
-    fileType: "zip",
-    parseStatus: "ok",
-    text: textTruncate(summary + "\n\n" + allContent),
-    metadata: {
-      fileCount: fileTree.length,
-      parsedCount: parsedFiles.length,
-      totalSize,
-      tree: fileTree
-    },
-    chunks: parsedFiles.map(f => ({
-      fileName: f.fileName,
-      fileType: f.fileType,
-      text: (f.text || "").slice(0, 4000)
-    }))
-  };
-}
-
-async function parseTextFile(buf, fileName) {
-  const e = ext(fileName);
+async function parseTextFile(buf, fileName){
   const text = safeText(buf);
-
-  if (!text.trim()) {
-    return {
-      fileType: "text",
-      parseStatus: "empty",
-      text: "",
-      metadata: { extension: e, hasText: false },
-      warnings: ["文件中未检测到文本内容"]
-    };
-  }
-
-  const lines = text.split("\n");
-  const langMap = {
-    js: "JavaScript", ts: "TypeScript", jsx: "React JSX", tsx: "React TSX",
-    py: "Python", java: "Java", cpp: "C++", c: "C", h: "C Header",
-    go: "Go", rs: "Rust", php: "PHP", rb: "Ruby", sh: "Shell",
-    sql: "SQL", html: "HTML", css: "CSS", json: "JSON", xml: "XML",
-    yaml: "YAML", yml: "YAML", toml: "TOML", md: "Markdown", csv: "CSV"
-  };
-
-  return {
-    fileType: "text",
-    parseStatus: "ok",
-    text: textTruncate(text),
-    metadata: {
-      extension: e,
-      language: langMap[e] || "纯文本",
-      lines: lines.length,
-      size: buf.length,
-      isCode: ["js","ts","jsx","tsx","py","java","cpp","c","h","go","rs","php","rb","sh","sql"].includes(e)
+  if(!text.trim()) return { fileType:"text", parseStatus:"empty", text:"", warnings:["文件中未检测到文本内容"] };
+  return { fileType:"text", parseStatus:"ok", text:textTruncate(text), metadata:{ extension:ext(fileName), lines:text.split("\n").length, size:buf.length } };
+}
+async function parseZip(buf, fileName, depth = 0){
+  if(depth >= MAX_ZIP_DEPTH) return { fileType:"zip", parseStatus:"error", error:"压缩包嵌套层级过深" };
+  const AdmZip = await getAdmZip();
+  if(!AdmZip) return { fileType:"zip", parseStatus:"error", error:"ZIP 解析库未安装" };
+  try{
+    const zip = new AdmZip(buf);
+    const entries = zip.getEntries().filter(e => !e.isDirectory);
+    if(entries.length > MAX_ZIP_FILES) return { fileType:"zip", parseStatus:"error", error:`压缩包内文件过多（${entries.length}），最多支持 ${MAX_ZIP_FILES} 个文件` };
+    let total = 0;
+    const tree = [];
+    const parsed = [];
+    for(const entry of entries){
+      const ebuf = entry.getData();
+      total += ebuf.length;
+      tree.push({ name:entry.entryName, size:ebuf.length });
+      if(total > MAX_ZIP_TOTAL_SIZE) continue;
+      const name = entry.entryName.split("/").pop() || entry.entryName;
+      const e = ext(name);
+      if(["txt","md","json","csv","log","xml","html","css","js","ts","py"].includes(e)) parsed.push({ fileName:name, text:safeText(ebuf).slice(0,10000) });
+      else if(e === "pdf"){
+        const r = await parsePdf(ebuf, name, "application/pdf");
+        if(r.parseStatus === "ok") parsed.push({ fileName:name, text:r.text || "" });
+      }
     }
-  };
+    const treeText = tree.map(f => `  ${f.name} (${(f.size/1024).toFixed(1)} KB)`).join("\n");
+    const content = parsed.map(f => `--- ${f.fileName} ---\n${f.text}`).join("\n\n");
+    return { fileType:"zip", parseStatus:"ok", text:textTruncate(`压缩包「${fileName}」包含 ${tree.length} 个文件：\n${treeText}\n\n${content}`), metadata:{ fileCount:tree.length, parsedCount:parsed.length, totalSize:total, tree } };
+  }catch(e){ return { fileType:"zip", parseStatus:"error", error:"ZIP 解析失败：" + e.message }; }
 }
 
-// ---- main parse entry ----
-
-/**
- * Parse any uploaded file and return unified result.
- * @param {Buffer} buf - file buffer
- * @param {string} fileName - original filename
- * @param {string} [mimeType] - MIME type hint
- * @returns {Promise<Object>} unified parse result
- */
-export async function parseUploadedFile(buf, fileName, mimeType = "") {
-  if (!Buffer.isBuffer(buf) || buf.length === 0) {
-    return { fileName: fileName || "unknown", parseStatus: "error", error: "文件为空或损坏" };
-  }
-  if (buf.length > MAX_FILE_SIZE) {
-    return { fileName, parseStatus: "error", error: `文件过大（${(buf.length/1024/1024).toFixed(1)}MB），最大支持 ${MAX_FILE_SIZE/1024/1024}MB` };
-  }
+export async function parseUploadedFile(buf, fileName, mimeType = ""){
+  if(!Buffer.isBuffer(buf) || buf.length === 0) return { fileName:fileName || "unknown", parseStatus:"error", error:"文件为空或损坏" };
+  if(buf.length > MAX_FILE_SIZE) return { fileName, parseStatus:"error", error:`文件过大（${(buf.length/1024/1024).toFixed(1)}MB），最大支持 ${MAX_FILE_SIZE/1024/1024}MB` };
 
   const e = ext(fileName);
   const detectedMime = detectMime(buf, fileName);
   const effectiveMime = mimeType || detectedMime;
+  let result;
 
-  let result = { fileName, mimeType: effectiveMime, fileType: e, size: buf.length };
-
-  try {
-    // PDF
-    if (effectiveMime === "application/pdf" || e === "pdf") {
-      result = { ...result, ...(await parsePdf(buf, fileName)) };
+  try{
+    if(effectiveMime === "application/pdf" || e === "pdf") result = await parsePdf(buf, fileName, effectiveMime);
+    else if(effectiveMime.includes("wordprocessingml") || e === "docx") result = await parseDocx(buf, fileName);
+    else if(effectiveMime.includes("spreadsheetml") || e === "xlsx") result = await parseXlsx(buf, fileName);
+    else if(e === "xls") result = { fileType:"xls", parseStatus:"error", error:"旧版 .xls 格式暂不支持，请转换为 .xlsx 后上传" };
+    else if(effectiveMime.includes("presentationml") || e === "pptx") result = await parsePptx(buf, fileName);
+    else if(effectiveMime === "application/zip" || e === "zip") result = await parseZip(buf, fileName);
+    else if(e === "csv" || e === "tsv") result = await parseCsv(buf, fileName);
+    else if(/^image\//.test(effectiveMime) || ["png","jpg","jpeg","webp","gif","bmp"].includes(e)) result = { fileType:"image", parseStatus:"not_supported", text:"", metadata:{ type:effectiveMime }, warnings:["图片文件需要视觉模型或 OCR 才能识别内容，当前系统暂不支持自动图片识别"] };
+    else if(["doc","ppt"].includes(e)) result = { fileType:e, parseStatus:"error", error:`旧版 .${e} 格式暂不支持，请转换为 .${e}x 后上传` };
+    else if(["rar","7z"].includes(e)) result = { fileType:e, parseStatus:"error", error:`${e.toUpperCase()} 格式暂不支持，请使用 ZIP 格式压缩后上传` };
+    else{
+      const textExts = ["txt","md","markdown","log","ini","conf","env","yaml","yml","toml","xml","html","htm","css","js","ts","tsx","jsx","json","sql","py","java","cpp","c","h","go","rs","php","rb","sh","bat","ps1","r","m","swift","kt","scala","lua","pl","cfg","dockerfile","gitignore","makefile"];
+      result = (textExts.includes(e) || effectiveMime.startsWith("text/")) ? await parseTextFile(buf, fileName) : { fileType:e, parseStatus:"not_supported", text:"", metadata:{ extension:e }, warnings:[`暂不支持解析 .${e} 文件类型`] };
     }
-    // DOCX
-    else if (effectiveMime.includes("wordprocessingml") || e === "docx") {
-      result = { ...result, ...(await parseDocx(buf, fileName)) };
-    }
-    // XLSX
-    else if (effectiveMime.includes("spreadsheetml") || e === "xlsx" || e === "xls") {
-      if (e === "xls") {
-        result = { ...result, parseStatus: "error", error: "旧版 .xls 格式暂不支持，请转换为 .xlsx 后上传" };
-      } else {
-        result = { ...result, ...(await parseXlsx(buf, fileName)) };
-      }
-    }
-    // PPTX
-    else if (effectiveMime.includes("presentationml") || e === "pptx") {
-      result = { ...result, ...(await parsePptx(buf, fileName)) };
-    }
-    // ZIP
-    else if (effectiveMime === "application/zip" || e === "zip") {
-      result = { ...result, ...(await parseZip(buf, fileName)) };
-    }
-    // CSV (explicit)
-    else if (e === "csv" || e === "tsv") {
-      result = { ...result, ...(await parseCsv(buf, fileName)) };
-    }
-    // Images
-    else if (/^image\//.test(effectiveMime) || ["png","jpg","jpeg","webp","gif","bmp"].includes(e)) {
-      result = {
-        ...result,
-        fileType: "image",
-        parseStatus: "not_supported",
-        text: "",
-        metadata: { type: effectiveMime },
-        warnings: ["图片文件需要视觉模型或 OCR 才能识别内容，当前系统暂不支持自动图片识别"]
-      };
-    }
-    // Audio/Video
-    else if (/^(audio|video)\//.test(effectiveMime) || ["mp3","wav","ogg","mp4","avi","mov","mkv"].includes(e)) {
-      result = {
-        ...result,
-        fileType: "media",
-        parseStatus: "not_supported",
-        text: "",
-        metadata: { type: effectiveMime },
-        warnings: ["音视频文件暂不支持解析，需要语音转文字服务"]
-      };
-    }
-    // Old Office formats
-    else if (e === "doc") {
-      result = { ...result, parseStatus: "error", error: "旧版 .doc 格式暂不支持，请转换为 .docx 后上传" };
-    } else if (e === "ppt") {
-      result = { ...result, parseStatus: "error", error: "旧版 .ppt 格式暂不支持，请转换为 .pptx 后上传" };
-    }
-    // RAR/7Z
-    else if (e === "rar" || e === "7z") {
-      result = { ...result, parseStatus: "error", error: `${e.toUpperCase()} 格式暂不支持，请使用 ZIP 格式压缩后上传` };
-    }
-    // Text / code / config files
-    else {
-      const textExts = ["txt","md","markdown","log","ini","conf","env","yaml","yml","toml",
-        "xml","html","htm","css","js","ts","tsx","jsx","json","sql",
-        "py","java","cpp","c","h","go","rs","php","rb","sh","bat","ps1",
-        "r","m","swift","kt","scala","lua","pl","cfg","dockerfile","gitignore","makefile"];
-      if (textExts.includes(e) || effectiveMime.startsWith("text/")) {
-        result = { ...result, ...(await parseTextFile(buf, fileName)) };
-      } else {
-        result = {
-          ...result,
-          parseStatus: "not_supported",
-          text: "",
-          metadata: { extension: e },
-          warnings: [`暂不支持解析 .${e} 文件类型`]
-        };
-      }
-    }
-  } catch (err) {
-    console.error(`[fileParser] ${fileName} parse error:`, err.message);
-    result = { ...result, parseStatus: "error", error: `文件解析异常：${err.message}` };
+  }catch(err){
+    result = { fileType:e, parseStatus:"error", error:"文件解析异常：" + (err.message || "未知错误") };
   }
 
-  // Attach fileType if not set
-  if (!result.fileType) result.fileType = e;
-  if (!result.parseStatus) result.parseStatus = "ok";
-
-  return result;
+  return { fileName, mimeType:effectiveMime, size:buf.length, fileType:e, ...result };
 }
 
-/**
- * Build context string from parsed files for injection into chat messages.
- */
-export function buildFileContext(parsedFiles, strategy = "standard") {
-  if (!parsedFiles || !parsedFiles.length) return "";
-
-  const parts = [];
-  const successFiles = parsedFiles.filter(f => f.parseStatus === "ok");
-  const failedFiles = parsedFiles.filter(f => f.parseStatus !== "ok");
-
-  // File overview
-  parts.push(`[用户上传了 ${parsedFiles.length} 个文件]`);
-
-  // Failed files
-  if (failedFiles.length) {
-    const failList = failedFiles.map(f => {
-      const reason = f.error || (f.warnings && f.warnings[0]) || "未知原因";
-      return `- ${f.fileName}：${reason}`;
-    }).join("\n");
-    parts.push(`以下文件未能解析：\n${failList}`);
+export function buildFileContext(parsedFiles, strategy = "standard"){
+  if(!parsedFiles || !parsedFiles.length) return "";
+  const parts = [`[用户上传了 ${parsedFiles.length} 个文件]`];
+  const failed = parsedFiles.filter(f => f.parseStatus !== "ok");
+  const ok = parsedFiles.filter(f => f.parseStatus === "ok");
+  if(failed.length){
+    parts.push("以下文件未能解析：\n" + failed.map(f => `- ${f.fileName}：${f.error || (f.warnings && f.warnings[0]) || "未知原因"}`).join("\n"));
   }
-
-  // Successfully parsed files
-  for (const f of successFiles) {
+  for(const f of ok){
     const meta = f.metadata || {};
-
     let header = `--- 文件：${f.fileName} ---`;
-    if (f.fileType === "pdf") {
-      header = `--- PDF：${f.fileName}（${meta.pages || "?"} 页，${meta.textLength || 0} 字符）---`;
-    } else if (f.fileType === "docx") {
-      header = `--- Word 文档：${f.fileName}（${meta.textLength || 0} 字符）---`;
-    } else if (f.fileType === "xlsx") {
-      header = `--- Excel 表格：${f.fileName}（${meta.summary || ""}）---`;
-    } else if (f.fileType === "pptx") {
-      header = `--- PPT 演示：${f.fileName}（${meta.slides || 0} 张幻灯片）---`;
-    } else if (f.fileType === "csv") {
-      header = `--- CSV 表格：${f.fileName}（${meta.summary || ""}）---`;
-    } else if (f.fileType === "zip") {
-      header = `--- 压缩包：${f.fileName}（${meta.fileCount || 0} 个文件）---`;
-    } else if (meta.language) {
-      header = `--- ${meta.language} 代码：${f.fileName}（${meta.lines || 0} 行）---`;
-    }
-
+    if(f.fileType === "pdf") header = `--- PDF：${f.fileName}（${meta.pages || "?"} 页，${meta.textLength || 0} 字符${meta.slideMode ? "，幻灯片OCR" : ""}）---`;
+    else if(f.fileType === "docx") header = `--- Word 文档：${f.fileName}（${meta.textLength || 0} 字符）---`;
+    else if(f.fileType === "xlsx") header = `--- Excel 表格：${f.fileName} ---`;
+    else if(f.fileType === "pptx") header = `--- PPT 演示：${f.fileName}（${meta.slides || 0} 张幻灯片）---`;
+    else if(f.fileType === "zip") header = `--- 压缩包：${f.fileName}（${meta.fileCount || 0} 个文件）---`;
     parts.push(header);
-
-    // Content injection based on strategy
-    if (strategy === "minimal") {
-      // Just metadata + first 500 chars
-      parts.push((f.text || "").slice(0, 500));
-    } else if (strategy === "extreme") {
-      // Full content (already truncated by parser)
-      parts.push(f.text || "");
-    } else {
-      // standard: metadata + full content (parser already truncated)
-      parts.push(f.text || "");
-    }
+    if(f.warnings && f.warnings.length) parts.push("解析提示：" + f.warnings.join("；"));
+    parts.push((f.text || "").slice(0, strategy === "minimal" ? 500 : MAX_TEXT_OUTPUT));
   }
-
   return parts.join("\n\n");
 }
 

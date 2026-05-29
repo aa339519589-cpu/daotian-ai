@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
+    "start": "node server-start.js",
     "postinstall": "pip3 install edge-tts 2>/dev/null || pip install edge-tts 2>/dev/null || echo 'edge-tts skip'"
   },
   "dependencies": {

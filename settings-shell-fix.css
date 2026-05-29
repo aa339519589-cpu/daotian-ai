@@ -1,0 +1,15 @@
+@media(max-width:760px){
+  #settingsModal.modal-backdrop{
+    padding:0!important;
+    align-items:stretch!important;
+    justify-content:center!important;
+  }
+  #settingsModal .settings-shell{
+    width:100vw!important;
+    height:100dvh!important;
+    max-height:100dvh!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+  }
+}

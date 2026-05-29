@@ -1,0 +1,177 @@
+/* Restore original light theme after dark Claude-style overrides. Dark mode is untouched. */
+html[data-theme="light"],
+body[data-theme="light"],
+html[data-theme="light"] body,
+[data-theme="light"]{
+  --bg:#f5f2ea!important;
+  --panel:#eee9df!important;
+  --panel-2:#f8f5ee!important;
+  --text:#2a2824!important;
+  --muted:#827a70!important;
+  --line:rgba(90,78,62,.18)!important;
+  --accent:#DC8062!important;
+  --accent-2:#df8e73!important;
+  --shadow:0 20px 70px rgba(70,55,35,.14)!important;
+  --sidebar-bg:rgba(250,249,245,.82)!important;
+  --sidebar-border:rgba(20,20,19,.08)!important;
+  --sidebar-text:rgba(31,31,29,.92)!important;
+  --sidebar-muted:rgba(31,31,29,.52)!important;
+  --composer-bg:rgba(250,249,245,.82)!important;
+  --composer-border:rgba(20,20,19,.10)!important;
+  --composer-text:rgba(31,31,29,.92)!important;
+  --composer-muted:rgba(31,31,29,.48)!important;
+  --surface-popover:rgba(255,255,255,.92)!important;
+  --surface-dropdown:rgba(255,255,255,.92)!important;
+  --border-soft:rgba(0,0,0,.06)!important;
+  --shadow-popover:0 12px 40px rgba(0,0,0,.08)!important;
+  --backdrop:rgba(0,0,0,.12)!important;
+  --input-bg:rgba(255,255,255,.28)!important;
+  --toast-bg:rgba(30,28,24,.92)!important;
+  --toast-text:#fff!important;
+}
+html[data-theme="light"],
+body[data-theme="light"],
+html[data-theme="light"] body,
+[data-theme="light"] #app,
+[data-theme="light"] .app-shell,
+[data-theme="light"] .main,
+[data-theme="light"] .messages{
+  background:var(--bg)!important;
+  color:var(--text)!important;
+}
+[data-theme="light"] body,
+[data-theme="light"] textarea,
+[data-theme="light"] button,
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] .chat-topbar,
+[data-theme="light"] .model-top-trigger,
+[data-theme="light"] .sidebar,
+[data-theme="light"] .plus-menu,
+[data-theme="light"] .model-popover,
+[data-theme="light"] .bubble,
+[data-theme="light"] .message.user .bubble{
+  color:var(--text)!important;
+  font-family:var(--font-ui)!important;
+}
+[data-theme="light"] .sidebar{
+  background:var(--bg)!important;
+  border-color:var(--sidebar-border)!important;
+  color:var(--sidebar-text)!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+[data-theme="light"] .sidebar::before{background:var(--bg)!important;}
+[data-theme="light"] .sidebar-label,
+[data-theme="light"] .chat-title,
+[data-theme="light"] .dt-side-new .txt,
+[data-theme="light"] .dt-side-recent,
+[data-theme="light"] .side-bottom-btn{
+  color:inherit!important;
+  font-family:var(--font-ui)!important;
+}
+[data-theme="light"] .home-menu-button span{background:rgba(214,186,164,.82)!important;}
+[data-theme="light"] .icon-btn,
+[data-theme="light"] .top-new-chat-btn,
+[data-theme="light"] #closeSide,
+[data-theme="light"] .chat-more,
+[data-theme="light"] .delete-chat{
+  color:var(--muted)!important;
+  background:transparent!important;
+  border-color:transparent!important;
+  box-shadow:none!important;
+}
+[data-theme="light"] .dt-side-new .plus,
+[data-theme="light"] .plus-btn{
+  background:transparent!important;
+  color:var(--muted)!important;
+  border-color:var(--line)!important;
+}
+[data-theme="light"] .chat-item,
+[data-theme="light"] .chat-item.active{
+  color:var(--sidebar-text)!important;
+  background:transparent!important;
+}
+[data-theme="light"] .chat-item:hover,
+[data-theme="light"] .chat-item.active{background:rgba(220,128,98,.08)!important;}
+[data-theme="light"] .chat-dot{background:rgba(31,31,29,.22)!important;}
+[data-theme="light"] .chat-item.active .chat-dot,
+[data-theme="light"] .chat-item.pinned .chat-dot{background:var(--accent)!important;}
+[data-theme="light"] .message,
+[data-theme="light"] .assistant-content,
+[data-theme="light"] .assistant-render,
+[data-theme="light"] .assistant-render *{
+  color:var(--text)!important;
+  font-family:var(--font-reading)!important;
+  font-weight:400!important;
+  text-shadow:none!important;
+}
+[data-theme="light"] .message.assistant .bubble,
+[data-theme="light"] .message.assistant .assistant-content,
+[data-theme="light"] .assistant-content,
+[data-theme="light"] .assistant-render{background:transparent!important;border:0!important;box-shadow:none!important;}
+[data-theme="light"] .bubble{
+  background:var(--panel-2)!important;
+  border-color:var(--line)!important;
+  color:var(--text)!important;
+  font-family:var(--font-reading)!important;
+  box-shadow:none!important;
+}
+[data-theme="light"] .message.user .bubble{
+  background:rgba(220,128,98,.16)!important;
+  border-color:rgba(220,128,98,.22)!important;
+  color:var(--text)!important;
+}
+[data-theme="light"] .composer-wrap{background:transparent!important;}
+[data-theme="light"] .composer{
+  background:var(--composer-bg)!important;
+  border-color:var(--composer-border)!important;
+  color:var(--composer-text)!important;
+  box-shadow:var(--shadow)!important;
+  backdrop-filter:blur(22px) saturate(1.12)!important;
+  -webkit-backdrop-filter:blur(22px) saturate(1.12)!important;
+}
+[data-theme="light"] textarea,
+[data-theme="light"] #app .main textarea#input{
+  color:var(--composer-text)!important;
+  font-family:var(--font-ui)!important;
+  background:transparent!important;
+}
+[data-theme="light"] textarea::placeholder{color:var(--composer-muted)!important;}
+[data-theme="light"] .send:not(.stop-mode),
+[data-theme="light"] #sendBtn.send:not(.stop-mode),
+[data-theme="light"] .composer .send:not(.stop-mode){
+  background:var(--accent)!important;
+  color:#fff!important;
+  border:0!important;
+}
+[data-theme="light"] .model-popover,
+[data-theme="light"] .plus-menu,
+[data-theme="light"] .dt-chat-menu{
+  background:var(--surface-popover)!important;
+  border-color:var(--border-soft)!important;
+  color:var(--text)!important;
+  box-shadow:var(--shadow-popover)!important;
+}
+[data-theme="light"] .model-option,
+[data-theme="light"] .plus-menu-item,
+[data-theme="light"] .dt-chat-menu button{color:var(--text)!important;}
+[data-theme="light"] .modal-backdrop{background:var(--backdrop)!important;}
+[data-theme="light"] .modal,
+[data-theme="light"] .settings-page,
+[data-theme="light"] .settings-card,
+[data-theme="light"] .settings-panel{
+  background:var(--panel-2)!important;
+  color:var(--text)!important;
+  border-color:var(--line)!important;
+}
+[data-theme="light"] .field input,
+[data-theme="light"] .field select{
+  background:var(--input-bg)!important;
+  color:var(--text)!important;
+  border-color:var(--line)!important;
+}
+[data-theme="light"] .status{
+  background:var(--toast-bg)!important;
+  color:var(--toast-text)!important;
+}
