@@ -754,6 +754,9 @@
       </div></div>
       <div class="status" id="status"></div>`;
     renderAll();
+    initChatEvents();
+    initSettingsEvents();
+    initUploadEvents();
     syncModelState();
     applyFontSize(loadFontSize());
     APP_READY = true;

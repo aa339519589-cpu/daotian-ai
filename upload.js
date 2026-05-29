@@ -163,6 +163,8 @@ function safeClearAttachments(){
   try{ _attachments = []; showAttachPreview(); }catch(e){ _attachments = []; }
 }
 
+
+function initUploadEvents(){
 /* ── 事件绑定 ── */
 try{
   var _pb = $('#plusBtn'); if(_pb) _pb.onclick = togglePlusMenu;
@@ -213,3 +215,4 @@ try{
   if(_ii) _ii.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
   if(_fi) _fi.addEventListener('change', function(){ if(this.files && this.files[0]) addAttachment(this.files[0]); this.value = ''; });
 }catch(_e2){}
+}

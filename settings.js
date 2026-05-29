@@ -873,6 +873,7 @@
       setModelParams(presetId, params);
     }
 
+function initSettingsEvents(){
     document.addEventListener('click', function(e){
       /* 高级设置 - 折叠面板 */
       var toggleHead = e.target.closest('[data-adv-toggle]');
@@ -1608,4 +1609,4 @@
       if(id === 'providerModal') closeSettings();
       else if(id === 'settingsModal') closeSettingsModal();
       else if(id === 'memoryEditModal') closeMemoryEdit();
-    });
+}
