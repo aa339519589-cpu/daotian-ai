@@ -831,7 +831,7 @@
       var idx = 0;
       /* protect $$...$$ and \[...\] */
       text = text.replace(/(\$\$|\\\[)([\s\S]*?)(\$\$|\\\])/g, function(m, open, body, close){
-        var ph = ' MATHBLOCK'+idx+' ';
+        var ph = '@@MATHBLOCK_'+idx+'@@';
         placeholders.push(m);
         idx++;
         return ph;
@@ -839,7 +839,7 @@
       /* protect \(...\) and $...$ (inline) */
       text = text.replace(/(\\\(|\$)([^\n$]+?)(\\\)|\$)/g, function(m, open, body, close){
         if(open === '$' && close === '$' && m.indexOf('$$')===0) return m; /* skip display */
-        var ph = 'MATHINLINE'+idx+'';
+        var ph = '@@MATHINLINE_'+idx+'@@';
         placeholders.push(m);
         idx++;
         return ph;
@@ -848,8 +848,8 @@
     }
     function restoreMath(html, placeholders){
       for(var i=0;i<placeholders.length;i++){
-        html = html.replace(' MATHBLOCK'+i+' ', placeholders[i]);
-        html = html.replace('MATHINLINE'+i+'', placeholders[i]);
+        html = html.split('@@MATHBLOCK_'+i+'@@').join(placeholders[i]);
+        html = html.split('@@MATHINLINE_'+i+'@@').join(placeholders[i]);
       }
       return html;
     }
