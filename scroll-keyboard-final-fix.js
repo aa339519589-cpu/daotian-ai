@@ -1,7 +1,7 @@
 (function(){
   'use strict';
-  if(window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ === 'v5-20260529') return;
-  window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ = 'v5-20260529';
+  if(window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ === 'v6-20260529-desktop-guard') return;
+  window.__DAOTIAN_SCROLL_KEYBOARD_FINAL_FIX__ = 'v6-20260529-desktop-guard';
 
   var AUTO_KEY = 'daotian.autoScroll.v1';
   var manualLock = false;
@@ -12,7 +12,21 @@
   var lastKeyboardOpen = false;
   var keyboardSettleTimer = null;
 
-  function isMobile(){ return (window.innerWidth || document.documentElement.clientWidth || 9999) <= 900; }
+  function isPhoneLike(){
+    var w = window.innerWidth || document.documentElement.clientWidth || 9999;
+    var hasTouch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+    var coarse = false;
+    try{ coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }catch(_e){}
+    return w <= 900 && (hasTouch || coarse);
+  }
+
+  function resetDesktopKeyboardState(){
+    document.body.classList.remove('keyboard-open');
+    document.documentElement.style.removeProperty('--app-top');
+    document.documentElement.style.removeProperty('--app-height');
+    document.documentElement.style.removeProperty('--vvh');
+    lastKeyboardOpen = false;
+  }
 
   function autoOn(){
     try{
@@ -113,6 +127,11 @@
   }
 
   function syncViewportVars(){
+    if(!isPhoneLike()){
+      resetDesktopKeyboardState();
+      return;
+    }
+
     var vv = window.visualViewport;
     var h = vv ? vv.height : window.innerHeight;
     var top = vv ? vv.offsetTop : 0;
@@ -123,7 +142,7 @@
 
     var input = document.getElementById('input');
     var focused = input && document.activeElement === input;
-    var keyboardLikely = !!(focused && isMobile());
+    var keyboardLikely = !!(focused && isPhoneLike());
     document.body.classList.toggle('keyboard-open', keyboardLikely);
 
     if(keyboardLikely && !lastKeyboardOpen){
@@ -137,7 +156,7 @@
   }
 
   function injectFinalCss(){
-    var css = '@media(max-width:900px){' +
+    var css = '@media(max-width:900px) and (pointer:coarse){' +
       'body.keyboard-open{overflow:hidden!important;overscroll-behavior:none!important;background:var(--bg)!important;}' +
       'body.keyboard-open #app{position:fixed!important;left:0!important;right:0!important;top:0!important;width:100vw!important;height:100dvh!important;min-height:100dvh!important;overflow:hidden!important;transform:none!important;background:var(--bg)!important;}' +
       'body.keyboard-open .app-shell{position:relative!important;left:auto!important;right:auto!important;top:auto!important;width:100vw!important;height:100dvh!important;min-height:0!important;overflow:hidden!important;background:var(--bg)!important;}' +
@@ -150,6 +169,10 @@
       'body.keyboard-open .message:last-child{margin-bottom:10px!important;}' +
       'body.keyboard-open .attach-preview{display:none!important;}' +
       'body.keyboard-open .floating-menu,body.keyboard-open .top-actions{opacity:0!important;pointer-events:none!important;}' +
+    '}' +
+    '@media(min-width:901px), (pointer:fine){' +
+      'body.keyboard-open .composer-wrap{position:sticky!important;bottom:0!important;transform:none!important;}' +
+      'body.keyboard-open .messages{position:relative!important;bottom:auto!important;}' +
     '}';
     var st = document.getElementById('daotianScrollKeyboardFinalStyle');
     if(!st){
