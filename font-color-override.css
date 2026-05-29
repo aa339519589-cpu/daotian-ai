@@ -32,7 +32,7 @@ body,textarea,button,input,select,.chat-topbar,.model-top-trigger,.sidebar,.plus
 .assistant-render,#app .main .messages .assistant-render{
   font-size:16px!important;
   line-height:1.68!important;
-  font-weight:400!important;
+  font-weight:250!important;
   letter-spacing:0!important;
   max-width:min(880px,96%)!important;
 }
