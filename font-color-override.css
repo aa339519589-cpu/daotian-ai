@@ -117,4 +117,25 @@ textarea::placeholder{color:rgba(238,238,238,.44)!important}
     z-index:700!important;
     transform-origin:top left!important;
   }
+
+/* MathJax protection: prevent global reading-font overrides from breaking formulas */
+.assistant-render mjx-container,
+.assistant-render mjx-container *,
+.assistant-render .MathJax,
+.assistant-render .MathJax *{
+  font-family: revert !important;
+  font-weight: revert !important;
+  font-style: revert !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  text-transform: none !important;
+}
+
+.assistant-render mjx-container{
+  line-height: normal !important;
+  white-space: normal !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
 }
