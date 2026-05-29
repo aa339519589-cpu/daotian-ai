@@ -46,9 +46,10 @@
   });
 
   try{
-    const $ = (sel, root=document) => root.querySelector(sel);
-    const uid = () => 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
-    const nowTime = () => new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+    const DTG = window.DAOTIAN_GLOBALS || {};
+    const $ = DTG.$;
+    const uid = DTG.uid;
+    const nowTime = DTG.nowTime;
     function makeTtsMsgId(chatId, idx){ return 'tts_' + chatId + '_' + idx; }
     const app = $('#app');
     if(!app) throw new Error('#app not found');
@@ -57,24 +58,7 @@
     var AUTH_SYNC_QUEUE = {};
     var AUTH_SYNC_TIMER = null;
 
-    const KEYS = {
-      chats:'daotian.chats.v323', active:'daotian.activeChat.v323', settings:'daotian.settings.v323', theme:'daotian.theme.v323',
-      oldChats:'daotian.chats', oldActive:'daotian.activeChat', oldSettings:'daotian.settings',
-      v322Chats:'daotian.chats.v322', v322Active:'daotian.activeChat.v322', v322Settings:'daotian.settings.v322',
-      modelParams:'daotian.modelParams.v1',
-      accessPackages:'daotian.accessPackages.v1',
-      accessClaims:'daotian.accessClaims.v1',
-      personalization:'daotian.personalization.v1',
-      memories:'daotian.memories.v1',
-      memoryCandidates:'daotian.memoryCandidates.v1',
-      autoExtract:'daotian.autoExtract.v1',
-      memoryGlobal:'daotian.memoryGlobal.v1',
-      tokenDisplay:'daotian.tokenDisplay.v2',
-      autoScroll:'daotian.autoScroll.v1',
-      themeMode:'daotian.themeMode.v1',
-      fontSize:'daotian.fontSize.v1',
-      voiceSettings:'daotian.voiceSettings.v1',
-    };
+    const KEYS = DTG.KEYS;
 
     /* Voice data */
     var EDGE_VOICES = [
@@ -1013,9 +997,8 @@
       <div class="status" id="status"></div>`;
 
     function toast(text){ const s=$('#status'); if(!s)return; s.textContent=text; s.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>s.classList.remove('show'),1800); }
-    function escapeHTML(s){ return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
-
-    function escapeAttr(s){ return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+    const escapeHTML = DTG.escapeHTML;
+    const escapeAttr = DTG.escapeAttr;
 
     function ensureRenderStyle(){
       if(document.getElementById('daotianRenderStyle')) return;
