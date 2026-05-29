@@ -77,6 +77,43 @@
   <link rel="stylesheet" href="./font-color-override.css?v=v606" />
   <link rel="stylesheet" href="./light-mode-restore.css?v=v607" />
   <link rel="stylesheet" href="./settings-shell-fix.css?v=v607" />
+  <style>
+    .app-shell[data-theme="light"] .main,
+    .app-shell[data-theme="light"] .messages,
+    .app-shell[data-theme="light"] .message,
+    .app-shell[data-theme="light"] .assistant-content,
+    .app-shell[data-theme="light"] .assistant-render,
+    .app-shell[data-theme="light"] .assistant-render *,
+    .app-shell[data-theme="light"] .bubble,
+    .app-shell[data-theme="light"] .bubble *,
+    .app-shell[data-theme="light"] .chat-topbar,
+    .app-shell[data-theme="light"] .model-top-trigger,
+    .app-shell[data-theme="light"] .model-top-trigger *,
+    .app-shell[data-theme="light"] .top-new-chat-btn,
+    .app-shell[data-theme="light"] .tts-play-btn,
+    .app-shell[data-theme="light"] .voice-float,
+    .app-shell[data-theme="light"] .speaker-btn,
+    .app-shell[data-theme="light"] textarea,
+    .app-shell[data-theme="light"] input,
+    .app-shell[data-theme="light"] select,
+    .app-shell[data-theme="light"] button:not(.send),
+    .app-shell[data-theme="light"] .sidebar,
+    .app-shell[data-theme="light"] .sidebar *{
+      color:#2a2824!important;
+      -webkit-text-fill-color:#2a2824!important;
+      opacity:1!important;
+      text-shadow:none!important;
+    }
+    .app-shell[data-theme="light"] textarea::placeholder{
+      color:rgba(42,40,36,.48)!important;
+      -webkit-text-fill-color:rgba(42,40,36,.48)!important;
+    }
+    .app-shell[data-theme="light"] .send,
+    .app-shell[data-theme="light"] .send *{
+      color:#fff!important;
+      -webkit-text-fill-color:#fff!important;
+    }
+  </style>
   <script src="./prompt-hotfix.js?v=v605"></script>
   <script src="./thinking-position-fix.js?v=v605"></script>
   <script src="./thinking-canvas-loader.js?v=v605"></script>
