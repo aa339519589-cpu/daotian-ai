@@ -1,0 +1,25 @@
+@media(max-width:900px){
+  .composer-wrap{
+    position:fixed!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    padding:0 0 env(safe-area-inset-bottom,0px)!important;
+    transform:none!important;
+    background:transparent!important;
+  }
+  .composer{margin:0 auto!important}
+  body.keyboard-open .composer-wrap{
+    position:fixed!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    padding:0!important;
+    transform:none!important;
+    background:transparent!important;
+  }
+  body.keyboard-open .composer{
+    width:calc(100% - 28px)!important;
+    margin:0 auto!important;
+  }
+}
