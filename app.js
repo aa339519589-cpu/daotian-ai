@@ -829,14 +829,21 @@
     function protectMath(text){
       var placeholders = [];
       var idx = 0;
-      /* protect $$...$$ and \[...\] */
+      /* Step 0: protect fenced code blocks first so $ inside code is never matched */
+      var codeBlocks = [];
+      text = text.replace(/```[\s\S]*?```/g, function(m){
+        var ph = '@@DAOTIAN_CODE_'+codeBlocks.length+'@@';
+        codeBlocks.push(m);
+        return ph;
+      });
+      /* Step 1: protect $$...$$ and \[...\] */
       text = text.replace(/(\$\$|\\\[)([\s\S]*?)(\$\$|\\\])/g, function(m, open, body, close){
         var ph = '@@MATHBLOCK_'+idx+'@@';
         placeholders.push(m);
         idx++;
         return ph;
       });
-      /* protect \(...\) and $...$ (inline) */
+      /* Step 2: protect \(...\) and $...$ (inline) */
       text = text.replace(/(\\\(|\$)([^\n$]+?)(\\\)|\$)/g, function(m, open, body, close){
         if(open === '$' && close === '$' && m.indexOf('$$')===0) return m; /* skip display */
         var ph = '@@MATHINLINE_'+idx+'@@';
@@ -844,12 +851,21 @@
         idx++;
         return ph;
       });
+      /* Step 3: restore code blocks */
+      for(var ci = 0; ci < codeBlocks.length; ci++){
+        text = text.split('@@DAOTIAN_CODE_'+ci+'@@').join(codeBlocks[ci]);
+      }
       return {text:text, placeholders:placeholders};
     }
     function restoreMath(html, placeholders){
       for(var i=0;i<placeholders.length;i++){
         html = html.split('@@MATHBLOCK_'+i+'@@').join(placeholders[i]);
         html = html.split('@@MATHINLINE_'+i+'@@').join(placeholders[i]);
+      }
+      /* Debug: detect leaked placeholders */
+      if(/@@MATH(BLOCK|INLINE)_[0-9]+@@/.test(html)){
+        console.warn('[math] leaked placeholders detected:', html.match(/@@MATH(BLOCK|INLINE)_[0-9]+@@/g));
+        html = html.replace(/@@MATH(BLOCK|INLINE)_[0-9]+@@/g, '');
       }
       return html;
     }
@@ -1247,6 +1263,7 @@
         const box = document.getElementById('messages');
         if(!box) return;
         try{
+          if(window.MathJax && window.MathJax.typesetClear){ window.MathJax.typesetClear([box]); }
           if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
         }catch(_e){}
         try{
@@ -1397,8 +1414,10 @@
         var richClass = isRich ? ' rich-wide' : '';
         var scrollAttr2 = m.scrollFocus ? ' data-scroll-focus="1"' : '';
         /* During streaming, skip markdown pipeline on the live message to avoid mangling incomplete formulas */
-        var renderedContent = (isStreamingNow() && m.scrollFocus) ? escapeHTML(m.content) : renderAssistantContent(m.content);
-        return '<div class="message assistant'+richClass+'"'+scrollAttr2+'><div class="assistant-content"><div class="assistant-render">'+renderedContent+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
+        var streamingLive = isStreamingNow() && m.scrollFocus;
+        var renderedContent = streamingLive ? escapeHTML(m.content).replace(/\n/g, '<br>') : renderAssistantContent(m.content);
+        var streamClass = streamingLive ? ' streaming-live' : '';
+        return '<div class="message assistant'+richClass+streamClass+'"'+scrollAttr2+'><div class="assistant-content"><div class="assistant-render">'+renderedContent+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       box.classList.toggle('generating-space', !!hasScrollFocus);
       scheduleEnhanceRender();
