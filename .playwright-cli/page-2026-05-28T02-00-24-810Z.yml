@@ -1,0 +1,37 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - button "☰" [ref=e6] [cursor=pointer]
+      - generic [ref=e7]:
+        - img [ref=e8]
+        - generic [ref=e11]: 稻田 AI
+    - button "＋ 新建对话" [ref=e12] [cursor=pointer]
+    - generic [ref=e13]:
+      - generic [ref=e14]: 今天
+      - generic [ref=e17] [cursor=pointer]:
+        - generic [ref=e18]: 新对话
+        - generic [ref=e19]: 10:00
+    - generic [ref=e20]:
+      - button "设置" [ref=e21] [cursor=pointer]:
+        - img [ref=e22]
+        - text: 设置
+      - button "模型提供商" [ref=e25] [cursor=pointer]:
+        - img [ref=e26]
+        - text: 模型提供商
+  - main [ref=e29]:
+    - generic [ref=e30]:
+      - button "请先添加模型 ▾" [ref=e31] [cursor=pointer]:
+        - generic "请先添加模型" [ref=e32]
+        - generic [ref=e33]: ▾
+      - button "新建对话" [ref=e34] [cursor=pointer]:
+        - img [ref=e35]
+    - generic [ref=e39]:
+      - generic:
+        - generic:
+          - img
+          - generic: 稻田 AI
+        - generic: 随便开个头也行
+    - generic [ref=e41]:
+      - button "+" [ref=e42] [cursor=pointer]
+      - textbox [ref=e43]
+      - button "›" [ref=e44] [cursor=pointer]
