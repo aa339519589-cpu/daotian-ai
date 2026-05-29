@@ -756,12 +756,13 @@
       </div></div>
       <div class="status" id="status"></div>`;
     renderAll();
-    if(typeof initChatEvents === 'function') initChatEvents();
-    if(typeof initSettingsEvents === 'function') initSettingsEvents();
-    if(typeof initUploadEvents === 'function') initUploadEvents();
+    try{ if(typeof initChatEvents === 'function') initChatEvents(); }catch(e){ console.error('initChatEvents failed', e); }
+    try{ if(typeof initSettingsEvents === 'function') initSettingsEvents(); }catch(e){ console.error('initSettingsEvents failed', e); }
+    try{ if(typeof initUploadEvents === 'function') initUploadEvents(); }catch(e){ console.error('initUploadEvents failed', e); }
     syncModelState();
     applyFontSize(loadFontSize());
     APP_READY = true;
+    document.title = '稻田 AI ✓';
     /* Trigger memory migration from localStorage to server if logged in */
     if(AUTH_USER && AUTH_USER.id){ setTimeout(function(){ migrateMemoriesToServer().catch(function(){}); }, 3000); }
     updateSearchVisual();

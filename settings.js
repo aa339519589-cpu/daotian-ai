@@ -1531,7 +1531,7 @@ function initSettingsEvents(){
     var _openShare = $('#openShare'); if(_openShare) _openShare.onclick = openShareHub;
     $('#closeProvider').onclick=closeSettings; $('#cancelProvider').onclick=closeSettings; $('#saveProvider').onclick=function(){ saveSettings(); };
     $('#sendBtn').onclick=sendMessage;
-    $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
+    $('#input').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); if(typeof sendMessage==='function') sendMessage(); } });
 
     /* ── 模态框：点击遮罩关闭 ── */
     /* ── 模态框：点击遮罩关闭 ── */
