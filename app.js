@@ -50,7 +50,8 @@
     const $ = DTG.$;
     const uid = DTG.uid;
     const nowTime = DTG.nowTime;
-    function makeTtsMsgId(chatId, idx){ return 'tts_' + chatId + '_' + idx; }
+    const DTTU = window.DAOTIAN_TTS_UTILS || {};
+    const makeTtsMsgId = DTTU.makeTtsMsgId;
     const app = $('#app');
     if(!app) throw new Error('#app not found');
     var AUTH_USER = null;
