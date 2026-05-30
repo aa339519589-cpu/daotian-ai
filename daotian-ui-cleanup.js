@@ -37,9 +37,29 @@
     });
   }
 
+  function removeDaotianBrand(root){
+    root = root || document;
+    root.querySelectorAll('*').forEach(function(el){
+      if(!el || !el.childNodes) return;
+      var text = (el.textContent || '').trim();
+      if(text === '稻田 AI' || text === '稻田 Ai'){
+        el.style.display = 'none';
+      }
+      if(text === '随便开个头也行'){
+        el.style.display = 'none';
+      }
+    });
+    root.querySelectorAll('svg, img, canvas').forEach(function(el){
+      var near = el.parentElement;
+      var txt = near ? (near.textContent || '') : '';
+      if(txt.indexOf('稻田') >= 0){ el.style.display = 'none'; }
+    });
+  }
+
   function cleanup(){
     fixPinnedDots();
     removeSearchSources(document);
+    removeDaotianBrand(document);
   }
 
   if(document.readyState === 'loading'){
