@@ -7,11 +7,10 @@
 }
 
 .sidebar-top{
-  height:86px!important;
+  height:68px!important;
   padding:0 18px!important;
-  gap:18px!important;
+  gap:14px!important;
   align-items:center!important;
-  position:relative!important;
 }
 #closeSide{
   width:42px!important;
@@ -22,76 +21,26 @@
   transform:none!important;
 }
 .sidebar-label{
-  display:none!important;
-}
-.sidebar-top::after{
-  content:""!important;
-  display:block!important;
-  width:132px!important;
-  height:72px!important;
-  flex:0 0 132px!important;
-  background:url('./daotian-logo.svg?v=v612') center/contain no-repeat!important;
-  opacity:.96!important;
+  font-size:34px!important;
+  font-weight:650!important;
+  line-height:1!important;
+  letter-spacing:.015em!important;
 }
 .dt-side-new,
 #dtSideNew{
   display:none!important;
 }
 .dt-side-recent{
-  margin:2px 18px 8px!important;
+  margin:4px 18px 8px!important;
 }
 .chat-list{
   padding-top:0!important;
-}
-
-.empty{
-  display:flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  min-height:calc(100% - 150px)!important;
-  pointer-events:none!important;
-}
-.empty-center{
-  display:flex!important;
-  flex-direction:column!important;
-  align-items:center!important;
-  justify-content:center!important;
-  gap:18px!important;
-  transform:translateY(-2px)!important;
-}
-.brand-main-row{
-  display:block!important;
-  width:178px!important;
-  height:125px!important;
-  background:url('./daotian-logo.svg?v=v612') center/contain no-repeat!important;
-}
-.brand-main-row .empty-logo,
-.brand-main-row .brand-name{
-  display:none!important;
-}
-.empty-prompt{
-  display:block!important;
-  opacity:.48!important;
-  color:rgba(238,238,238,.66)!important;
-  font-size:17px!important;
-  line-height:1.45!important;
-  letter-spacing:.08em!important;
-  text-align:center!important;
-  white-space:nowrap!important;
 }
 
 textarea#input::placeholder,
 #input::placeholder{
   color:transparent!important;
   -webkit-text-fill-color:transparent!important;
-}
-
-.composer-wrap{
-  bottom:28px!important;
-  padding-bottom:0!important;
-}
-body.keyboard-open .composer-wrap{
-  bottom:0!important;
 }
 
 .send:not(.stop-mode),
@@ -112,17 +61,5 @@ body.keyboard-open .composer-wrap{
     height:38px!important;
     min-width:38px!important;
     min-height:38px!important;
-  }
-  .composer-wrap{
-    bottom:28px!important;
-  }
-}
-@media(max-width:900px){
-  .composer-wrap{
-    bottom:28px!important;
-    padding-bottom:0!important;
-  }
-  body.keyboard-open .composer-wrap{
-    bottom:0!important;
   }
 }
