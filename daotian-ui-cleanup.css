@@ -6,60 +6,13 @@
   background:#c96442!important;
 }
 
-.sidebar-top{
-  height:68px!important;
-  padding:0 18px!important;
-  gap:14px!important;
-  align-items:center!important;
-}
-#closeSide{
-  width:42px!important;
-  height:42px!important;
-  min-width:42px!important;
-  min-height:42px!important;
-  font-size:34px!important;
-  transform:none!important;
-}
-.sidebar-label{
-  font-size:34px!important;
-  font-weight:650!important;
-  line-height:1!important;
-  letter-spacing:.015em!important;
-}
 .dt-side-new,
 #dtSideNew{
   display:none!important;
-}
-.dt-side-recent{
-  margin:4px 18px 8px!important;
-}
-.chat-list{
-  padding-top:0!important;
 }
 
 textarea#input::placeholder,
 #input::placeholder{
   color:transparent!important;
   -webkit-text-fill-color:transparent!important;
-}
-
-.send:not(.stop-mode),
-#sendBtn.send:not(.stop-mode),
-.composer .send:not(.stop-mode){
-  border-radius:999px!important;
-  width:42px!important;
-  height:42px!important;
-  min-width:42px!important;
-  min-height:42px!important;
-  aspect-ratio:1/1!important;
-}
-@media(min-width:901px){
-  .send:not(.stop-mode),
-  #sendBtn.send:not(.stop-mode),
-  .composer .send:not(.stop-mode){
-    width:38px!important;
-    height:38px!important;
-    min-width:38px!important;
-    min-height:38px!important;
-  }
 }
