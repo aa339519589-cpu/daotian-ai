@@ -1,0 +1,46 @@
+:root{
+  --daotian-unified-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","PingFang SC","Hiragino Sans GB","HarmonyOS Sans SC","Microsoft YaHei UI","Microsoft YaHei",sans-serif!important;
+}
+html,body,#app{
+  font-size:16px!important;
+}
+body,
+textarea,
+button,
+input,
+select,
+.chat-topbar,
+.model-top-trigger,
+.sidebar,
+.plus-menu,
+.model-popover,
+.message,
+.bubble,
+.assistant-content,
+.assistant-render,
+.assistant-render :not(pre):not(code):not(mjx-container):not(mjx-container *){
+  font-family:var(--daotian-unified-sans)!important;
+}
+.assistant-render,
+#app .main .messages .assistant-render,
+#app .main .messages .assistant-render p,
+#app .main .messages .assistant-render li{
+  font-size:16px!important;
+  line-height:1.65!important;
+  font-weight:400!important;
+  letter-spacing:-0.006em!important;
+}
+.assistant-render h1,
+.assistant-render h2,
+.assistant-render h3,
+.assistant-render strong,
+.assistant-render b{
+  font-family:var(--daotian-unified-sans)!important;
+}
+pre,
+code,
+.assistant-render code,
+.assistant-render pre,
+.assistant-render pre *{
+  font-family:"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace!important;
+}
