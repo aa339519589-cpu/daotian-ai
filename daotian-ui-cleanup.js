@@ -37,29 +37,23 @@
     });
   }
 
-  function removeDaotianBrand(root){
+  function cleanDaotianBrand(root){
     root = root || document;
-    root.querySelectorAll('*').forEach(function(el){
-      if(!el || !el.childNodes) return;
-      var text = (el.textContent || '').trim();
-      if(text === '稻田 AI' || text === '稻田 Ai'){
-        el.style.display = 'none';
-      }
-      if(text === '随便开个头也行'){
-        el.style.display = 'none';
-      }
+    root.querySelectorAll('.sidebar-label, .brand').forEach(function(el){
+      el.style.visibility = 'hidden';
     });
-    root.querySelectorAll('svg, img, canvas').forEach(function(el){
-      var near = el.parentElement;
-      var txt = near ? (near.textContent || '') : '';
-      if(txt.indexOf('稻田') >= 0){ el.style.display = 'none'; }
+    root.querySelectorAll('.brand-name').forEach(function(el){
+      el.style.display = 'none';
+    });
+    root.querySelectorAll('.empty-logo').forEach(function(el){
+      el.style.display = 'none';
     });
   }
 
   function cleanup(){
     fixPinnedDots();
     removeSearchSources(document);
-    removeDaotianBrand(document);
+    cleanDaotianBrand(document);
   }
 
   if(document.readyState === 'loading'){
