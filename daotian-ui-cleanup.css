@@ -7,10 +7,11 @@
 }
 
 .sidebar-top{
-  height:68px!important;
+  height:86px!important;
   padding:0 18px!important;
-  gap:14px!important;
+  gap:18px!important;
   align-items:center!important;
+  position:relative!important;
 }
 #closeSide{
   width:42px!important;
@@ -20,20 +21,24 @@
   font-size:34px!important;
   transform:none!important;
 }
-.sidebar-label,
-.brand{
-  visibility:hidden!important;
+.sidebar-label{
+  display:none!important;
 }
-.sidebar-label::before,
-.brand::before{
+.sidebar-top::after{
   content:""!important;
+  display:block!important;
+  width:132px!important;
+  height:72px!important;
+  flex:0 0 132px!important;
+  background:url('./daotian-logo.svg?v=v612') center/contain no-repeat!important;
+  opacity:.96!important;
 }
 .dt-side-new,
 #dtSideNew{
   display:none!important;
 }
 .dt-side-recent{
-  margin:4px 18px 8px!important;
+  margin:2px 18px 8px!important;
 }
 .chat-list{
   padding-top:0!important;
@@ -52,15 +57,13 @@
   align-items:center!important;
   justify-content:center!important;
   gap:18px!important;
-  transform:translateY(8px)!important;
+  transform:translateY(-2px)!important;
 }
 .brand-main-row{
-  display:flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  width:156px!important;
-  height:104px!important;
-  background:url('./daotian-logo.svg?v=v611') center/contain no-repeat!important;
+  display:block!important;
+  width:178px!important;
+  height:125px!important;
+  background:url('./daotian-logo.svg?v=v612') center/contain no-repeat!important;
 }
 .brand-main-row .empty-logo,
 .brand-main-row .brand-name{
