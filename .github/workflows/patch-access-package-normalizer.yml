@@ -1,0 +1,106 @@
+name: Patch access package normalizer
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-access-package-normalizer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch server.js
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'server.js';
+          let s = fs.readFileSync(path, 'utf8');
+
+          const oldBlock = `function normalizeAccessPackage(pkg){
+  const models = Array.isArray(pkg.models) ? pkg.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
+  // Migrate old single-provider packages to items format
+  let items = Array.isArray(pkg.items) ? pkg.items : [];
+  if(!items.length && (pkg.providerId || models.length)){
+    items = [{ providerId: String(pkg.providerId||"").trim(), models: Array.from(new Set(models)) }];
+  }
+  // Deduplicate models within each item
+  items = items.map(item=>({
+    providerId: String(item.providerId||"").trim(),
+    models: Array.from(new Set((Array.isArray(item.models)?item.models:[]).map(v=>String(v||"").trim()).filter(Boolean)))
+  })).filter(item=>item.providerId && item.models.length);
+  return {
+    id:String(pkg.id || "").trim(),
+    code:String(pkg.code || "").trim(),
+    providerUserId:String(pkg.providerUserId || "").trim(),
+    packageName:String(pkg.packageName || pkg.name || "").trim(),
+    items,
+    // Flattened models for backward compat
+    models: Array.from(new Set(items.reduce((acc,it)=>acc.concat(it.models),[]))),
+    enabled:pkg.enabled !== false,
+    quotaTotal:Number(pkg.quotaTotal || 0),
+    quotaUsed:Number(pkg.quotaUsed || 0),
+    expiresAt:pkg.expiresAt ? new Date(pkg.expiresAt).toISOString() : "",
+    createdAt:pkg.createdAt || nowIso(),
+    updatedAt:pkg.updatedAt || nowIso()
+  };
+}`;
+
+          const newBlock = `function normalizeAccessPackage(pkg){
+  const models = Array.isArray(pkg.models) ? pkg.models.map(v=>String(v||"").trim()).filter(Boolean) : [];
+  // Migrate old single-provider packages to items format, preserving the hidden upstream config.
+  let items = Array.isArray(pkg.items) ? pkg.items : [];
+  if(!items.length && (pkg.providerId || models.length)){
+    items = [{
+      providerId: String(pkg.providerId||"").trim(),
+      models: Array.from(new Set(models)),
+      baseUrl: String(pkg.baseUrl || pkg._baseUrl || "").trim(),
+      apiKey: String(pkg.apiKey || pkg._apiKey || "").trim(),
+      path: String(pkg.path || pkg._path || "/v1/chat/completions").trim() || "/v1/chat/completions",
+      providerName: String(pkg.providerName || pkg._providerName || "").trim()
+    }];
+  }
+  // Deduplicate models within each item, but do not strip baseUrl/apiKey.
+  items = items.map(item=>({
+    providerId: String(item.providerId||"").trim(),
+    models: Array.from(new Set((Array.isArray(item.models)?item.models:[]).map(v=>String(v||"").trim()).filter(Boolean))),
+    baseUrl: String(item.baseUrl || item._baseUrl || "").trim(),
+    apiKey: String(item.apiKey || item._apiKey || "").trim(),
+    path: String(item.path || item._path || "/v1/chat/completions").trim() || "/v1/chat/completions",
+    providerName: String(item.providerName || item._providerName || "").trim()
+  })).filter(item=>item.providerId && item.models.length);
+  return {
+    id:String(pkg.id || "").trim(),
+    code:String(pkg.code || "").trim(),
+    providerUserId:String(pkg.providerUserId || "").trim(),
+    packageName:String(pkg.packageName || pkg.name || "").trim(),
+    items,
+    // Flattened models for backward compat
+    models: Array.from(new Set(items.reduce((acc,it)=>acc.concat(it.models),[]))),
+    enabled:pkg.enabled !== false,
+    quotaTotal:Number(pkg.quotaTotal || 0),
+    quotaUsed:Number(pkg.quotaUsed || 0),
+    expiresAt:pkg.expiresAt ? new Date(pkg.expiresAt).toISOString() : "",
+    createdAt:pkg.createdAt || nowIso(),
+    updatedAt:pkg.updatedAt || nowIso()
+  };
+}`;
+
+          if(!s.includes(oldBlock)){
+            console.error('Target block not found');
+            process.exit(1);
+          }
+          s = s.replace(oldBlock, newBlock);
+          fs.writeFileSync(path, s);
+          NODE
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.js
+          git commit -m "Preserve access package upstream config" || exit 0
+          git push
