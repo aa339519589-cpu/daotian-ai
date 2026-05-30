@@ -37,23 +37,9 @@
     });
   }
 
-  function cleanDaotianBrand(root){
-    root = root || document;
-    root.querySelectorAll('.sidebar-label, .brand').forEach(function(el){
-      el.style.visibility = 'hidden';
-    });
-    root.querySelectorAll('.brand-name').forEach(function(el){
-      el.style.display = 'none';
-    });
-    root.querySelectorAll('.empty-logo').forEach(function(el){
-      el.style.display = 'none';
-    });
-  }
-
   function cleanup(){
     fixPinnedDots();
     removeSearchSources(document);
-    cleanDaotianBrand(document);
   }
 
   if(document.readyState === 'loading'){
