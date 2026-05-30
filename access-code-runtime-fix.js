@@ -6,6 +6,35 @@
   var DTG = window.DAOTIAN_GLOBALS || null;
   if(!DTM || !DTG || !DTG.KEYS) return;
 
+  function installAccessFetchGuard(){
+    if(window.__DAOTIAN_ACCESS_FETCH_GUARD__) return;
+    window.__DAOTIAN_ACCESS_FETCH_GUARD__ = true;
+    var rawFetch = window.fetch.bind(window);
+    window.fetch = function(input, init){
+      try{
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if(String(url).indexOf('__access__') === 0){
+          init = init || {};
+          var bodyText = init.body || '';
+          var body = typeof bodyText === 'string' ? JSON.parse(bodyText || '{}') : {};
+          var up = body.frontendUpstream || {};
+          var code = String(body.accessCode || up.apiKey || '').trim();
+          if(code){
+            body.accessCode = code;
+            delete body.frontendUpstream;
+            input = '/chat';
+            init = Object.assign({}, init, {
+              headers: Object.assign({'Content-Type':'application/json'}, init.headers || {}),
+              body: JSON.stringify(body)
+            });
+          }
+        }
+      }catch(_e){}
+      return rawFetch(input, init);
+    };
+  }
+  installAccessFetchGuard();
+
   function safeParse(v, fallback){
     try{ return v ? JSON.parse(v) : fallback; }catch(_e){ return fallback; }
   }
@@ -128,8 +157,8 @@
     if(!p){
       p = { id:(provider.id || 'p') + '__' + slug(model), providerId:provider.id, providerType:provider.providerType || 'openai', providerName:provider.providerName || '', baseUrl:provider.baseUrl || '', apiKey:provider.apiKey || '', path:provider.path || '/v1/chat/completions', model:model };
     }
-    if(provider && provider.accessCode){
-      p.accessCode = provider.accessCode;
+    if(provider && (provider.accessCode || provider.baseUrl === '__access__')){
+      p.accessCode = provider.accessCode || provider.apiKey || '';
       p.accessPackageId = provider.accessPackageId || '';
       p.accessStatus = provider.accessStatus || 'active';
       p.readOnly = true;
@@ -147,6 +176,14 @@
     if(packages.length){
       var providers = Array.isArray(base.modelProviders) ? base.modelProviders.slice() : [];
       var presets = Array.isArray(base.modelPresets) ? base.modelPresets.slice() : [];
+      providers = providers.map(function(p){
+        if(p && p.baseUrl === '__access__' && !p.accessCode) p.accessCode = p.apiKey || '';
+        return p;
+      });
+      presets = presets.map(function(p){
+        if(p && p.baseUrl === '__access__' && !p.accessCode) p.accessCode = p.apiKey || '';
+        return p;
+      });
       var providerIds = {};
       providers.forEach(function(p){ providerIds[p.id] = true; });
       packages.forEach(function(pkg, i){
