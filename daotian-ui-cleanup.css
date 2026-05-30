@@ -39,20 +39,42 @@
   padding-top:0!important;
 }
 
-.empty-state,
-.welcome,
-.home-empty,
-.empty,
-.empty-logo,
-.empty-brand,
-.empty-title,
-.empty-subtitle{
+.empty{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-height:calc(100% - 150px)!important;
+  pointer-events:none!important;
+}
+.empty-center{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:18px!important;
+  transform:translateY(8px)!important;
+}
+.brand-main-row{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  width:156px!important;
+  height:104px!important;
+  background:url('./daotian-logo.svg?v=v611') center/contain no-repeat!important;
+}
+.brand-main-row .empty-logo,
+.brand-main-row .brand-name{
   display:none!important;
 }
-.messages:has(.empty-state),
-.messages:has(.welcome),
-.messages:has(.home-empty){
+.empty-prompt{
   display:block!important;
+  opacity:.48!important;
+  color:rgba(238,238,238,.66)!important;
+  font-size:17px!important;
+  line-height:1.45!important;
+  letter-spacing:.08em!important;
+  text-align:center!important;
+  white-space:nowrap!important;
 }
 
 textarea#input::placeholder,
