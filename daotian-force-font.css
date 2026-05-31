@@ -1,35 +1,18 @@
-/* Force default font size and weight */
-html,
-body,
-#app,
-.app-shell,
-.main,
-.messages,
-.message,
-.bubble,
-.assistant-content,
-.assistant-render,
-.assistant-render p,
-.assistant-render div,
-.assistant-render span,
-.assistant-render li,
-textarea,
-input,
-select,
-button{
+/* Force main chat message text only */
+#app .main .messages .message .bubble,
+#app .main .messages .message.user .bubble,
+#app .main .messages .message.assistant .assistant-content,
+#app .main .messages .message.assistant .assistant-render,
+#app .main .messages .message.assistant .assistant-render p,
+#app .main .messages .message.assistant .assistant-render div,
+#app .main .messages .message.assistant .assistant-render span,
+#app .main .messages .message.assistant .assistant-render li{
   font-size:20px!important;
   font-weight:700!important;
+  line-height:1.65!important;
 }
 
-.msg-time,
-.usage-footer,
-.memory-notice,
-.settings-muted,
-.settings-entry-desc,
-.settings-radio-desc,
-.settings-toggle-desc,
-.hint,
-.chat-time{
-  font-size:16px!important;
+#app .main .messages textarea{
+  font-size:20px!important;
   font-weight:700!important;
 }
