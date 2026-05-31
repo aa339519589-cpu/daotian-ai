@@ -1868,6 +1868,33 @@ server.listen(PORT, HOST, async ()=>{
     const connected = await checkSupabaseConnection();
     console.log('Supabase:', SUPABASE_URL, '| connected:', connected);
     if(!connected) console.error('SUPABASE CONNECTION FAILED — check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+    // Auto-create memories table if missing
+    if(connected){
+      try{
+        const refMatch = SUPABASE_URL.match(/https?:\/\/([^.]+)\./);
+        if(refMatch){
+          const ref = refMatch[1];
+          const pgPool = new pg.Pool({
+            connectionString: `postgresql://postgres.${ref}:${encodeURIComponent(SUPABASE_KEY)}@aws-0-us-east-1.pooler.supabase.com:5432/postgres`,
+            ssl: { rejectUnauthorized: false },
+            max: 2, idleTimeoutMillis: 10000, connectionTimeoutMillis: 15000
+          });
+          await pgPool.query(`
+            create table if not exists public.memories (
+              id uuid primary key default gen_random_uuid(),
+              user_id text not null,
+              content text not null,
+              source text not null check (source in ('auto', 'manual')),
+              created_at timestamp with time zone not null default now()
+            );
+            create index if not exists memories_user_created_idx on public.memories (user_id, created_at desc);
+            create unique index if not exists memories_user_content_unique_idx on public.memories (user_id, content);
+          `);
+          await pgPool.end();
+          console.log('[supabase] memories table verified/created');
+        }
+      }catch(e){ console.error('[supabase] auto-create memories table failed:', e.message); }
+    }
   }else{
     console.log('Supabase: not configured (SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set)');
   }
