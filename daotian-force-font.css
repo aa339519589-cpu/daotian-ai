@@ -1,0 +1,35 @@
+/* Force default font size and weight */
+html,
+body,
+#app,
+.app-shell,
+.main,
+.messages,
+.message,
+.bubble,
+.assistant-content,
+.assistant-render,
+.assistant-render p,
+.assistant-render div,
+.assistant-render span,
+.assistant-render li,
+textarea,
+input,
+select,
+button{
+  font-size:20px!important;
+  font-weight:700!important;
+}
+
+.msg-time,
+.usage-footer,
+.memory-notice,
+.settings-muted,
+.settings-entry-desc,
+.settings-radio-desc,
+.settings-toggle-desc,
+.hint,
+.chat-time{
+  font-size:16px!important;
+  font-weight:700!important;
+}
