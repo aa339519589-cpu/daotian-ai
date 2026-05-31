@@ -165,11 +165,13 @@
     }
     var _serverMemoriesCache = null;
     async function refreshServerMemories(){
-      if(!AUTH_USER || !AUTH_USER.id){ _serverMemoriesCache = []; return []; }
+      console.log("[memory:ui] refresh start, AUTH_USER:", AUTH_USER ? AUTH_USER.id : "null");
+      if(!AUTH_USER || !AUTH_USER.id){ _serverMemoriesCache = []; console.log("[memory:ui] no auth, returning empty"); return []; }
       try{
         var res = await authFetch('/api/memories?limit=200', {method:'GET', headers:{}});
+        console.log("[memory:ui] API response ok:", res && res.ok, "count:", res && res.memories ? res.memories.length : 0);
         if(res && res.ok && Array.isArray(res.memories)){ _serverMemoriesCache = res.memories; return res.memories; }
-      }catch(e){ console.warn('[CrossMem] refresh failed:', e.message); }
+      }catch(e){ console.warn('[memory:ui] refresh failed:', e.message); }
       _serverMemoriesCache = _serverMemoriesCache || [];
       return _serverMemoriesCache;
     }

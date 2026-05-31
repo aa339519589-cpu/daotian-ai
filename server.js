@@ -61,11 +61,19 @@ async function listUserMemories(userId, limit){
   return [];
 }
 async function insertUserMemory(userId, content, source){
-  if(!supabaseConnected) return null;
+  if(!supabaseConnected){ console.error("[memory:insert] supabase not connected, skip"); return null; }
   try{
-    const res = await supabaseFetch("memories", {method:"POST", body:JSON.stringify({user_id:userId, content:String(content||"").trim(), source:String(source||"auto")})});
-    if(res.ok){ const rows = await res.json(); return rows && rows.length ? rows[0] : null; }
-  }catch(e){ console.error("[memories] insert failed:", e.message); }
+    const cleanContent = String(content||"").trim();
+    console.log("[memory:insert] writing:", { userId, content: cleanContent.slice(0,60), source });
+    const res = await supabaseFetch("memories", {method:"POST", body:JSON.stringify({user_id:userId, content:cleanContent, source:String(source||"auto")})});
+    if(res.ok){
+      const rows = await res.json();
+      console.log("[memory:insert] success:", rows && rows.length ? rows[0].id : "no rows returned");
+      return rows && rows.length ? rows[0] : null;
+    }
+    const errText = await res.text().catch(()=>"");
+    console.error("[memory:insert] failed:", res.status, errText.slice(0,300));
+  }catch(e){ console.error("[memory:insert] exception:", e.message); }
   return null;
 }
 async function deleteUserMemory(userId, id){
@@ -102,28 +110,44 @@ async function handleMemoriesDelete(req, res, userId, id){
 
 /* ── Auto-extract memories from conversation ── */
 async function extractAndSaveMemories({userId, upstream, model, messages, assistantText}){
-  if(!userId || !upstream || !assistantText) return;
+  if(!userId){ console.log("[memory:auto] skip — no userId"); return; }
+  if(!upstream){ console.log("[memory:auto] skip — no upstream"); return; }
+  if(!assistantText){ console.log("[memory:auto] skip — empty assistantText"); return; }
+  console.log("[memory:auto] start", { userId, model: model||"deepseek-chat", upstreamUrl: upstream.baseUrl, assistantLen: assistantText.length });
   try{
     const extractPrompt = "从以下这轮对话中提炼值得长期记住的用户信息，例如姓名、偏好、身份、重要事件。如果没有值得记住的内容就只返回 NO_MEMORY。每条记忆一行，简洁，不超过20字。";
+    const userMessages = messages.filter(m=>m.role==="user").map(m=>typeof m.content==="string"?m.content:"").join("\n").slice(0,2000);
+    console.log("[memory:auto] userText:", userMessages.slice(0,200));
+    console.log("[memory:auto] assistantText length:", assistantText.length);
     const extractMessages = [
       {role:"system", content:extractPrompt},
-      {role:"user", content:"对话内容：\n用户消息：" + (messages.filter(m=>m.role==="user").map(m=>typeof m.content==="string"?m.content:"").join("\n").slice(0,2000)) + "\n\n助手回复：" + (assistantText.slice(0,2000))}
+      {role:"user", content:"对话内容：\n用户消息：" + userMessages + "\n\n助手回复：" + (assistantText.slice(0,2000))}
     ];
-    const response = await fetch(safeUrl(upstream.baseUrl, upstream.requestPath), {
+    const targetUrl = safeUrl(upstream.baseUrl, upstream.requestPath);
+    console.log("[memory:auto] calling upstream for extraction:", targetUrl);
+    const response = await fetch(targetUrl, {
       method:"POST",
       headers:{"content-type":"application/json", authorization:"Bearer " + upstream.apiKey},
       body:JSON.stringify({model:model||"deepseek-chat", messages:extractMessages, stream:false, max_tokens:500, temperature:0.3})
     });
-    if(!response.ok){ console.error("[memories] extract API error:", response.status); return; }
+    if(!response.ok){
+      const errText = await response.text().catch(()=>"");
+      console.error("[memory:auto] upstream failed", response.status, errText.slice(0,300));
+      return;
+    }
     const data = await response.json();
     const text = data?.choices?.[0]?.message?.content || "";
-    if(!text || text.trim() === "NO_MEMORY") return;
+    console.log("[memory:auto] extract result:", (text||"").slice(0,200));
+    if(!text || text.trim() === "NO_MEMORY"){ console.log("[memory:auto] no memories to save"); return; }
     const lines = text.split("\n").map(l=>l.replace(/^[\d\-\*•\.\s]+/,"").trim()).filter(l=>l.length>=2 && l.length<=60);
-    console.log("[memories] extracted " + lines.length + " facts for user " + userId);
+    console.log("[memory:auto] extracted " + lines.length + " facts for user " + userId + ":", lines);
+    let saved = 0;
     for(const line of lines){
-      await insertUserMemory(userId, line, "auto");
+      const row = await insertUserMemory(userId, line, "auto");
+      if(row) saved++;
     }
-  }catch(e){ console.error("[memories] extractAndSave failed:", e.message); }
+    console.log("[memory:auto] saved " + saved + "/" + lines.length + " memories");
+  }catch(e){ console.error("[memory:auto] exception:", e.message); }
 }
 
 /* ── Data Layer: Supabase-first, JSON fallback ── */
@@ -1165,14 +1189,18 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
   sendSse(res, "done", { ok:true, usage: lastUsage || null });
   res.end();
   /* Fire-and-forget: auto-extract memories */
+  console.log("[memory:auto] trigger check:", { memoryUserId, hasUpstream: !!upstream, assistantLen: fullAssistantText.length, memoryEnabled: body.memoryEnabled });
   if(memoryUserId && upstream && fullAssistantText && body.memoryEnabled === true){
+    console.log("[memory:auto] firing extractAndSaveMemories...");
     extractAndSaveMemories({
       userId: memoryUserId,
       upstream,
       model,
       messages: originalMessages || messages,
       assistantText: fullAssistantText
-    }).catch(e=>console.error("[memories] extract after stream:", e.message));
+    }).catch(e=>console.error("[memory:auto] extract after stream:", e.message));
+  } else {
+    console.log("[memory:auto] NOT firing — conditions not met");
   }
 }
 
@@ -1317,11 +1345,14 @@ async function handleChat(req, res){
     /* ── Inject cross-chat memories into system prompt ── */
     let memoryUserId = null;
     const originalMessages = messages.map(m=>({role:m.role, content:m.content})); // save for extraction
+    console.log("[memory:chat] memoryEnabled:", body.memoryEnabled);
     if(body.memoryEnabled === true){
       const auth = await authFromRequest(req);
       if(auth){
         memoryUserId = auth.user.id;
+        console.log("[memory:chat] user:", memoryUserId, "supabaseConnected:", supabaseConnected);
         const memoryRows = await listUserMemories(auth.user.id, 50);
+        console.log("[memory:chat] listUserMemories returned:", memoryRows.length, "rows");
         if(memoryRows.length){
           const memoryLines = memoryRows.map(r=>"- " + r.content).join("\n");
           const memoryBlock = "\n\n[长期记忆]\n" + memoryLines;
@@ -1331,8 +1362,10 @@ async function handleChat(req, res){
           }else{
             messages.unshift({ role:"system", content: memoryBlock });
           }
-          console.log("[memories] injected " + memoryRows.length + " memories for user " + auth.user.id);
+          console.log("[memory:chat] injected " + memoryRows.length + " memories for user " + auth.user.id);
         }
+      } else {
+        console.log("[memory:chat] authFromRequest returned null — user not logged in");
       }
     }
 
@@ -1874,26 +1907,51 @@ server.listen(PORT, HOST, async ()=>{
         const refMatch = SUPABASE_URL.match(/https?:\/\/([^.]+)\./);
         if(refMatch){
           const ref = refMatch[1];
-          const pgPool = new pg.Pool({
-            connectionString: `postgresql://postgres.${ref}:${encodeURIComponent(SUPABASE_KEY)}@aws-0-us-east-1.pooler.supabase.com:5432/postgres`,
-            ssl: { rejectUnauthorized: false },
-            max: 2, idleTimeoutMillis: 10000, connectionTimeoutMillis: 15000
-          });
-          await pgPool.query(`
-            create table if not exists public.memories (
-              id uuid primary key default gen_random_uuid(),
-              user_id text not null,
-              content text not null,
-              source text not null check (source in ('auto', 'manual')),
-              created_at timestamp with time zone not null default now()
-            );
-            create index if not exists memories_user_created_idx on public.memories (user_id, created_at desc);
-            create unique index if not exists memories_user_content_unique_idx on public.memories (user_id, content);
-          `);
-          await pgPool.end();
-          console.log('[supabase] memories table verified/created');
+          // Try multiple connection formats — Supabase pooler auth varies by project
+          const connAttempts = [
+            { label:"pooler-session", url:`postgresql://postgres.${ref}:${encodeURIComponent(SUPABASE_KEY)}@aws-0-us-east-1.pooler.supabase.com:5432/postgres` },
+            { label:"pooler-transaction", url:`postgresql://postgres.${ref}:${encodeURIComponent(SUPABASE_KEY)}@aws-0-us-east-1.pooler.supabase.com:6543/postgres` },
+            { label:"direct-db", url:`postgresql://postgres:${encodeURIComponent(SUPABASE_KEY)}@db.${ref}.supabase.co:5432/postgres` },
+          ];
+          let created = false;
+          for(const attempt of connAttempts){
+            try{
+              const pgPool = new pg.Pool({
+                connectionString: attempt.url,
+                ssl: { rejectUnauthorized: false },
+                max: 1, idleTimeoutMillis: 5000, connectionTimeoutMillis: 10000
+              });
+              await pgPool.query(`
+                create table if not exists public.memories (
+                  id uuid primary key default gen_random_uuid(),
+                  user_id text not null,
+                  content text not null,
+                  source text not null check (source in ('auto', 'manual')),
+                  created_at timestamp with time zone not null default now()
+                );
+                create index if not exists memories_user_created_idx on public.memories (user_id, created_at desc);
+              `);
+              // Unique index separately (may fail gracefully on dupes)
+              await pgPool.query(`create unique index if not exists memories_user_content_unique_idx on public.memories (user_id, content);`).catch(()=>{});
+              await pgPool.end();
+              console.log('[supabase] memories table created via '+attempt.label);
+              created = true;
+              break;
+            }catch(e){ /* try next format */ }
+          }
+          if(!created){
+            // Last resort: try the REST API — if table already exists from manual creation, it'll work
+            const testRes = await supabaseFetch("memories?limit=1");
+            if(testRes.ok){
+              console.log('[supabase] memories table already exists (REST confirmed)');
+            } else {
+              console.error('[supabase] FAILED to create memories table. Run this SQL in Supabase Dashboard:');
+              console.error('  CREATE TABLE IF NOT EXISTS public.memories (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id text NOT NULL, content text NOT NULL, source text NOT NULL CHECK (source IN (\'auto\',\'manual\')), created_at timestamptz NOT NULL DEFAULT now());');
+              console.error('  CREATE INDEX IF NOT EXISTS memories_user_created_idx ON public.memories (user_id, created_at DESC);');
+            }
+          }
         }
-      }catch(e){ console.error('[supabase] auto-create memories table failed:', e.message); }
+      }catch(e){ console.error('[supabase] auto-create memories table error:', e.message); }
     }
   }else{
     console.log('Supabase: not configured (SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set)');
