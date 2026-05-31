@@ -29,6 +29,7 @@ DTG.KEYS = {
   themeMode:'daotian.themeMode.v1',
   fontSize:'daotian.fontSize.v1',
   voiceSettings:'daotian.voiceSettings.v1',
+  crossMemoryEnabled:'daotian.crossMemory.v1',
 };
 
 /* HTML 转义 */

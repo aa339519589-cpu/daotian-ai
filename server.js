@@ -50,6 +50,82 @@ async function checkSupabaseConnection(){
   }catch(e){ supabaseConnected = false; return false; }
 }
 
+/* ── Cross-chat Memories (Supabase) ── */
+async function listUserMemories(userId, limit){
+  limit = Math.min(Number(limit) || 50, 200);
+  if(!supabaseConnected) return [];
+  try{
+    const res = await supabaseFetch("memories?user_id=eq." + encodeURIComponent(userId) + "&order=created_at.desc&limit=" + limit);
+    if(res.ok){ const rows = await res.json(); return Array.isArray(rows) ? rows : []; }
+  }catch(e){ console.error("[memories] list failed:", e.message); }
+  return [];
+}
+async function insertUserMemory(userId, content, source){
+  if(!supabaseConnected) return null;
+  try{
+    const res = await supabaseFetch("memories", {method:"POST", body:JSON.stringify({user_id:userId, content:String(content||"").trim(), source:String(source||"auto")})});
+    if(res.ok){ const rows = await res.json(); return rows && rows.length ? rows[0] : null; }
+  }catch(e){ console.error("[memories] insert failed:", e.message); }
+  return null;
+}
+async function deleteUserMemory(userId, id){
+  if(!supabaseConnected) return false;
+  try{
+    const res = await supabaseFetch("memories?user_id=eq." + encodeURIComponent(userId) + "&id=eq." + encodeURIComponent(id), {method:"DELETE"});
+    return res.ok;
+  }catch(e){ console.error("[memories] delete failed:", e.message); }
+  return false;
+}
+
+/* ── /api/memories route handlers ── */
+async function handleMemoriesList(req, res, userId){
+  const urlObj = new URL(req.url, "http://localhost");
+  const limit = Number(urlObj.searchParams.get("limit")) || 50;
+  const rows = await listUserMemories(userId, limit);
+  return sendJson(res, 200, {ok:true, memories:rows});
+}
+async function handleMemoriesCreate(req, res, userId){
+  let body = {};
+  try{ body = await readJsonBody(req); }catch{ return sendJson(res, 400, {ok:false, error:"parse_error"}); }
+  const content = String(body.content || "").trim();
+  if(!content) return sendJson(res, 400, {ok:false, error:"content_required"});
+  const source = body.source === "manual" ? "manual" : "auto";
+  const row = await insertUserMemory(userId, content, source);
+  if(!row) return sendJson(res, 500, {ok:false, error:"insert_failed"});
+  return sendJson(res, 200, {ok:true, memory:row});
+}
+async function handleMemoriesDelete(req, res, userId, id){
+  const ok = await deleteUserMemory(userId, id);
+  if(!ok) return sendJson(res, 500, {ok:false, error:"delete_failed"});
+  return sendJson(res, 200, {ok:true});
+}
+
+/* ── Auto-extract memories from conversation ── */
+async function extractAndSaveMemories({userId, upstream, model, messages, assistantText}){
+  if(!userId || !upstream || !assistantText) return;
+  try{
+    const extractPrompt = "从以下这轮对话中提炼值得长期记住的用户信息，例如姓名、偏好、身份、重要事件。如果没有值得记住的内容就只返回 NO_MEMORY。每条记忆一行，简洁，不超过20字。";
+    const extractMessages = [
+      {role:"system", content:extractPrompt},
+      {role:"user", content:"对话内容：\n用户消息：" + (messages.filter(m=>m.role==="user").map(m=>typeof m.content==="string"?m.content:"").join("\n").slice(0,2000)) + "\n\n助手回复：" + (assistantText.slice(0,2000))}
+    ];
+    const response = await fetch(safeUrl(upstream.baseUrl, upstream.requestPath), {
+      method:"POST",
+      headers:{"content-type":"application/json", authorization:"Bearer " + upstream.apiKey},
+      body:JSON.stringify({model:model||"deepseek-chat", messages:extractMessages, stream:false, max_tokens:500, temperature:0.3})
+    });
+    if(!response.ok){ console.error("[memories] extract API error:", response.status); return; }
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content || "";
+    if(!text || text.trim() === "NO_MEMORY") return;
+    const lines = text.split("\n").map(l=>l.replace(/^[\d\-\*•\.\s]+/,"").trim()).filter(l=>l.length>=2 && l.length<=60);
+    console.log("[memories] extracted " + lines.length + " facts for user " + userId);
+    for(const line of lines){
+      await insertUserMemory(userId, line, "auto");
+    }
+  }catch(e){ console.error("[memories] extractAndSave failed:", e.message); }
+}
+
 /* ── Data Layer: Supabase-first, JSON fallback ── */
 async function readAuthStore(){
   if(supabaseConnected){
@@ -1039,7 +1115,7 @@ async function searchWeb(query){
     .filter(item=>item.title || item.url || item.content);
 }
 
-async function streamOpenAiResponse({ req, res, upstream, model, messages, body, sources }){
+async function streamOpenAiResponse({ req, res, upstream, model, messages, body, sources, memoryUserId, originalMessages }){
   const controller = new AbortController();
   req.on("close", ()=>controller.abort());
   const requestBody = Object.assign(
@@ -1069,6 +1145,7 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
   const decoder = new TextDecoder();
   let buffer = "";
   let lastUsage = null;
+  let fullAssistantText = "";
   for await (const chunk of response.body){
     buffer += decoder.decode(chunk, { stream:true });
     const lines = buffer.split(/\r?\n/);
@@ -1082,11 +1159,21 @@ async function streamOpenAiResponse({ req, res, upstream, model, messages, body,
       try{ data = JSON.parse(payload); }catch{ continue; }
       if(data.usage) lastUsage = data.usage;
       const content = data?.choices?.[0]?.delta?.content || data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || "";
-      if(content) sendSse(res, "content", { content });
+      if(content){ fullAssistantText += content; sendSse(res, "content", { content }); }
     }
   }
   sendSse(res, "done", { ok:true, usage: lastUsage || null });
   res.end();
+  /* Fire-and-forget: auto-extract memories */
+  if(memoryUserId && upstream && fullAssistantText && body.memoryEnabled === true){
+    extractAndSaveMemories({
+      userId: memoryUserId,
+      upstream,
+      model,
+      messages: originalMessages || messages,
+      assistantText: fullAssistantText
+    }).catch(e=>console.error("[memories] extract after stream:", e.message));
+  }
 }
 
 async function handleChat(req, res){
@@ -1227,9 +1314,31 @@ async function handleChat(req, res){
   }
 
   try{
+    /* ── Inject cross-chat memories into system prompt ── */
+    let memoryUserId = null;
+    const originalMessages = messages.map(m=>({role:m.role, content:m.content})); // save for extraction
+    if(body.memoryEnabled === true){
+      const auth = await authFromRequest(req);
+      if(auth){
+        memoryUserId = auth.user.id;
+        const memoryRows = await listUserMemories(auth.user.id, 50);
+        if(memoryRows.length){
+          const memoryLines = memoryRows.map(r=>"- " + r.content).join("\n");
+          const memoryBlock = "\n\n[长期记忆]\n" + memoryLines;
+          const sysIdx = messages.findIndex(m=>m?.role === "system");
+          if(sysIdx >= 0){
+            messages[sysIdx] = { role:"system", content: messages[sysIdx].content + memoryBlock };
+          }else{
+            messages.unshift({ role:"system", content: memoryBlock });
+          }
+          console.log("[memories] injected " + memoryRows.length + " memories for user " + auth.user.id);
+        }
+      }
+    }
+
     if(stream){
       openSse(res);
-      await streamOpenAiResponse({ req, res, upstream, model, messages, body, sources });
+      await streamOpenAiResponse({ req, res, upstream, model, messages, body, sources, memoryUserId, originalMessages });
       if(resolved.packageHit && resolved.packageHit.store && resolved.packageHit.pkg){
         const store = resolved.packageHit.store;
         const idx = store.packages.findIndex(p=>p.code === resolved.packageHit.pkg.code);
@@ -1670,6 +1779,18 @@ const server = http.createServer(async (req, res)=>{
         if(req.method === "PATCH") return await handleMemoryPatch(req, res, uid, memMatch[1]);
         if(req.method === "DELETE") return await handleMemoryDelete(req, res, uid, memMatch[1]);
       }
+      return sendJson(res, 404, {ok:false, error:"not_found"});
+    }
+
+    /* ── New Cross-chat Memories API (/api/memories) ── */
+    if(pathname === "/api/memories" || pathname.startsWith("/api/memories/")){
+      const auth = await requireAuth(req, res);
+      if(!auth) return;
+      const uid = auth.user.id;
+      if(req.method === "GET" && pathname === "/api/memories") return await handleMemoriesList(req, res, uid);
+      if(req.method === "POST" && pathname === "/api/memories") return await handleMemoriesCreate(req, res, uid);
+      var memIdMatch = pathname.match(/^\/api\/memories\/([a-f0-9\-]{36})$/);
+      if(memIdMatch && req.method === "DELETE") return await handleMemoriesDelete(req, res, uid, memIdMatch[1]);
       return sendJson(res, 404, {ok:false, error:"not_found"});
     }
 

@@ -154,6 +154,42 @@
       saveJSON(KEYS.autoExtract, v === true);
     }
 
+    /* ── Cross-chat Memory (server-side via /api/memories) ── */
+    function loadCrossMemoryEnabled(){
+      var v = readJSON(KEYS.crossMemoryEnabled, null);
+      if(v === true || v === false) return v;
+      return true; // enabled by default
+    }
+    function saveCrossMemoryEnabled(v){
+      saveJSON(KEYS.crossMemoryEnabled, v === true);
+    }
+    var _serverMemoriesCache = null;
+    async function refreshServerMemories(){
+      if(!AUTH_USER || !AUTH_USER.id){ _serverMemoriesCache = []; return []; }
+      try{
+        var res = await authFetch('/api/memories?limit=200', {method:'GET', headers:{}});
+        if(res && res.ok && Array.isArray(res.memories)){ _serverMemoriesCache = res.memories; return res.memories; }
+      }catch(e){ console.warn('[CrossMem] refresh failed:', e.message); }
+      _serverMemoriesCache = _serverMemoriesCache || [];
+      return _serverMemoriesCache;
+    }
+    async function addServerMemory(content){
+      if(!AUTH_USER || !AUTH_USER.id) return null;
+      try{
+        var res = await authFetch('/api/memories', {method:'POST', body:JSON.stringify({content:content, source:'manual'})});
+        if(res && res.ok) return res.memory;
+      }catch(e){ console.warn('[CrossMem] add failed:', e.message); }
+      return null;
+    }
+    async function deleteServerMemory(id){
+      if(!AUTH_USER || !AUTH_USER.id) return false;
+      try{
+        var res = await authFetch('/api/memories/'+encodeURIComponent(id), {method:'DELETE'});
+        return res && res.ok;
+      }catch(e){ console.warn('[CrossMem] delete failed:', e.message); }
+      return false;
+    }
+
     /* ── Server Memory API helpers ── */
     var _memoriesMigrated = false;
     async function migrateMemoriesToServer(){
@@ -1740,7 +1776,7 @@
       var memoryNoticeTimer = null;
 
       /* Build request body — include upstream when going through /chat */
-      var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true}};
+      var body={model:cfg.model||'deepseek-chat',messages:requestMessages,stream:true,stream_options:{include_usage:true},memoryEnabled:loadCrossMemoryEnabled()};
       exportModelParamsBody(cfg.id, body);
       if(searchOn || hasAttachments || cfg.accessCode || cfg.providerId || (cfg.baseUrl && cfg.apiKey)){
         if(searchOn){ body.webSearch = true; body.search = true; }
@@ -3115,6 +3151,7 @@
         if(title) title.textContent = '记忆设置';
         if(backBtn) backBtn.style.display = 'flex';
         body.innerHTML = renderMemoryPage();
+        renderServerMemoryList();
       }else if(settingsPage === 'personalization'){
         if(title) title.textContent = '个性化';
         if(backBtn) backBtn.style.display = 'flex';
@@ -3159,7 +3196,7 @@
         settingsEntry('分享给别人','配置分享用模型并生成接入码','shareHub','◎')+
         settingsEntry('外观与主题','跟随系统 / 浅色 / 深色','appearance','○')+
         settingsEntry('模型与参数','模型、Temperature、Top P','model','◇')+
-        (MEMORY_FEATURE_ENABLED ? settingsEntry('记忆设置','跨聊天记忆与自动提取','memory','□') : '')+
+        settingsEntry('记忆设置','跨聊天记忆与自动提取','memory','□')+
         settingsEntry('个性化聊天偏好','系统提示词与回复风格','personalization','▽')+
         settingsEntry('聊天偏好','字体大小 / 流式输出 / 自动滚动 / Token 显示','chatPrefs','✎')+
         settingsEntry('语音功能','Edge TTS / Fish Audio / 音色语速','voiceSettings','♪')+
@@ -3208,14 +3245,11 @@
       return '<button class="settings-toggle-row" data-param="'+param+'" data-on="'+(on?'1':'0')+'"><span class="settings-toggle-text"><span class="settings-toggle-title">'+escapeHTML(label)+'</span><span class="settings-toggle-desc">'+escapeHTML(desc)+'</span></span><span class="settings-toggle-switch'+(on?' on':'')+'"><span class="settings-toggle-knob"></span></span></button>';
     }
     function renderMemoryPage(){
-      var memories = loadMemories();
-      var autoExtract = loadAutoExtract();
-      var memoryGlobalOn = loadMemoryGlobal();
+      var enabled = loadCrossMemoryEnabled();
       return '<div class="settings-page">'+
-        settingsToggle('跨聊天记忆', (memories.filter(function(m){return m.enabled!==false;}).length)+' 条启用', memoryGlobalOn, 'memoryGlobal')+
-        settingsToggle('自动提取记忆', '从对话中自动识别长期偏好', autoExtract, 'autoExtract')+
-        '<div class="settings-card"><div class="settings-card-title">搜索记忆</div><input id="memory-search" class="settings-input" placeholder="输入关键词搜索..."><div id="memory-list-area" style="margin-top:10px"></div></div>'+
-        '<div style="display:flex;gap:8px;margin-top:12px"><button class="settings-btn" id="add-memory-btn">＋ 新增记忆</button><button class="settings-btn danger" id="clear-all-memory">清空全部记忆</button></div>'+
+        settingsToggle('跨聊天记忆', '自动提炼并跨对话注入长期记忆', enabled, 'crossMemory')+
+        '<div class="settings-card"><div class="settings-card-title">记忆列表</div><div id="server-memory-list" style="margin-top:10px"><div class="settings-muted" style="text-align:center;padding:16px 0">加载中...</div></div></div>'+
+        '<div style="display:flex;gap:8px;margin-top:12px"><div style="flex:1;display:flex;gap:6px"><input id="manual-memory-input" class="settings-input" placeholder="手动添加记忆..." style="flex:1"><button class="settings-btn primary" id="manual-memory-add">＋ 添加</button></div></div>'+
       '</div>';
     }
     function renderPersonalizationPage(){
@@ -3361,27 +3395,21 @@
       '</div>';
     }
 
-    function renderMemoryList(){
-      const area = $('#memory-list-area');
+    async function renderServerMemoryList(){
+      const area = $('#server-memory-list');
       if(!area) return;
-      const memories = loadMemories();
-      const keyword = ($('#memory-search') && $('#memory-search').value.trim().toLowerCase()) || '';
-      const filtered = keyword ? memories.filter(function(m){ return (m.content||'').toLowerCase().indexOf(keyword) >= 0 || (m.tags||[]).some(function(t){ return t.toLowerCase().indexOf(keyword) >= 0; }); }) : memories;
-      if(!filtered.length){
-        area.innerHTML = '<div style="padding:16px 0;color:var(--muted);font-size:14px;text-align:center">' + (keyword ? '没有匹配的记忆' : '还没有记忆') + '</div>';
+      var memories = await refreshServerMemories();
+      if(!memories.length){
+        area.innerHTML = '<div class="settings-muted" style="text-align:center;padding:16px 0">还没有记忆，发送消息后会自动提炼</div>';
         return;
       }
-      area.innerHTML = filtered.map(function(m){
-        const enabled = m.enabled !== false;
-        const tags = Array.isArray(m.tags) ? m.tags.join('、') : '';
-        return '<div class="mem-item" data-mem-id="'+escapeHTML(m.id)+'">' +
-          '<div class="mem-content">'+escapeHTML((m.content||'').slice(0,200))+'</div>' +
-          (tags ? '<div class="mem-tags">🏷 '+escapeHTML(tags)+'</div>' : '') +
-          '<div class="mem-actions">' +
-            '<button class="pill mem-toggle" data-mem-action="toggle" data-mem-id="'+escapeHTML(m.id)+'" data-on="'+(enabled?'1':'0')+'">'+(enabled?'✓ 已启用':'已禁用')+'</button>' +
-            '<button class="pill mem-edit-btn" data-mem-action="edit" data-mem-id="'+escapeHTML(m.id)+'">编辑</button>' +
-            '<button class="pill danger" data-mem-action="delete" data-mem-id="'+escapeHTML(m.id)+'">删除</button>' +
-          '</div></div>';
+      area.innerHTML = memories.map(function(m){
+        var sourceLabel = m.source === 'manual' ? '✏️ 手动' : '🤖 自动';
+        var timeStr = m.created_at ? new Date(m.created_at).toLocaleDateString('zh-CN') : '';
+        return '<div class="mem-item" data-mem-id="'+escapeHTML(m.id)+'" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)">'+
+          '<div style="flex:1;min-width:0"><div class="mem-content" style="font-size:14px">'+escapeHTML((m.content||'').slice(0,200))+'</div><div class="settings-muted" style="font-size:11px">'+sourceLabel+' · '+timeStr+'</div></div>'+
+          '<button class="pill danger" data-delete-memory="'+escapeHTML(m.id)+'" style="margin-left:8px;flex-shrink:0">删除</button>'+
+        '</div>';
       }).join('');
     }
 
@@ -3579,7 +3607,29 @@
     });
 
     /* 记忆 */
-    document.addEventListener('click', function(e){
+    document.addEventListener('click', async function(e){
+      /* ── 服务端跨聊天记忆操作 ── */
+      /* 删除服务端记忆 */
+      var serverDel = e.target.closest('[data-delete-memory]');
+      if(serverDel){
+        if(!confirm('确定要删除这条记忆吗？')) return;
+        var sid = serverDel.getAttribute('data-delete-memory');
+        var ok = await deleteServerMemory(sid);
+        if(ok){ await renderServerMemoryList(); toast('已删除记忆'); }
+        else { toast('删除失败，请稍后再试'); }
+        return;
+      }
+      /* 手动添加服务端记忆 */
+      if(e.target.closest('#manual-memory-add')){
+        var inputEl = $('#manual-memory-input');
+        if(!inputEl) return;
+        var text = inputEl.value.trim();
+        if(!text){ toast('请输入记忆内容'); return; }
+        var row = await addServerMemory(text);
+        if(row){ inputEl.value = ''; await renderServerMemoryList(); toast('已添加记忆'); }
+        else { toast('添加失败，请确认已登录且服务端已配置 Supabase'); }
+        return;
+      }
       /* 新增记忆 */
       if(e.target.closest('#add-memory-btn')){
         var contentInput = $('#memory-search');
@@ -3833,6 +3883,7 @@
         if(param==='stream'||param==='memoryInjection'){ saveCurrentModelParams(); }
         else if(param==='tokenDisplay'){ saveTokenDisplay(newOn); renderMessages(); }
         else if(param==='autoScroll'){ saveAutoScroll(newOn); }
+        else if(param==='crossMemory'){ saveCrossMemoryEnabled(newOn); renderMemoryPage(); renderServerMemoryList(); }
         else if(param==='memoryGlobal'){ saveMemoryGlobal(newOn); var m=loadMemories(); m=m.map(function(mm){mm.enabled=newOn;return mm;}); saveMemories(m); renderMemoryPage(); }
         else if(param==='autoExtract'){ saveAutoExtract(newOn); }
         else if(param==='persona'){ var pp=loadPersonalization(); pp.enabled=newOn; savePersonalization(pp); }
