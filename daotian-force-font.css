@@ -1,18 +1,17 @@
-/* Force main chat message text only */
-#app .main .messages .message .bubble,
-#app .main .messages .message.user .bubble,
-#app .main .messages .message.assistant .assistant-content,
-#app .main .messages .message.assistant .assistant-render,
-#app .main .messages .message.assistant .assistant-render p,
-#app .main .messages .message.assistant .assistant-render div,
-#app .main .messages .message.assistant .assistant-render span,
-#app .main .messages .message.assistant .assistant-render li{
-  font-size:20px!important;
-  font-weight:700!important;
+.main .messages .message .bubble,
+.main .messages .message.user .bubble,
+.main .messages .message.assistant .assistant-content,
+.main .messages .message.assistant .assistant-render,
+.main .messages .message.assistant .assistant-render p,
+.main .messages .message.assistant .assistant-render div,
+.main .messages .message.assistant .assistant-render span,
+.main .messages .message.assistant .assistant-render li{
+  font-size:16px!important;
+  font-weight:400!important;
   line-height:1.65!important;
 }
 
-#app .main .messages textarea{
-  font-size:20px!important;
-  font-weight:700!important;
+.main .messages textarea{
+  font-size:16px!important;
+  font-weight:400!important;
 }
