@@ -1713,6 +1713,7 @@
       if(!text && !hasAttachments) return;
       var ollamaFallback = !hasUsableModelConfig();
       var cfg = ollamaFallback ? (activePreset() || {providerType:'openai',model:'gemma4'}) : activePreset();
+      console.log('[Ollama] 📋 sendMessage cfg:', { ollamaFallback: ollamaFallback, providerType: cfg.providerType, model: cfg.model, providerName: cfg.providerName, baseUrl: cfg.baseUrl, hasApiKey: !!cfg.apiKey, usable: hasUsableModelConfig() });
 
       /* Image check: non-vision model blocks images */
       if(hasAttachments){
@@ -1835,17 +1836,20 @@
         assistant.usage = result.usage || null;
       }catch(err){
         clearTimeout(timeoutId);
+        console.error('[Ollama] ❌ sendMessage catch:', err && err.message ? err.message : String(err), err);
         if(err&&err.message==='ABORTED'){
           assistant.role='system'; assistant.content=''; assistant.thinking=false;
         }else{
           assistant.role='error';
           var errMsg = err&&err.message?err.message:String(err);
+          if(!errMsg || errMsg === 'undefined' || errMsg === 'null') errMsg = '未知错误，请查看浏览器控制台（F12）';
           if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
           else if(errMsg.indexOf('OLLAMA_DOWN')>=0||errMsg.indexOf('OLLAMA_EMPTY')>=0) errMsg = '⚠️ 未检测到云端配置，且本地 Ollama 未启动。请在模型设置中添加模型，或在本机运行 Ollama。';
           else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供方配置';
           else if(errMsg.indexOf('rate_limit')>=0||errMsg.indexOf('429')>=0) errMsg = '请求太频繁，请稍后再试';
-          else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0) errMsg = '网络连接失败，请检查网络后重试';
+          else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0||errMsg.indexOf('Load failed')>=0||errMsg.indexOf('TypeError')>=0) errMsg = '⚠️ 无法连接本地 Ollama（localhost:11434）。\\n\\n请确认：\\n1. Ollama 桌面应用已打开（菜单栏有🦙图标）\\n2. 在终端输入 ollama serve 启动服务\\n3. 如果使用 HTTPS 访问，请改用 http://daotian-ai.onrender.com';
           else if(errMsg.length > 200) errMsg = errMsg.slice(0,200) + '...';
+          console.log('[Ollama] 📋 最终错误文案:', errMsg);
           assistant.content = errMsg;
         }
         clearTimeout(memoryNoticeTimer);
@@ -2013,26 +2017,55 @@
     /* ── 本地 Ollama 模型调用（流式 + 非流式） ── */
     async function callOllamaModel(requestMessages, body, cfg, onDelta){
       var streamMode = body.stream !== false;
-      var ollamaBody = { model: cfg.model || body.model || 'gemma4', messages: requestMessages, stream: streamMode };
-      var res = await fetch('http://localhost:11434/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ollamaBody)
-      });
+      var ollamaModel = cfg.model || body.model || 'gemma4';
+      /* 优先用 127.0.0.1（避免 localhost DNS 解析问题），协议跟随页面 */
+      var ollamaBase = (location.protocol === 'https:' ? 'https:' : 'http:') + '//127.0.0.1:11434';
+      console.log('[Ollama] 🚀 发起请求', { model: ollamaModel, stream: streamMode, base: ollamaBase, msgCount: requestMessages.length });
+      var ollamaBody = { model: ollamaModel, messages: requestMessages, stream: streamMode };
+      var res;
+      try {
+        res = await fetch(ollamaBase + '/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ollamaBody)
+        });
+      } catch(fetchErr) {
+        console.error('[Ollama] ❌ fetch 失败:', fetchErr.message || fetchErr);
+        /* 如果是 HTTPS → HTTP 被拦截，尝试用 http://localhost 兜底 */
+        if(ollamaBase.startsWith('https:')){
+          console.log('[Ollama] 🔄 尝试 http://localhost:11434 兜底...');
+          try {
+            res = await fetch('http://localhost:11434/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(ollamaBody)
+            });
+          } catch(fetchErr2){
+            console.error('[Ollama] ❌ localhost 兜底也失败:', fetchErr2.message || fetchErr2);
+            throw new Error('OLLAMA_DOWN:' + (fetchErr2.message || fetchErr.message || 'fetch failed').slice(0, 200));
+          }
+        } else {
+          throw new Error('OLLAMA_DOWN:' + (fetchErr.message || 'fetch failed').slice(0, 200));
+        }
+      }
+      console.log('[Ollama] 📡 响应状态:', res.status, 'ok:', res.ok, 'hasBody:', !!res.body);
       if(!res.ok){
         var txt = '';
         try{ txt = await res.text(); }catch(_e){}
+        console.error('[Ollama] ❌ HTTP错误:', res.status, txt.slice(0, 200));
         throw new Error('OLLAMA_DOWN:' + txt.slice(0, 200));
       }
       /* 非流式 */
       if(!streamMode || !res.body){
         var data = await res.json();
         var content = (data.message && data.message.content) ? data.message.content : '';
+        console.log('[Ollama] ✅ 非流式响应, 长度:', content.length);
         if(!content) throw new Error('OLLAMA_EMPTY');
         if(onDelta) onDelta(content, content);
         return { content: content, usage: null };
       }
       /* 流式 —— Ollama 返回换行分隔 JSON，兼容 SSE data: 前缀 */
+      console.log('[Ollama] 🌊 开始流式读取...');
       var reader = res.body.getReader();
       var decoder = new TextDecoder();
       var buffer = '';
@@ -2070,8 +2103,10 @@
       }
       buffer += decoder.decode();
       if(buffer.trim()) parseOllamaLine(buffer);
+      console.log('[Ollama] 🌊 流式结束, 总长度:', full.length, 'streamError:', streamError || '无');
       if(streamError && !full) throw new Error('OLLAMA_DOWN:' + streamError);
       if(full) return { content: full, usage: null };
+      console.error('[Ollama] ❌ 流式无内容返回');
       throw new Error('OLLAMA_EMPTY');
     }
 
