@@ -1617,6 +1617,9 @@
 
     async function callModel(messages, onDelta, preset){
       const cfg = preset || activePreset();
+      if(cfg.providerType === 'ollama'){
+        return await callOllamaModel(messages, {model: cfg.model||'gemma4', stream: true}, cfg, onDelta);
+      }
       if((cfg.providerType||'openai') !== 'openai') throw new Error('Gemini / Anthropic 已保存，但还需要后端转发适配。当前先用 OpenAI 兼容接口。');
       const headers={'Content-Type':'application/json'};
       const body={model:cfg.model||'deepseek-chat',messages:messages.map(m=>({role:m.role,content:m.content})),stream:true,stream_options:{include_usage:true}};
@@ -1804,7 +1807,7 @@
       try{
         var result;
         if(ollamaFallback){
-          result = await tryOllamaFallback(requestMessages);
+          result = await callOllamaModel(requestMessages, body, cfg, onDelta);
         } else {
           result = await callModelWithBody(requestMessages, body, cfg, function(delta){
             if(assistant.thinking){
@@ -1894,6 +1897,11 @@
     }
 
     async function callModelWithBody(requestMessages, body, cfg, onDelta){
+      if(cfg.providerType === 'ollama'){
+        activeAbortController = new AbortController();
+        generatingChatId = activeId;
+        return await callOllamaModel(requestMessages, body, cfg, onDelta);
+      }
       activeAbortController = new AbortController();
       generatingChatId = activeId;
       var hasFiles = _attachments && _attachments.length > 0;
@@ -2002,9 +2010,10 @@
       }
     }
 
-    /* Ollama 本地降级兜底 */
-    async function tryOllamaFallback(messages){
-      var ollamaBody = { model: 'gemma4', messages: messages, stream: false };
+    /* ── 本地 Ollama 模型调用（流式 + 非流式） ── */
+    async function callOllamaModel(requestMessages, body, cfg, onDelta){
+      var streamMode = body.stream !== false;
+      var ollamaBody = { model: cfg.model || body.model || 'gemma4', messages: requestMessages, stream: streamMode };
       var res = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2015,10 +2024,55 @@
         try{ txt = await res.text(); }catch(_e){}
         throw new Error('OLLAMA_DOWN:' + txt.slice(0, 200));
       }
-      var data = await res.json();
-      var content = (data.message && data.message.content) ? data.message.content : '';
-      if(!content) throw new Error('OLLAMA_EMPTY');
-      return { content: content, usage: null };
+      /* 非流式 */
+      if(!streamMode || !res.body){
+        var data = await res.json();
+        var content = (data.message && data.message.content) ? data.message.content : '';
+        if(!content) throw new Error('OLLAMA_EMPTY');
+        if(onDelta) onDelta(content, content);
+        return { content: content, usage: null };
+      }
+      /* 流式 —— Ollama 返回换行分隔 JSON，兼容 SSE data: 前缀 */
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      var full = '';
+      var streamError = '';
+      function parseOllamaLine(line){
+        var trimmed = line.trim();
+        if(!trimmed) return;
+        if(trimmed.indexOf('data:') === 0){
+          var payload = trimmed.replace(/^data:\s*/, '');
+          if(payload === '[DONE]') return;
+          trimmed = payload;
+        }
+        var obj = null;
+        try{ obj = JSON.parse(trimmed); }catch(_e){ return; }
+        var delta = '';
+        if(obj.message && typeof obj.message.content === 'string') delta = obj.message.content;
+        else if(obj.choices && obj.choices[0] && obj.choices[0].delta) delta = obj.choices[0].delta.content || '';
+        if(delta){
+          full += delta;
+          if(onDelta) onDelta(delta, full);
+        }
+        if(obj.error && !full){ streamError = String(obj.error); }
+      }
+      while(true){
+        var read = await reader.read();
+        if(read.done) break;
+        var chunk = decoder.decode(read.value, {stream: true});
+        buffer += chunk;
+        var idx;
+        while((idx = buffer.indexOf('\n')) >= 0){
+          parseOllamaLine(buffer.slice(0, idx));
+          buffer = buffer.slice(idx + 1);
+        }
+      }
+      buffer += decoder.decode();
+      if(buffer.trim()) parseOllamaLine(buffer);
+      if(streamError && !full) throw new Error('OLLAMA_DOWN:' + streamError);
+      if(full) return { content: full, usage: null };
+      throw new Error('OLLAMA_EMPTY');
     }
 
     /* ── 简化记忆提取：分类 → 直接存，不评分、不候选 ── */
