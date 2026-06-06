@@ -246,6 +246,21 @@ window.DAOTIAN_MODEL_UTILS = window.DAOTIAN_MODEL_UTILS || {};
       providers = providersFromPresets(base.modelPresets);
     }
     if(!providers.length && !hasProviderList && !hasPresetList) providers = legacyProviders(base);
+    /* 内置本地 Ollama —— 始终可见 */
+    var OLLAMA_ID = 'p_ollama_builtin';
+    var hasOllama = false;
+    for(var oi = 0; oi < providers.length; oi++){ if(providers[oi].id === OLLAMA_ID){ hasOllama = true; break; } }
+    if(!hasOllama){
+      providers.push(normalizeProvider({
+        id: OLLAMA_ID,
+        providerType: 'ollama',
+        providerName: '本地Ollama',
+        baseUrl: 'http://localhost:11434',
+        apiKey: 'ollama-local',
+        path: '/api/chat',
+        models: ['gemma4']
+      }, providers.length));
+    }
     var shareProviders = [];
     if(hasShareProviderList){
       shareProviders = base.shareModelProviders.map(normalizeProvider).filter(providerHasConfig);
