@@ -1708,8 +1708,8 @@
       var input=$('#input'); var text=(input.value||'').trim();
       var hasAttachments = _attachments && _attachments.length > 0;
       if(!text && !hasAttachments) return;
-      if(!hasUsableModelConfig()){ toast('请先添加模型'); openProviderHub(); return; }
-      var cfg = activePreset();
+      var ollamaFallback = !hasUsableModelConfig();
+      var cfg = ollamaFallback ? (activePreset() || {providerType:'openai',model:'gemma4'}) : activePreset();
 
       /* Image check: non-vision model blocks images */
       if(hasAttachments){
@@ -1802,22 +1802,27 @@
         if(assistant.thinking){ assistant.thinking=false; assistant.content='请求超时，没有收到回复。请检查网络或 API Key 配置。'; assistant.role='error'; sending=false; $('#sendBtn').disabled=false; renderAll(); }
       }, 30000);
       try{
-        var result=await callModelWithBody(requestMessages, body, cfg, function(delta){
-          if(assistant.thinking){
-            assistant.thinking=false;
-            if(assistant.memoryNotice){
-              renderMessages();
-              memoryNoticeTimer = setTimeout(function(){
-                assistant.memoryNotice = false;
+        var result;
+        if(ollamaFallback){
+          result = await tryOllamaFallback(requestMessages);
+        } else {
+          result = await callModelWithBody(requestMessages, body, cfg, function(delta){
+            if(assistant.thinking){
+              assistant.thinking=false;
+              if(assistant.memoryNotice){
                 renderMessages();
-              }, 1800);
+                memoryNoticeTimer = setTimeout(function(){
+                  assistant.memoryNotice = false;
+                  renderMessages();
+                }, 1800);
+              }
             }
-          }
-          assistant.content += delta;
-          c.updatedAt=Date.now();
-          if(!assistant.memoryNotice) renderMessages();
-          if(assistant.scrollFocus) forceScrollToStreamBottom();
-        });
+            assistant.content += delta;
+            c.updatedAt=Date.now();
+            if(!assistant.memoryNotice) renderMessages();
+            if(assistant.scrollFocus) forceScrollToStreamBottom();
+          });
+        }
         clearTimeout(timeoutId);
         clearTimeout(memoryNoticeTimer);
         assistant.memoryNotice = false;
@@ -1833,6 +1838,7 @@
           assistant.role='error';
           var errMsg = err&&err.message?err.message:String(err);
           if(errMsg.indexOf('model_required')>=0) errMsg = '请先选择模型后再发送';
+          else if(errMsg.indexOf('OLLAMA_DOWN')>=0||errMsg.indexOf('OLLAMA_EMPTY')>=0) errMsg = '⚠️ 未检测到云端配置，且本地 Ollama 未启动。请在模型设置中添加模型，或在本机运行 Ollama。';
           else if(errMsg.indexOf('Authentication')>=0||errMsg.indexOf('401')>=0) errMsg = '认证失败，请检查 API Key 或模型提供方配置';
           else if(errMsg.indexOf('rate_limit')>=0||errMsg.indexOf('429')>=0) errMsg = '请求太频繁，请稍后再试';
           else if(errMsg.indexOf('Failed to fetch')>=0||errMsg.indexOf('NetworkError')>=0) errMsg = '网络连接失败，请检查网络后重试';
@@ -1994,6 +2000,25 @@
       }catch(_e2){
         return { content: raw.replace(/^data:\s*/gm,'').replace(/\[DONE\]/g,'').trim(), usage: capturedUsage };
       }
+    }
+
+    /* Ollama 本地降级兜底 */
+    async function tryOllamaFallback(messages){
+      var ollamaBody = { model: 'gemma4', messages: messages, stream: false };
+      var res = await fetch('http://localhost:11434/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ollamaBody)
+      });
+      if(!res.ok){
+        var txt = '';
+        try{ txt = await res.text(); }catch(_e){}
+        throw new Error('OLLAMA_DOWN:' + txt.slice(0, 200));
+      }
+      var data = await res.json();
+      var content = (data.message && data.message.content) ? data.message.content : '';
+      if(!content) throw new Error('OLLAMA_EMPTY');
+      return { content: content, usage: null };
     }
 
     /* ── 简化记忆提取：分类 → 直接存，不评分、不候选 ── */
