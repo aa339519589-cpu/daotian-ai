@@ -1296,9 +1296,8 @@
 
     let enhanceTimer = null;
     function scheduleEnhanceRender(){
-      /* skip during streaming — full render on completion */
-      if(isStreamingNow()) return;
       clearTimeout(enhanceTimer);
+      var streaming = isStreamingNow();
       enhanceTimer = setTimeout(function(){
         const box = document.getElementById('messages');
         if(!box) return;
@@ -1306,12 +1305,15 @@
           if(window.MathJax && window.MathJax.typesetClear){ window.MathJax.typesetClear([box]); }
           if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
         }catch(_e){}
-        try{
-          if(window.mermaid && window.mermaid.run){
-            var ms = box.querySelectorAll('.mermaid');
-            if(ms.length) window.mermaid.run({nodes: ms}).catch(function(){});
-          }
-        }catch(_e){}
+        /* Mermaid only after streaming ends — incomplete diagrams render as broken */
+        if(!streaming){
+          try{
+            if(window.mermaid && window.mermaid.run){
+              var ms = box.querySelectorAll('.mermaid');
+              if(ms.length) window.mermaid.run({nodes: ms}).catch(function(){});
+            }
+          }catch(_e){}
+        }
       }, 220);
     }
 
@@ -1453,10 +1455,8 @@
         var isRich = hasRichLayoutContent(m.content);
         var richClass = isRich ? ' rich-wide' : '';
         var scrollAttr2 = m.scrollFocus ? ' data-scroll-focus="1"' : '';
-        /* During streaming, skip markdown pipeline on the live message to avoid mangling incomplete formulas */
-        var streamingLive = isStreamingNow() && m.scrollFocus;
-        var renderedContent = streamingLive ? escapeHTML(m.content).replace(/\n/g, '<br>') : renderAssistantContent(m.content);
-        var streamClass = streamingLive ? ' streaming-live' : '';
+        var renderedContent = renderAssistantContent(m.content);
+        var streamClass = (isStreamingNow() && m.scrollFocus) ? ' streaming-live' : '';
         return '<div class="message assistant'+richClass+streamClass+'"'+scrollAttr2+'><div class="assistant-content"><div class="assistant-render">'+renderedContent+'</div>'+renderTokenUsage(m)+ttsBtn+'</div></div>';
       }).join('');
       box.classList.toggle('generating-space', !!hasScrollFocus);

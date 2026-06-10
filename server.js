@@ -883,10 +883,18 @@ function normalizeAccessPackage(pkg){
   // Migrate old single-provider packages to items format
   let items = Array.isArray(pkg.items) ? pkg.items : [];
   if(!items.length && (pkg.providerId || models.length)){
-    items = [{ providerId: String(pkg.providerId||"").trim(), models: Array.from(new Set(models)) }];
+    items = [{
+      providerId: String(pkg.providerId||"").trim(),
+      models: Array.from(new Set(models)),
+      baseUrl: String(pkg.baseUrl||"").trim(),
+      apiKey: String(pkg.apiKey||"").trim(),
+      path: String(pkg.path||"/v1/chat/completions").trim() || "/v1/chat/completions",
+      providerName: String(pkg.providerName||"").trim()
+    }];
   }
   // Deduplicate models within each item
   items = items.map(item=>({
+    ...item,
     providerId: String(item.providerId||"").trim(),
     models: Array.from(new Set((Array.isArray(item.models)?item.models:[]).map(v=>String(v||"").trim()).filter(Boolean)))
   })).filter(item=>item.providerId && item.models.length);
@@ -1042,7 +1050,20 @@ async function resolveUpstreamFromRequest(req, body){
         }
       }
     }
-    // Fallback: look up provider from share providers
+    // Fallback: look up provider from the package creator's share providers
+    if(!upstream){
+      const store = await readAuthStore();
+      const creatorData = store.userData[pkg.providerUserId] || {};
+      const creatorsProviders = parseShareProviders(creatorData);
+      for(const item of pkg.items){
+        const provider = creatorsProviders.find(pr=>pr.id === item.providerId);
+        if(provider && (item.models.includes(requestedModel) || !requestedModel)){
+          upstream = { id: provider.id, name: provider.providerName, baseUrl: provider.baseUrl, apiKey: provider.apiKey, requestPath: provider.path || "/v1/chat/completions" };
+          break;
+        }
+      }
+    }
+    // Last resort: look up from the claiming user's share providers
     if(!upstream){
       const auth2 = await authFromRequest(req);
       if(auth2){
@@ -1050,7 +1071,7 @@ async function resolveUpstreamFromRequest(req, body){
         const shareProviders = parseShareProviders(userData2);
         for(const item of pkg.items){
           const provider = shareProviders.find(pr=>pr.id === item.providerId);
-          if(provider && item.models.includes(requestedModel)){
+          if(provider && (item.models.includes(requestedModel) || !requestedModel)){
             upstream = { id: provider.id, name: provider.providerName, baseUrl: provider.baseUrl, apiKey: provider.apiKey, requestPath: provider.path || "/v1/chat/completions" };
             break;
           }
@@ -1066,6 +1087,19 @@ async function resolveUpstreamFromRequest(req, body){
         if(item.baseUrl && item.apiKey){
           upstream = { id: item.providerId, name: item.providerName || item.providerId, baseUrl: item.baseUrl, apiKey: item.apiKey, requestPath: item.path || "/v1/chat/completions" };
           break;
+        }
+      }
+      // Fallback: look up from creator's share providers
+      if(!upstream){
+        const store2 = await readAuthStore();
+        const creatorData2 = store2.userData[pkg.providerUserId] || {};
+        const creatorsProviders2 = parseShareProviders(creatorData2);
+        for(const item of pkg.items){
+          const provider = creatorsProviders2.find(pr=>pr.id === item.providerId);
+          if(provider){
+            upstream = { id: provider.id, name: provider.providerName, baseUrl: provider.baseUrl, apiKey: provider.apiKey, requestPath: provider.path || "/v1/chat/completions" };
+            break;
+          }
         }
       }
     }
