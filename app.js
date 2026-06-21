@@ -1294,26 +1294,95 @@
       }
     });
 
+    /* ──────────────────────────────────────────────────────────────
+       数学公式「流式实时渲染」(live streaming math render)
+       关键点：流式中用「同步」typeset，且与 innerHTML 写入处于同一个任务里，
+       浏览器在重绘前 $...$ 源码就已被替换成公式 —— 所以不会出现源码乱码闪烁。
+       同时只增量更新「正在输出」的那条消息，不再每个 chunk 重建整个会话，
+       既保持流畅，又能一边输出一边显示渲染后的公式。
+       ────────────────────────────────────────────────────────────── */
+    function mathjaxReady(){
+      return !!(window.MathJax && typeof window.MathJax.typeset === 'function');
+    }
+    /* 同步、按元素 typeset —— 与 innerHTML 写入同一任务 → 重绘前完成 → 无闪烁 */
+    function liveTypeset(el){
+      if(!el || !window.MathJax) return;
+      try{
+        if(mathjaxReady()){
+          window.MathJax.typeset([el]);
+        }else if(typeof window.MathJax.typesetPromise === 'function'){
+          /* MathJax 尚未加载完成时退化为异步（仅首条消息可能短暂出现，加载后即恢复同步）*/
+          window.MathJax.typesetPromise([el]).catch(function(){});
+        }
+      }catch(_e){}
+    }
+    /* 只就地更新正在流式输出的那条消息；处理成功返回 true，否则让调用方走整体渲染 */
+    function inlineStreamingUpdate(){
+      if(!isStreamingNow()) return false;
+      var c = activeChat(); if(!c) return false;
+      var msgs = Array.isArray(c.messages) ? c.messages : [];
+      var last = msgs[msgs.length - 1];
+      if(!last || last.role !== 'assistant' || last.thinking || last.memoryNotice) return false;
+      var box = $('#messages'); if(!box) return false;
+      /* DOM 必须已和数据一一对应（由之前的整体渲染建立），否则回退整体渲染 */
+      if(box.querySelectorAll('.message').length !== msgs.length) return false;
+      var el = box.querySelector('.message.assistant.streaming-live .assistant-render');
+      if(!el) return false;
+      el.innerHTML = renderAssistantContent(last.content);
+      liveTypeset(el);                 /* 同一任务内同步渲染公式 → 完成的公式即时显示、无闪烁 */
+      return true;
+    }
+    var _streamRenderRaf = 0;
+    var _streamRenderPending = false;
+    /* 把同一帧内的多个 chunk 合并成一次渲染（≤60fps），保证流畅又能实时出公式 */
+    function requestStreamingRender(){
+      _streamRenderPending = true;
+      if(_streamRenderRaf) return;
+      _streamRenderRaf = requestAnimationFrame(function(){
+        _streamRenderRaf = 0;
+        if(!_streamRenderPending) return;
+        _streamRenderPending = false;
+        if(!isStreamingNow()) return;   /* 已结束 → 交给最终的整体渲染 */
+        if(!inlineStreamingUpdate()) renderMessages();
+      });
+    }
+
     let enhanceTimer = null;
+    var _justStreamed = false;
     function scheduleEnhanceRender(){
+      var box = document.getElementById('messages');
+      if(isStreamingNow()){
+        /* 流式中：同步渲染当前消息公式（实时、无闪烁），跳过整页防抖渲染 */
+        _justStreamed = true;
+        var sEl = box && box.querySelector('.message.assistant.streaming-live .assistant-render');
+        if(sEl) liveTypeset(sEl);
+        return;
+      }
+      if(_justStreamed){
+        /* 流式刚结束：最终整体渲染会把消息重置回源码，这里在同一任务内同步渲染
+           最后一条，避免「刚渲染好的公式闪回源码」；其余消息仍交给下面 220ms 异步补齐 */
+        _justStreamed = false;
+        if(box){
+          var rendered = box.querySelectorAll('.message.assistant .assistant-render');
+          var lastEl = rendered[rendered.length - 1];
+          if(lastEl) liveTypeset(lastEl);
+        }
+      }
       clearTimeout(enhanceTimer);
-      var streaming = isStreamingNow();
       enhanceTimer = setTimeout(function(){
-        const box = document.getElementById('messages');
-        if(!box) return;
+        const box2 = document.getElementById('messages');
+        if(!box2) return;
         try{
-          if(window.MathJax && window.MathJax.typesetClear){ window.MathJax.typesetClear([box]); }
-          if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
+          if(window.MathJax && window.MathJax.typesetClear){ window.MathJax.typesetClear([box2]); }
+          if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box2]).catch(function(){}); }
         }catch(_e){}
         /* Mermaid only after streaming ends — incomplete diagrams render as broken */
-        if(!streaming){
-          try{
-            if(window.mermaid && window.mermaid.run){
-              var ms = box.querySelectorAll('.mermaid');
-              if(ms.length) window.mermaid.run({nodes: ms}).catch(function(){});
-            }
-          }catch(_e){}
-        }
+        try{
+          if(window.mermaid && window.mermaid.run){
+            var ms = box2.querySelectorAll('.mermaid');
+            if(ms.length) window.mermaid.run({nodes: ms}).catch(function(){});
+          }
+        }catch(_e){}
       }, 220);
     }
 
@@ -1811,6 +1880,7 @@
           result = await callOllamaModel(requestMessages, body, cfg, onDelta);
         } else {
           result = await callModelWithBody(requestMessages, body, cfg, function(delta){
+            var wasThinking = assistant.thinking;
             if(assistant.thinking){
               assistant.thinking=false;
               if(assistant.memoryNotice){
@@ -1823,7 +1893,10 @@
             }
             assistant.content += delta;
             c.updatedAt=Date.now();
-            if(!assistant.memoryNotice) renderMessages();
+            if(!assistant.memoryNotice){
+              if(wasThinking) renderMessages();   /* 首段内容：整体渲染建立流式消息节点 */
+              else requestStreamingRender();        /* 后续 chunk：增量实时渲染（含公式同步 typeset）*/
+            }
             if(assistant.scrollFocus) forceScrollToStreamBottom();
           });
         }
