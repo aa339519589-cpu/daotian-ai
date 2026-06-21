@@ -854,10 +854,10 @@
           if(lang === 'html' || lang === 'svg'){
             var srcdoc;
             if(lang === 'svg'){
-              srcdoc = '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;display:grid;place-items:center;min-height:100vh">'+code+'</body>';
+              srcdoc = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;display:grid;place-items:center;min-height:100vh">'+code+'</body></html>';
             }else{
-              /* HTML: 包裹完整文档结构，这样 iframe srcdoc 可以正确渲染 */
-              srcdoc = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><html><head><style>body{font-family:inherit;margin:0;padding:8px;line-height:1.5}</style></head><body>'+code+'</body></html>';
+              /* HTML: 正确的完整文档结构 —— <!DOCTYPE> → <html> → <head><meta/><style> → <body> */
+              srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:inherit;margin:0;padding:8px;line-height:1.5}</style></head><body>'+code+'</body></html>';
             }
             return '<iframe class="html-preview-frame artifact-preview-frame" sandbox="allow-scripts" srcdoc="'+escapeAttr(srcdoc)+'"></iframe>'+
               '<details><summary>源码</summary><pre><code class="language-'+escapeAttr(lang)+'">'+escapeHTML(code)+'</code></pre></details>';
