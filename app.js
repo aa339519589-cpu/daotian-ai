@@ -852,9 +852,13 @@
           var code = token.content;
           /* HTML/SVG 代码块：输出可预览 iframe + 源码，交给 wrapArtifactCards 生成「预览/代码」标签切换 */
           if(lang === 'html' || lang === 'svg'){
-            var srcdoc = lang === 'svg'
-              ? '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;display:grid;place-items:center;min-height:100vh">'+code+'</body>'
-              : code;
+            var srcdoc;
+            if(lang === 'svg'){
+              srcdoc = '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;display:grid;place-items:center;min-height:100vh">'+code+'</body>';
+            }else{
+              /* HTML: 包裹完整文档结构，这样 iframe srcdoc 可以正确渲染 */
+              srcdoc = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><html><head><style>body{font-family:inherit;margin:0;padding:8px;line-height:1.5}</style></head><body>'+code+'</body></html>';
+            }
             return '<iframe class="html-preview-frame artifact-preview-frame" sandbox="allow-scripts" srcdoc="'+escapeAttr(srcdoc)+'"></iframe>'+
               '<details><summary>源码</summary><pre><code class="language-'+escapeAttr(lang)+'">'+escapeHTML(code)+'</code></pre></details>';
           }
@@ -1363,31 +1367,24 @@
     }
 
     let enhanceTimer = null;
-    var _justStreamed = false;
     function scheduleEnhanceRender(){
-      var box = document.getElementById('messages');
-      if(isStreamingNow()){
-        /* 流式中的整体渲染只在首段内容/记忆提示等少数时刻发生（逐字 chunk 走 inline
-           路径不经过这里）。同步 typeset 整页，让历史消息也保持已渲染、滚动时不回退源码；
-           与 innerHTML 写入同一任务 → 重绘前完成 → 无闪烁。 */
-        _justStreamed = true;
-        if(box) liveTypeset(box);
-        return;
-      }
-      if(_justStreamed){
-        /* 流式刚结束：整体渲染把消息重置回源码，这里同一任务内同步 typeset 整页，
-           避免「刚渲染好的公式闪回源码」。 */
-        _justStreamed = false;
-        if(box) liveTypeset(box);
-      }
+      var streaming = isStreamingNow();
+      /* 流式中：逐字 chunk 已由 inlineStreamingUpdate 处理（同步 typeset 当前消息），
+         这里不做任何额外操作，避免阻塞主线程影响按钮动画等交互。 */
+      if(streaming) return;
+      /* 流式结束后才走这里：同步 typeset 整页，避免「刚渲染好的公式闪回源码」，
+         然后继续原有 220ms 防抖补齐其他元素（mermaid 等）。 */
       clearTimeout(enhanceTimer);
+      const box = document.getElementById('messages');
+      if(box){
+        try{
+          if(window.MathJax && window.MathJax.typesetClear){ window.MathJax.typesetClear([box]); }
+          if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
+        }catch(_e){}
+      }
       enhanceTimer = setTimeout(function(){
         const box2 = document.getElementById('messages');
         if(!box2) return;
-        try{
-          if(window.MathJax && window.MathJax.typesetClear){ window.MathJax.typesetClear([box2]); }
-          if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box2]).catch(function(){}); }
-        }catch(_e){}
         /* Mermaid only after streaming ends — incomplete diagrams render as broken */
         try{
           if(window.mermaid && window.mermaid.run){
