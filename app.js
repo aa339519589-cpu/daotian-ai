@@ -1024,14 +1024,21 @@
           '</div>';
         wrap.innerHTML = head;
         var body = document.createElement('div'); body.className = 'artifact-body';
-        hp.parentNode.insertBefore(wrap, hp);
         var previewDiv2 = document.createElement('div'); previewDiv2.style.display = 'none';
-        previewDiv2.appendChild(hp);                       /* 移动原 iframe（不复制），避免重复加载 */
+        /* 重新创建 iframe（而不是移动原始）以确保 srcdoc 正确加载 */
+        var srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:inherit;margin:0;padding:8px;line-height:1.5}</style></head><body>'+rawSrc+'</body></html>';
+        var newIframe = document.createElement('iframe');
+        newIframe.className = 'html-preview-frame artifact-preview-frame';
+        newIframe.setAttribute('sandbox', 'allow-scripts');
+        newIframe.setAttribute('srcdoc', srcdoc);
+        previewDiv2.appendChild(newIframe);
         body.appendChild(previewDiv2);
         var codeDiv2 = document.createElement('div');
         codeDiv2.innerHTML = '<pre class="code-block"><code>'+escapeHTML(rawSrc)+'</code></pre>';
         body.appendChild(codeDiv2);
+        hp.parentNode.insertBefore(wrap, hp);
         wrap.appendChild(body);
+        hp.parentNode.removeChild(hp);  /* 移除原始 iframe */
       }
     }
 
