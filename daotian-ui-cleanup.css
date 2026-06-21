@@ -16,3 +16,104 @@ textarea#input::placeholder,
   color:transparent!important;
   -webkit-text-fill-color:transparent!important;
 }
+
+/* v616: sidebar and home screen subtraction */
+.sidebar-top .brand,
+.sidebar .brand{
+  display:none!important;
+}
+
+.sidebar-top{
+  height:40px!important;
+  min-height:40px!important;
+  padding:4px 12px 0!important;
+  gap:4px!important;
+  align-items:center!important;
+}
+
+.sidebar-top .icon-btn{
+  width:28px!important;
+  height:28px!important;
+  min-width:28px!important;
+  min-height:28px!important;
+  font-size:13px!important;
+}
+
+.new-chat-btn{
+  margin:2px 12px 4px!important;
+  height:36px!important;
+  min-height:36px!important;
+  padding:7px 10px!important;
+}
+
+.chat-list{
+  padding-top:0!important;
+}
+
+.sidebar-bottom{
+  padding-top:4px!important;
+}
+
+.home-menu-button{
+  width:22px!important;
+  height:22px!important;
+  min-width:22px!important;
+  min-height:22px!important;
+  gap:2px!important;
+}
+
+.home-menu-button span{
+  width:12px!important;
+  height:1.5px!important;
+}
+
+.home-menu-button span:nth-child(2){
+  width:8px!important;
+}
+
+.floating-menu{
+  width:22px!important;
+  height:22px!important;
+  font-size:11px!important;
+}
+
+.empty .brand-main-row,
+.empty .empty-logo,
+.empty .brand-name,
+.empty .empty-prompt,
+.empty-center{
+  display:none!important;
+}
+
+.empty{
+  pointer-events:none!important;
+}
+
+@media(max-width:900px){
+  .sidebar-top{
+    height:calc(40px + env(safe-area-inset-top))!important;
+    min-height:calc(40px + env(safe-area-inset-top))!important;
+    padding:env(safe-area-inset-top) 12px 0!important;
+  }
+
+  .sidebar-top .icon-btn{
+    width:30px!important;
+    height:30px!important;
+    min-width:30px!important;
+    min-height:30px!important;
+  }
+
+  .new-chat-btn{
+    margin:2px 12px 4px!important;
+    height:36px!important;
+    min-height:36px!important;
+  }
+
+  .chat-list{
+    padding:0 10px 8px!important;
+  }
+
+  .sidebar-bottom{
+    padding:6px 12px calc(8px + env(safe-area-inset-bottom))!important;
+  }
+}
