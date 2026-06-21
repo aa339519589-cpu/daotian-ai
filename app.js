@@ -1360,23 +1360,24 @@
     let enhanceTimer = null;
     function scheduleEnhanceRender(){
       var streaming = isStreamingNow();
-      /* 流式中：逐字 chunk 已由 inlineStreamingUpdate 处理（同步 typeset 当前消息），
-         这里不做任何额外操作，避免阻塞主线程影响按钮动画等交互。 */
       if(streaming) return;
-      /* 流式结束后才走这里：同步 typeset 整页，避免「刚渲染好的公式闪回源码」，
-         然后继续原有 220ms 防抖补齐其他元素（mermaid 等）。 */
+      /* 流式结束或其他非流式场景：立即同步 typeset 整页公式，
+         避免「HTML 重新生成 → 公式回退源码 → 防抖 typeset」的闪烁，
+         确保公式永久保持渲染状态。 */
       clearTimeout(enhanceTimer);
       const box = document.getElementById('messages');
       if(box){
         try{
+          /* 清旧 + 同步 typeset 新内容，同一任务完成，无闪烁 */
           if(window.MathJax && window.MathJax.typesetClear){ window.MathJax.typesetClear([box]); }
-          if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
+          if(window.MathJax && typeof window.MathJax.typeset === 'function'){ window.MathJax.typeset([box]); }
+          else if(window.MathJax && window.MathJax.typesetPromise){ window.MathJax.typesetPromise([box]).catch(function(){}); }
         }catch(_e){}
       }
+      /* 220ms 后补齐 Mermaid（只在流式结束后） */
       enhanceTimer = setTimeout(function(){
         const box2 = document.getElementById('messages');
         if(!box2) return;
-        /* Mermaid only after streaming ends — incomplete diagrams render as broken */
         try{
           if(window.mermaid && window.mermaid.run){
             var ms = box2.querySelectorAll('.mermaid');
