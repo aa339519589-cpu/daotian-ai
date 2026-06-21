@@ -2,6 +2,8 @@
   'use strict';
 
   var cleanupRaf = 0;
+  var mathJaxGuardTimer = 0;
+  var mathJaxGuardTries = 0;
 
   function pinnedMeta(){
     try{
@@ -75,11 +77,82 @@
     });
   }
 
+  function ensureMathStreamStyle(){
+    if(document.getElementById('daotianMathStreamGuardStyle')) return;
+    var style = document.createElement('style');
+    style.id = 'daotianMathStreamGuardStyle';
+    style.textContent = '\
+.message.assistant.streaming-live.math-streaming-pending .assistant-render{position:relative!important;min-height:1.65em!important;color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;}\
+.message.assistant.streaming-live.math-streaming-pending .assistant-render *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;}\
+.message.assistant.streaming-live.math-streaming-pending .assistant-render::after{content:"公式生成中…";position:absolute;left:0;top:0;color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important;opacity:.72;font:inherit;line-height:1.65;pointer-events:none;}\
+';
+    document.head.appendChild(style);
+  }
+
+  function hasActiveStreaming(){
+    return !!document.querySelector('.message.assistant.streaming-live,[data-scroll-focus="1"]');
+  }
+
+  function hasMathSyntax(text){
+    var s = String(text || '');
+    return /\\\(|\\\[|\\frac|\\sqrt|\\sum|\\int|\\lim|\\begin\{|\\end\{|\$\$|(?:^|[^$])\$[^$\n]/.test(s);
+  }
+
+  function markStreamingMath(){
+    ensureMathStreamStyle();
+    document.querySelectorAll('.message.assistant').forEach(function(msg){
+      var live = msg.classList.contains('streaming-live') || msg.hasAttribute('data-scroll-focus');
+      var render = msg.querySelector('.assistant-render');
+      var text = render ? (render.textContent || '') : '';
+      var pending = !!(live && render && hasMathSyntax(text));
+      msg.classList.toggle('math-streaming-pending', pending);
+      if(render && pending){ render.setAttribute('aria-busy', 'true'); }
+      else if(render){ render.removeAttribute('aria-busy'); }
+    });
+  }
+
+  function installMathJaxStreamGuard(){
+    var mj = window.MathJax;
+    if(!mj) return false;
+    var hasPromise = typeof mj.typesetPromise === 'function';
+    var hasClear = typeof mj.typesetClear === 'function';
+    if(!hasPromise && !hasClear) return false;
+    if(mj.__daotianStreamGuardInstalled) return true;
+
+    var originalTypesetPromise = mj.typesetPromise;
+    var originalTypesetClear = mj.typesetClear;
+
+    if(hasPromise){
+      mj.typesetPromise = function(){
+        if(hasActiveStreaming()) return Promise.resolve();
+        return originalTypesetPromise.apply(mj, arguments);
+      };
+    }
+    if(hasClear){
+      mj.typesetClear = function(){
+        if(hasActiveStreaming()) return;
+        return originalTypesetClear.apply(mj, arguments);
+      };
+    }
+    mj.__daotianStreamGuardInstalled = true;
+    return true;
+  }
+
+  function scheduleMathJaxGuard(){
+    if(installMathJaxStreamGuard()) return;
+    if(mathJaxGuardTries > 80) return;
+    clearTimeout(mathJaxGuardTimer);
+    mathJaxGuardTries++;
+    mathJaxGuardTimer = setTimeout(scheduleMathJaxGuard, 250);
+  }
+
   function cleanup(){
     fixPinnedDots();
     removeSidebarBranding();
     removeHomeBranding();
     fixModelEmptyText();
+    markStreamingMath();
+    scheduleMathJaxGuard();
   }
 
   function scheduleCleanup(){
@@ -97,5 +170,5 @@
   }
 
   var observer = new MutationObserver(scheduleCleanup);
-  observer.observe(document.documentElement, {childList:true, subtree:true, characterData:true});
+  observer.observe(document.documentElement, {childList:true, subtree:true, characterData:true, attributes:true, attributeFilter:['class','data-scroll-focus']});
 })();
