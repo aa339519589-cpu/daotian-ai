@@ -850,6 +850,14 @@
           var token = tokens[idx];
           var lang = (token.info || '').trim().toLowerCase();
           var code = token.content;
+          /* HTML/SVG 代码块：输出可预览 iframe + 源码，交给 wrapArtifactCards 生成「预览/代码」标签切换 */
+          if(lang === 'html' || lang === 'svg'){
+            var srcdoc = lang === 'svg'
+              ? '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;display:grid;place-items:center;min-height:100vh">'+code+'</body>'
+              : code;
+            return '<iframe class="html-preview-frame artifact-preview-frame" sandbox="allow-scripts" srcdoc="'+escapeAttr(srcdoc)+'"></iframe>'+
+              '<details><summary>源码</summary><pre><code class="language-'+escapeAttr(lang)+'">'+escapeHTML(code)+'</code></pre></details>';
+          }
           var safe = escapeHTML(code);
           var langLabel = lang || 'text';
           if(!lang) langLabel = 'text';
@@ -916,7 +924,9 @@
       for(var ti=0;ti<tables.length;ti++){
         var tbl = tables[ti];
         if(tbl.closest('.artifact-card')) continue;
-        var wrap = document.createElement('div'); wrap.className = 'artifact-card';
+        /* 表格内联进对话流：用 artifact-table 变体去掉卡片外观与独立滚动容器，
+           仅保留横向滚动；复用已有的 .markdown-table-wrap，避免再套一层 overflow 容器 */
+        var wrap = document.createElement('div'); wrap.className = 'artifact-card artifact-table';
         var head = '<div class="artifact-head"><span class="artifact-title">表格</span>'+
           '<div class="artifact-actions">'+
           '<button data-artifact-action="copy">复制</button>'+
@@ -924,11 +934,12 @@
           '<button data-artifact-action="fullscreen">全屏</button>'+
           '</div></div>';
         var body = document.createElement('div'); body.className = 'artifact-body';
-        var tblWrap = document.createElement('div'); tblWrap.className = 'markdown-table-wrap';
-        tbl.parentNode.insertBefore(wrap, tbl);
+        var tblWrap = (tbl.parentNode && tbl.parentNode.classList && tbl.parentNode.classList.contains('markdown-table-wrap')) ? tbl.parentNode : null;
+        var anchor = tblWrap || tbl;
+        anchor.parentNode.insertBefore(wrap, anchor);
         wrap.innerHTML = head;
         wrap.appendChild(body);
-        tblWrap.appendChild(tbl);
+        if(!tblWrap){ tblWrap = document.createElement('div'); tblWrap.className = 'markdown-table-wrap'; tblWrap.appendChild(tbl); }
         body.appendChild(tblWrap);
         wrap.setAttribute('data-artifact-id', 'tbl_'+Date.now()+'_'+ti);
       }
@@ -996,22 +1007,26 @@
         }
         var wrap = document.createElement('div'); wrap.className = 'artifact-card';
         wrap.setAttribute('data-artifact-id', 'html_'+Date.now()+'_'+hi);
-        var head = '<div class="artifact-head"><span class="artifact-title">HTML/SVG 预览</span>'+
+        /* 默认显示「代码」，点「预览」再把 HTML 渲染进 sandbox iframe；保留 复制/下载/全屏 */
+        var head = '<div class="artifact-head"><span class="artifact-title">HTML 预览</span>'+
           '<div class="artifact-actions">'+
+          '<button data-artifact-action="copy" data-code="'+escapeAttr(rawSrc)+'">复制</button>'+
+          '<button data-artifact-action="download" data-ext=".html" data-code="'+escapeAttr(rawSrc)+'">下载</button>'+
           '<button data-artifact-action="fullscreen">全屏</button>'+
           '</div></div>'+
           '<div class="artifact-tabs">'+
-          '<button class="active" data-artifact-tab="preview" data-target="html">预览</button>'+
-          '<button data-artifact-tab="code" data-target="html">代码</button>'+
+          '<button data-artifact-tab="preview" data-target="html">预览</button>'+
+          '<button class="active" data-artifact-tab="code" data-target="html">代码</button>'+
           '</div>';
         wrap.innerHTML = head;
         var body = document.createElement('div'); body.className = 'artifact-body';
-        var previewDiv2 = document.createElement('div'); previewDiv2.appendChild(hp.cloneNode(true));
-        body.appendChild(previewDiv2);
-        var codeDiv2 = document.createElement('div'); codeDiv2.style.display = 'none';
-        codeDiv2.innerHTML = '<pre><code>'+escapeHTML(rawSrc)+'</code></pre>';
-        body.appendChild(codeDiv2);
         hp.parentNode.insertBefore(wrap, hp);
+        var previewDiv2 = document.createElement('div'); previewDiv2.style.display = 'none';
+        previewDiv2.appendChild(hp);                       /* 移动原 iframe（不复制），避免重复加载 */
+        body.appendChild(previewDiv2);
+        var codeDiv2 = document.createElement('div');
+        codeDiv2.innerHTML = '<pre class="code-block"><code>'+escapeHTML(rawSrc)+'</code></pre>';
+        body.appendChild(codeDiv2);
         wrap.appendChild(body);
       }
     }
@@ -1352,21 +1367,18 @@
     function scheduleEnhanceRender(){
       var box = document.getElementById('messages');
       if(isStreamingNow()){
-        /* 流式中：同步渲染当前消息公式（实时、无闪烁），跳过整页防抖渲染 */
+        /* 流式中的整体渲染只在首段内容/记忆提示等少数时刻发生（逐字 chunk 走 inline
+           路径不经过这里）。同步 typeset 整页，让历史消息也保持已渲染、滚动时不回退源码；
+           与 innerHTML 写入同一任务 → 重绘前完成 → 无闪烁。 */
         _justStreamed = true;
-        var sEl = box && box.querySelector('.message.assistant.streaming-live .assistant-render');
-        if(sEl) liveTypeset(sEl);
+        if(box) liveTypeset(box);
         return;
       }
       if(_justStreamed){
-        /* 流式刚结束：最终整体渲染会把消息重置回源码，这里在同一任务内同步渲染
-           最后一条，避免「刚渲染好的公式闪回源码」；其余消息仍交给下面 220ms 异步补齐 */
+        /* 流式刚结束：整体渲染把消息重置回源码，这里同一任务内同步 typeset 整页，
+           避免「刚渲染好的公式闪回源码」。 */
         _justStreamed = false;
-        if(box){
-          var rendered = box.querySelectorAll('.message.assistant .assistant-render');
-          var lastEl = rendered[rendered.length - 1];
-          if(lastEl) liveTypeset(lastEl);
-        }
+        if(box) liveTypeset(box);
       }
       clearTimeout(enhanceTimer);
       enhanceTimer = setTimeout(function(){

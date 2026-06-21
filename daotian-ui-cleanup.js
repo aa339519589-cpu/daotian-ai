@@ -98,16 +98,16 @@
     return /\\\(|\\\[|\\frac|\\sqrt|\\sum|\\int|\\lim|\\begin\{|\\end\{|\$\$|(?:^|[^$])\$[^$\n]/.test(s);
   }
 
-  function markStreamingMath(){
-    ensureMathStreamStyle();
-    document.querySelectorAll('.message.assistant').forEach(function(msg){
-      var live = msg.classList.contains('streaming-live') || msg.hasAttribute('data-scroll-focus');
-      var render = msg.querySelector('.assistant-render');
-      var text = render ? (render.textContent || '') : '';
-      var pending = !!(live && render && hasMathSyntax(text));
-      msg.classList.toggle('math-streaming-pending', pending);
-      if(render && pending){ render.setAttribute('aria-busy', 'true'); }
-      else if(render){ render.removeAttribute('aria-busy'); }
+  /* 旧的「公式生成中」隐藏守卫已停用：数学公式现在在流式输出中实时渲染，
+     不再需要把内容设为透明并显示占位。这里只负责清除可能残留的守卫痕迹。 */
+  function clearMathStreamGuard(){
+    var style = document.getElementById('daotianMathStreamGuardStyle');
+    if(style && style.parentNode) style.parentNode.removeChild(style);
+    document.querySelectorAll('.math-streaming-pending').forEach(function(el){
+      el.classList.remove('math-streaming-pending');
+    });
+    document.querySelectorAll('.assistant-render[aria-busy="true"]').forEach(function(el){
+      el.removeAttribute('aria-busy');
     });
   }
 
@@ -151,8 +151,8 @@
     removeSidebarBranding();
     removeHomeBranding();
     fixModelEmptyText();
-    markStreamingMath();
-    scheduleMathJaxGuard();
+    /* 不再隐藏流式公式、不再拦截 MathJax —— 公式实时渲染由 app.js 负责 */
+    clearMathStreamGuard();
   }
 
   function scheduleCleanup(){

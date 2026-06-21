@@ -510,6 +510,11 @@ body.modal-open .chat-topbar,body.modal-open .model-popover{opacity:0;visibility
 .assistant-render table{border-collapse:collapse;width:max-content;min-width:100%;display:table;margin:.6em 0}
 .assistant-render th,.assistant-render td{border:1px solid rgba(127,127,127,.18);padding:7px 10px;white-space:nowrap;text-align:left;vertical-align:top;font-size:14px}
 .assistant-render th{font-weight:640;background:rgba(127,127,127,.06)}
+/* 表格内联进对话流：去掉卡片外观与独立纵向滚动容器，仅保留宽表格的横向滚动 */
+.assistant-render .artifact-card.artifact-table{margin:.6em 0!important;border:0!important;background:transparent!important;border-radius:0!important;overflow:visible!important}
+.assistant-render .artifact-card.artifact-table .artifact-head{min-height:0!important;padding:0 0 4px!important;border-bottom:0!important;background:transparent!important}
+.assistant-render .artifact-card.artifact-table .artifact-body{padding:0!important;overflow:visible!important;background:transparent!important}
+.assistant-render .artifact-card.artifact-table .markdown-table-wrap{overflow-x:auto!important;overflow-y:visible!important;max-height:none!important}
 [data-theme="dark"] .assistant-render th{background:rgba(255,255,255,.04)}
 .assistant-render blockquote{margin:.6em 0;padding:.3em .85em;border-left:3px solid rgba(127,127,127,.28);color:var(--muted)}
 .assistant-render hr{margin:1em 0;border:0;border-top:1px solid rgba(127,127,127,.12)}
