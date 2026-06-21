@@ -1,6 +1,8 @@
 (function(){
   'use strict';
 
+  var cleanupRaf = 0;
+
   function pinnedMeta(){
     try{
       var raw = localStorage.getItem('daotian.sidebar.meta.v1');
@@ -17,8 +19,23 @@
     });
   }
 
+  function removeNoisyBranding(){
+    document.querySelectorAll('.sidebar .brand,.empty-logo,.brand-name,.empty-prompt,.brand-main-row').forEach(function(el){
+      if(el && el.parentNode) el.setAttribute('aria-hidden', 'true');
+    });
+  }
+
   function cleanup(){
     fixPinnedDots();
+    removeNoisyBranding();
+  }
+
+  function scheduleCleanup(){
+    if(cleanupRaf) return;
+    cleanupRaf = requestAnimationFrame(function(){
+      cleanupRaf = 0;
+      cleanup();
+    });
   }
 
   if(document.readyState === 'loading'){
@@ -26,4 +43,7 @@
   }else{
     cleanup();
   }
+
+  var observer = new MutationObserver(scheduleCleanup);
+  observer.observe(document.documentElement, {childList:true, subtree:true});
 })();
