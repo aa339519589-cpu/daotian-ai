@@ -54,7 +54,6 @@ window.DAOTIAN_MODEL_UTILS = window.DAOTIAN_MODEL_UTILS || {};
     );
   }
 
-  /* 合并重复 provider：同 name+baseUrl → 合并 models 去重 */
   function normalizeProviders(providers){
     if(!Array.isArray(providers)) return [];
     var merged = []; var seen = {};
@@ -240,27 +239,14 @@ window.DAOTIAN_MODEL_UTILS = window.DAOTIAN_MODEL_UTILS || {};
     var providers = [];
     if(hasProviderList){
       providers = base.modelProviders.map(normalizeProvider).filter(providerHasConfig);
-      /* 合并重复 provider */
       providers = normalizeProviders(providers);
     }else if(hasPresetList && base.modelPresets.length){
       providers = providersFromPresets(base.modelPresets);
     }
     if(!providers.length && !hasProviderList && !hasPresetList) providers = legacyProviders(base);
-    /* 内置本地 Ollama —— 始终可见 */
-    var OLLAMA_ID = 'p_ollama_builtin';
-    var hasOllama = false;
-    for(var oi = 0; oi < providers.length; oi++){ if(providers[oi].id === OLLAMA_ID){ hasOllama = true; break; } }
-    if(!hasOllama){
-      providers.push(normalizeProvider({
-        id: OLLAMA_ID,
-        providerType: 'ollama',
-        providerName: '本地Ollama',
-        baseUrl: 'http://localhost:11434',
-        apiKey: 'ollama-local',
-        path: '/api/chat',
-        models: ['gemma4']
-      }, providers.length));
-    }
+    providers = providers.filter(function(provider){
+      return !(provider && provider.id === 'p_ollama_builtin' && provider.providerType === 'ollama' && provider.models && provider.models.length === 1 && provider.models[0] === 'gemma4');
+    });
     var shareProviders = [];
     if(hasShareProviderList){
       shareProviders = base.shareModelProviders.map(normalizeProvider).filter(providerHasConfig);
