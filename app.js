@@ -1351,19 +1351,10 @@
       liveTypeset(el);                 /* 同一任务内同步渲染公式 → 完成的公式即时显示、无闪烁 */
       return true;
     }
-    var _streamRenderRaf = 0;
-    var _streamRenderPending = false;
-    /* 把同一帧内的多个 chunk 合并成一次渲染（≤60fps），保证流畅又能实时出公式 */
+    /* 流式中逐字 chunk 的渲染：直接调用（不用 rAF 合并，避免延迟导致卡顿） */
     function requestStreamingRender(){
-      _streamRenderPending = true;
-      if(_streamRenderRaf) return;
-      _streamRenderRaf = requestAnimationFrame(function(){
-        _streamRenderRaf = 0;
-        if(!_streamRenderPending) return;
-        _streamRenderPending = false;
-        if(!isStreamingNow()) return;   /* 已结束 → 交给最终的整体渲染 */
-        if(!inlineStreamingUpdate()) renderMessages();
-      });
+      /* inline 路径优先（同步 typeset 当前消息，无闪烁），失败或 edge case 回退整体渲染 */
+      if(!inlineStreamingUpdate()) renderMessages();
     }
 
     let enhanceTimer = null;
