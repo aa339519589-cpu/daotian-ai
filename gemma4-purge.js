@@ -13,6 +13,15 @@
     return String(value || '').trim().toLowerCase() === BLOCKED_MODEL;
   }
 
+  function splitModels(value){
+    if(Array.isArray(value)) return value.map(function(v){ return String(v || '').trim(); }).filter(Boolean);
+    return String(value || '').split(/[\n,，;；]+/).map(function(v){ return v.trim(); }).filter(Boolean);
+  }
+
+  function joinModels(value){
+    return splitModels(value).filter(function(model){ return !isBlockedModel(model); }).join('\n');
+  }
+
   function readJSON(key){
     try{
       var raw = localStorage.getItem(key);
@@ -28,15 +37,15 @@
     if(!provider || typeof provider !== 'object') return null;
     var id = String(provider.id || provider.providerId || '').trim();
     var type = String(provider.providerType || '').trim().toLowerCase();
-    var models = Array.isArray(provider.models) ? provider.models : [];
+    var models = splitModels(provider.models || provider.modelList || provider.model || '');
     models = models.filter(function(model){ return !isBlockedModel(model); });
 
     if(id === BLOCKED_PROVIDER_ID) return null;
     if(type === 'ollama' && !models.length) return null;
 
     provider.models = models;
-    if(isBlockedModel(provider.model)) provider.model = '';
-    if(isBlockedModel(provider.modelList)) provider.modelList = '';
+    provider.modelList = models.join('\n');
+    if(isBlockedModel(provider.model)) provider.model = models[0] || '';
     return provider;
   }
 
@@ -62,14 +71,28 @@
     }
 
     if(isBlockedModel(settings.model)) settings.model = '';
-    if(isBlockedModel(settings.modelList)) settings.modelList = '';
-    if(isBlockedModel(settings.models)) settings.models = '';
+    settings.models = joinModels(settings.models);
+    settings.modelList = joinModels(settings.modelList);
 
     var active = String(settings.activePresetId || '').trim();
     var hasActive = settings.modelPresets && settings.modelPresets.some(function(p){ return p && p.id === active; });
     if(!hasActive) settings.activePresetId = settings.modelPresets && settings.modelPresets[0] ? settings.modelPresets[0].id : '';
 
     return settings;
+  }
+
+  function cleanRuntimeConfig(){
+    var cfg = window.DAOTIAN_CONFIG;
+    if(!cfg || typeof cfg !== 'object') return;
+    ['defaultSettings','legacyDefaultSettings'].forEach(function(key){
+      var item = cfg[key];
+      if(!item || typeof item !== 'object') return;
+      if(isBlockedModel(item.model)) item.model = '';
+      item.models = joinModels(item.models);
+      item.modelList = joinModels(item.modelList);
+      if(Array.isArray(item.modelProviders)) item.modelProviders = item.modelProviders.map(cleanProvider).filter(Boolean);
+      if(Array.isArray(item.modelPresets)) item.modelPresets = item.modelPresets.map(cleanPreset).filter(Boolean);
+    });
   }
 
   function purgeStorage(){
@@ -93,13 +116,15 @@
   function showNeedModel(){
     var label = document.getElementById('modelTopLabel');
     if(label){ label.textContent = '请先添加模型'; label.title = '请先添加模型'; }
-    var status = document.getElementById('status');
-    if(status){
-      status.textContent = '请先添加模型';
-      status.classList.add('show');
-      clearTimeout(showNeedModel.t);
-      showNeedModel.t = setTimeout(function(){ status.classList.remove('show'); }, 1800);
-    }
+  }
+
+  function cleanDom(){
+    document.querySelectorAll('*').forEach(function(el){
+      if(el.childNodes.length === 1 && el.childNodes[0].nodeType === 3 && isBlockedModel(el.textContent)){
+        el.textContent = '请先添加模型';
+      }
+    });
+    if(!hasUsableModel()) showNeedModel();
   }
 
   function blockEmptySend(e){
@@ -137,9 +162,19 @@
     window.__daotianGemma4FetchGuard = true;
   }
 
-  purgeStorage();
+  function run(){
+    cleanRuntimeConfig();
+    purgeStorage();
+    cleanDom();
+  }
+
+  run();
   guardFetch();
   document.addEventListener('click', blockEmptySend, true);
   document.addEventListener('keydown', blockEmptySend, true);
-  document.addEventListener('DOMContentLoaded', function(){ purgeStorage(); showNeedModel(); }, {once:true});
+  document.addEventListener('DOMContentLoaded', run, {once:true});
+  new MutationObserver(run).observe(document.documentElement, {childList:true, subtree:true, characterData:true});
+  setTimeout(run, 0);
+  setTimeout(run, 300);
+  setTimeout(run, 1000);
 })();
