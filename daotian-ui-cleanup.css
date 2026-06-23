@@ -17,11 +17,7 @@ textarea#input::placeholder,
   -webkit-text-fill-color:transparent!important;
 }
 
-/* v616: sidebar and home screen subtraction */
-.sidebar-top .brand,
-.sidebar .brand{
-  display:none!important;
-}
+/* v616: sidebar and home screen — 旧品牌已替换为拼音，不再隐藏 brand 容器 */
 
 .sidebar-top{
   height:40px!important;
@@ -77,13 +73,7 @@ textarea#input::placeholder,
   font-size:11px!important;
 }
 
-.empty .brand-main-row,
-.empty .empty-logo,
-.empty .brand-name,
-.empty .empty-prompt,
-.empty-center{
-  display:none!important;
-}
+/* empty 状态下不再隐藏 brand 元素，让 daotian 拼音正常显示 */
 
 .empty{
   pointer-events:none!important;
