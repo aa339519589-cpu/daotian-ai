@@ -6,12 +6,12 @@
 .main .messages .message.assistant .assistant-render div,
 .main .messages .message.assistant .assistant-render span,
 .main .messages .message.assistant .assistant-render li{
-  font-size:18px!important;
+  font-size:19px!important;
   font-weight:400!important;
   line-height:1.65!important;
 }
 
 .main .messages textarea{
-  font-size:18px!important;
+  font-size:19px!important;
   font-weight:400!important;
 }
